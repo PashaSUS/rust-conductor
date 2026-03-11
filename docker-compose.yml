@@ -1,0 +1,648 @@
+services:
+  # ── Postgres Shard 0 ──
+  postgres-shard-0:
+    image: postgres:16-alpine
+    command: >
+      postgres
+      -c max_locks_per_transaction=256
+      -c max_connections=200
+      -c shared_buffers=256MB
+      -c work_mem=8MB
+      -c effective_cache_size=512MB
+    environment:
+      POSTGRES_USER: conductor
+      POSTGRES_PASSWORD: conductor
+      POSTGRES_DB: conductor
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata_shard0:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U conductor"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Postgres Shard 1 ──
+  postgres-shard-1:
+    image: postgres:16-alpine
+    command: >
+      postgres
+      -c max_locks_per_transaction=256
+      -c max_connections=200
+      -c shared_buffers=256MB
+      -c work_mem=8MB
+      -c effective_cache_size=512MB
+    environment:
+      POSTGRES_USER: conductor
+      POSTGRES_PASSWORD: conductor
+      POSTGRES_DB: conductor
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata_shard1:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U conductor"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Postgres Shard 2 ──
+  postgres-shard-2:
+    image: postgres:16-alpine
+    command: >
+      postgres
+      -c max_locks_per_transaction=256
+      -c max_connections=200
+      -c shared_buffers=256MB
+      -c work_mem=8MB
+      -c effective_cache_size=512MB
+    environment:
+      POSTGRES_USER: conductor
+      POSTGRES_PASSWORD: conductor
+      POSTGRES_DB: conductor
+    ports:
+      - "5434:5432"
+    volumes:
+      - pgdata_shard2:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U conductor"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Postgres Shard 3 ──
+  postgres-shard-3:
+    image: postgres:16-alpine
+    command: >
+      postgres
+      -c max_locks_per_transaction=256
+      -c max_connections=200
+      -c shared_buffers=256MB
+      -c work_mem=8MB
+      -c effective_cache_size=512MB
+    environment:
+      POSTGRES_USER: conductor
+      POSTGRES_PASSWORD: conductor
+      POSTGRES_DB: conductor
+    ports:
+      - "5435:5432"
+    volumes:
+      - pgdata_shard3:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U conductor"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Postgres Shard 4 ──
+  postgres-shard-4:
+    image: postgres:16-alpine
+    command: >
+      postgres
+      -c max_locks_per_transaction=256
+      -c max_connections=200
+      -c shared_buffers=256MB
+      -c work_mem=8MB
+      -c effective_cache_size=512MB
+    environment:
+      POSTGRES_USER: conductor
+      POSTGRES_PASSWORD: conductor
+      POSTGRES_DB: conductor
+    ports:
+      - "5436:5432"
+    volumes:
+      - pgdata_shard4:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U conductor"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Postgres Shard 5 ──
+  postgres-shard-5:
+    image: postgres:16-alpine
+    command: >
+      postgres
+      -c max_locks_per_transaction=256
+      -c max_connections=200
+      -c shared_buffers=256MB
+      -c work_mem=8MB
+      -c effective_cache_size=512MB
+    environment:
+      POSTGRES_USER: conductor
+      POSTGRES_PASSWORD: conductor
+      POSTGRES_DB: conductor
+    ports:
+      - "5437:5432"
+    volumes:
+      - pgdata_shard5:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U conductor"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Postgres Shard 6 ──
+  postgres-shard-6:
+    image: postgres:16-alpine
+    command: >
+      postgres
+      -c max_locks_per_transaction=256
+      -c max_connections=200
+      -c shared_buffers=256MB
+      -c work_mem=8MB
+      -c effective_cache_size=512MB
+    environment:
+      POSTGRES_USER: conductor
+      POSTGRES_PASSWORD: conductor
+      POSTGRES_DB: conductor
+    ports:
+      - "5438:5432"
+    volumes:
+      - pgdata_shard6:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U conductor"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Postgres Shard 7 ──
+  postgres-shard-7:
+    image: postgres:16-alpine
+    command: >
+      postgres
+      -c max_locks_per_transaction=256
+      -c max_connections=200
+      -c shared_buffers=256MB
+      -c work_mem=8MB
+      -c effective_cache_size=512MB
+    environment:
+      POSTGRES_USER: conductor
+      POSTGRES_PASSWORD: conductor
+      POSTGRES_DB: conductor
+    ports:
+      - "5439:5432"
+    volumes:
+      - pgdata_shard7:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U conductor"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── PgBouncer (connection pooler in front of shard 0) ──
+  pgbouncer-shard-0:
+    image: edoburu/pgbouncer:latest
+    environment:
+      DB_HOST: postgres-shard-0
+      DB_PORT: "5432"
+      DB_USER: conductor
+      DB_PASSWORD: conductor
+      DB_NAME: conductor
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "400"
+      DEFAULT_POOL_SIZE: "40"
+      MIN_POOL_SIZE: "10"
+      RESERVE_POOL_SIZE: "10"
+      LISTEN_PORT: "6432"
+      AUTH_TYPE: scram-sha-256
+      IGNORE_STARTUP_PARAMETERS: extra_float_digits
+    ports:
+      - "6432:6432"
+    depends_on:
+      postgres-shard-0:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 6432 -U conductor"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── PgBouncer (connection pooler in front of shard 1) ──
+  pgbouncer-shard-1:
+    image: edoburu/pgbouncer:latest
+    environment:
+      DB_HOST: postgres-shard-1
+      DB_PORT: "5432"
+      DB_USER: conductor
+      DB_PASSWORD: conductor
+      DB_NAME: conductor
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "400"
+      DEFAULT_POOL_SIZE: "40"
+      MIN_POOL_SIZE: "10"
+      RESERVE_POOL_SIZE: "10"
+      LISTEN_PORT: "6432"
+      AUTH_TYPE: scram-sha-256
+      IGNORE_STARTUP_PARAMETERS: extra_float_digits
+    ports:
+      - "6433:6432"
+    depends_on:
+      postgres-shard-1:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 6432 -U conductor"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── PgBouncer (connection pooler in front of shard 2) ──
+  pgbouncer-shard-2:
+    image: edoburu/pgbouncer:latest
+    environment:
+      DB_HOST: postgres-shard-2
+      DB_PORT: "5432"
+      DB_USER: conductor
+      DB_PASSWORD: conductor
+      DB_NAME: conductor
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "400"
+      DEFAULT_POOL_SIZE: "40"
+      MIN_POOL_SIZE: "10"
+      RESERVE_POOL_SIZE: "10"
+      LISTEN_PORT: "6432"
+      AUTH_TYPE: scram-sha-256
+      IGNORE_STARTUP_PARAMETERS: extra_float_digits
+    ports:
+      - "6434:6432"
+    depends_on:
+      postgres-shard-2:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 6432 -U conductor"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── PgBouncer (connection pooler in front of shard 3) ──
+  pgbouncer-shard-3:
+    image: edoburu/pgbouncer:latest
+    environment:
+      DB_HOST: postgres-shard-3
+      DB_PORT: "5432"
+      DB_USER: conductor
+      DB_PASSWORD: conductor
+      DB_NAME: conductor
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "400"
+      DEFAULT_POOL_SIZE: "40"
+      MIN_POOL_SIZE: "10"
+      RESERVE_POOL_SIZE: "10"
+      LISTEN_PORT: "6432"
+      AUTH_TYPE: scram-sha-256
+      IGNORE_STARTUP_PARAMETERS: extra_float_digits
+    ports:
+      - "6435:6432"
+    depends_on:
+      postgres-shard-3:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 6432 -U conductor"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── PgBouncer (connection pooler in front of shard 4) ──
+  pgbouncer-shard-4:
+    image: edoburu/pgbouncer:latest
+    environment:
+      DB_HOST: postgres-shard-4
+      DB_PORT: "5432"
+      DB_USER: conductor
+      DB_PASSWORD: conductor
+      DB_NAME: conductor
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "400"
+      DEFAULT_POOL_SIZE: "40"
+      MIN_POOL_SIZE: "10"
+      RESERVE_POOL_SIZE: "10"
+      LISTEN_PORT: "6432"
+      AUTH_TYPE: scram-sha-256
+      IGNORE_STARTUP_PARAMETERS: extra_float_digits
+    ports:
+      - "6436:6432"
+    depends_on:
+      postgres-shard-4:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 6432 -U conductor"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── PgBouncer (connection pooler in front of shard 5) ──
+  pgbouncer-shard-5:
+    image: edoburu/pgbouncer:latest
+    environment:
+      DB_HOST: postgres-shard-5
+      DB_PORT: "5432"
+      DB_USER: conductor
+      DB_PASSWORD: conductor
+      DB_NAME: conductor
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "400"
+      DEFAULT_POOL_SIZE: "40"
+      MIN_POOL_SIZE: "10"
+      RESERVE_POOL_SIZE: "10"
+      LISTEN_PORT: "6432"
+      AUTH_TYPE: scram-sha-256
+      IGNORE_STARTUP_PARAMETERS: extra_float_digits
+    ports:
+      - "6437:6432"
+    depends_on:
+      postgres-shard-5:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 6432 -U conductor"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── PgBouncer (connection pooler in front of shard 6) ──
+  pgbouncer-shard-6:
+    image: edoburu/pgbouncer:latest
+    environment:
+      DB_HOST: postgres-shard-6
+      DB_PORT: "5432"
+      DB_USER: conductor
+      DB_PASSWORD: conductor
+      DB_NAME: conductor
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "400"
+      DEFAULT_POOL_SIZE: "40"
+      MIN_POOL_SIZE: "10"
+      RESERVE_POOL_SIZE: "10"
+      LISTEN_PORT: "6432"
+      AUTH_TYPE: scram-sha-256
+      IGNORE_STARTUP_PARAMETERS: extra_float_digits
+    ports:
+      - "6438:6432"
+    depends_on:
+      postgres-shard-6:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 6432 -U conductor"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── PgBouncer (connection pooler in front of shard 7) ──
+  pgbouncer-shard-7:
+    image: edoburu/pgbouncer:latest
+    environment:
+      DB_HOST: postgres-shard-7
+      DB_PORT: "5432"
+      DB_USER: conductor
+      DB_PASSWORD: conductor
+      DB_NAME: conductor
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "400"
+      DEFAULT_POOL_SIZE: "40"
+      MIN_POOL_SIZE: "10"
+      RESERVE_POOL_SIZE: "10"
+      LISTEN_PORT: "6432"
+      AUTH_TYPE: scram-sha-256
+      IGNORE_STARTUP_PARAMETERS: extra_float_digits
+    ports:
+      - "6439:6432"
+    depends_on:
+      postgres-shard-7:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 6432 -U conductor"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis-0:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata-0:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis-1:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    volumes:
+      - redisdata-1:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis-2:
+    image: redis:7-alpine
+    ports:
+      - "6381:6379"
+    volumes:
+      - redisdata-2:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis-3:
+    image: redis:7-alpine
+    ports:
+      - "6382:6379"
+    volumes:
+      - redisdata-3:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis-4:
+    image: redis:7-alpine
+    ports:
+      - "6383:6379"
+    volumes:
+      - redisdata-4:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis-5:
+    image: redis:7-alpine
+    ports:
+      - "6384:6379"
+    volumes:
+      - redisdata-5:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis-6:
+    image: redis:7-alpine
+    ports:
+      - "6385:6379"
+    volumes:
+      - redisdata-6:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis-7:
+    image: redis:7-alpine
+    ports:
+      - "6386:6379"
+    volumes:
+      - redisdata-7:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend-migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "8080"
+      NUM_SHARDS: "8"
+      SHARD_DB_URL_TEMPLATE: "postgres://conductor:conductor@postgres-shard-{i}:5432/conductor"
+      REDIS_URLS: "redis://redis-0:6379/0,redis://redis-1:6379/0,redis://redis-2:6379/0,redis://redis-3:6379/0,redis://redis-4:6379/0,redis://redis-5:6379/0,redis://redis-6:6379/0,redis://redis-7:6379/0"
+      RUST_LOG: "info"
+      MIGRATE_ONLY: "true"
+    depends_on:
+      postgres-shard-0:
+        condition: service_healthy
+      postgres-shard-1:
+        condition: service_healthy
+      postgres-shard-2:
+        condition: service_healthy
+      postgres-shard-3:
+        condition: service_healthy
+      postgres-shard-4:
+        condition: service_healthy
+      postgres-shard-5:
+        condition: service_healthy
+      postgres-shard-6:
+        condition: service_healthy
+      postgres-shard-7:
+        condition: service_healthy
+      redis-0:
+        condition: service_healthy
+      redis-1:
+        condition: service_healthy
+      redis-2:
+        condition: service_healthy
+      redis-3:
+        condition: service_healthy
+      redis-4:
+        condition: service_healthy
+      redis-5:
+        condition: service_healthy
+      redis-6:
+        condition: service_healthy
+      redis-7:
+        condition: service_healthy
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    expose:
+      - "8080"
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "8080"
+      NUM_SHARDS: "8"
+      SHARD_DB_URL_TEMPLATE: "postgres://conductor:conductor@pgbouncer-shard-{i}:6432/conductor"
+      REDIS_URLS: "redis://redis-0:6379/0,redis://redis-1:6379/0,redis://redis-2:6379/0,redis://redis-3:6379/0,redis://redis-4:6379/0,redis://redis-5:6379/0,redis://redis-6:6379/0,redis://redis-7:6379/0"
+      RUST_LOG: "warn"
+      SKIP_MIGRATIONS: "true"
+    deploy:
+      replicas: 4
+    depends_on:
+      backend-migrate:
+        condition: service_completed_successfully
+      pgbouncer-shard-0:
+        condition: service_healthy
+      pgbouncer-shard-1:
+        condition: service_healthy
+      pgbouncer-shard-2:
+        condition: service_healthy
+      pgbouncer-shard-3:
+        condition: service_healthy
+      pgbouncer-shard-4:
+        condition: service_healthy
+      pgbouncer-shard-5:
+        condition: service_healthy
+      pgbouncer-shard-6:
+        condition: service_healthy
+      pgbouncer-shard-7:
+        condition: service_healthy
+      redis-0:
+        condition: service_healthy
+      redis-1:
+        condition: service_healthy
+      redis-2:
+        condition: service_healthy
+      redis-3:
+        condition: service_healthy
+      redis-4:
+        condition: service_healthy
+      redis-5:
+        condition: service_healthy
+      redis-6:
+        condition: service_healthy
+      redis-7:
+        condition: service_healthy
+
+  nginx-lb:
+    image: nginx:alpine
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./nginx-lb.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - backend
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE: "http://localhost:8080"
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata_shard0:
+  pgdata_shard1:
+  pgdata_shard2:
+  pgdata_shard3:
+  pgdata_shard4:
+  pgdata_shard5:
+  pgdata_shard6:
+  pgdata_shard7:
+  redisdata-0:
+  redisdata-1:
+  redisdata-2:
+  redisdata-3:
+  redisdata-4:
+  redisdata-5:
+  redisdata-6:
+  redisdata-7:
