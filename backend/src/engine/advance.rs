@@ -18,6 +18,7 @@ impl WorkflowEngine {
             return Ok(());
         }
         let Some(def) = &wf.workflow_definition else {
+            tracing::error!(workflow_id = %workflow_id, "advance_workflow called but workflow has no embedded definition");
             return Ok(());
         };
 
@@ -42,7 +43,10 @@ impl WorkflowEngine {
             .bind(workflow_id)
             .fetch_one(db)
             .await
-            .map_err(|e| EngineError::Database(e.to_string()))?;
+            .map_err(|e| {
+                tracing::error!(workflow_id = %workflow_id, error = %e, "Failed to read workflow status during completion check");
+                EngineError::Database(e.to_string())
+            })?;
 
             if wf_status != "RUNNING" {
                 return Ok(());
@@ -54,7 +58,10 @@ impl WorkflowEngine {
             .bind(workflow_id)
             .fetch_optional(db)
             .await
-            .map_err(|e| EngineError::Database(e.to_string()))?
+            .map_err(|e| {
+                tracing::error!(workflow_id = %workflow_id, error = %e, "Failed to read final task output for workflow completion");
+                EngineError::Database(e.to_string())
+            })?
             .unwrap_or(Value::Object(Default::default()));
 
             let now = Utc::now();
@@ -66,7 +73,10 @@ impl WorkflowEngine {
             .bind(&output)
             .execute(db)
             .await
-            .map_err(|e| EngineError::Database(e.to_string()))?;
+            .map_err(|e| {
+                tracing::error!(workflow_id = %workflow_id, error = %e, "Failed to mark workflow COMPLETED");
+                EngineError::Database(e.to_string())
+            })?;
 
             tracing::info!(workflow_id = %workflow_id, "Workflow completed");
 
@@ -93,9 +103,22 @@ impl WorkflowEngine {
             match task_map.get(ref_name.as_str()) {
                 Some(task) if is_task_terminal(&task.status) => {
                     if is_task_failed(&task.status) && !task_def.optional {
+                        let wf_status = if task.status == TaskStatus::TimedOut {
+                            "TIMED_OUT"
+                        } else {
+                            "FAILED"
+                        };
+                        tracing::error!(
+                            workflow_id = %workflow_id,
+                            task_ref = %ref_name,
+                            task_status = ?task.status,
+                            reason = ?task.reason_for_incompletion,
+                            "Non-optional task failed, failing workflow"
+                        );
                         self.fail_workflow(
                             workflow_id,
                             Some(&format!("Task {} failed: {}", ref_name, task.reason_for_incompletion.as_deref().unwrap_or("unknown"))),
+                            wf_status,
                         )
                         .await?;
                         return Ok(true);
@@ -162,6 +185,13 @@ impl WorkflowEngine {
                                         WorkflowStatus::Failed
                                         | WorkflowStatus::Terminated
                                         | WorkflowStatus::TimedOut => {
+                                            tracing::error!(
+                                                workflow_id = %workflow_id,
+                                                sub_workflow_id = %sub_id,
+                                                sub_status = ?sub_wf.status,
+                                                task_id = %task.task_id,
+                                                "Sub-workflow ended with non-success status, failing parent task"
+                                            );
                                             self.fail_task(
                                                 workflow_id,
                                                 &task.task_id,
@@ -220,7 +250,10 @@ impl WorkflowEngine {
         .bind(now)
         .execute(db)
         .await
-        .map_err(|e| EngineError::Database(e.to_string()))?;
+        .map_err(|e| {
+            tracing::error!(workflow_id = %workflow_id, task_id = %task_id, error = %e, "Failed to complete sub-workflow task");
+            EngineError::Database(e.to_string())
+        })?;
         Ok(())
     }
 
@@ -228,6 +261,7 @@ impl WorkflowEngine {
     pub(crate) async fn fail_task(&self, workflow_id: &str, task_id: &str, reason: &str) -> Result<(), EngineError> {
         let now = Utc::now();
         let db = self.shards.shard_for(workflow_id);
+        tracing::error!(workflow_id = %workflow_id, task_id = %task_id, reason = %reason, "Marking task as FAILED");
         sqlx::query(
             "UPDATE task SET status = 'FAILED', reason_for_incompletion = $2, end_time = $3, update_time = $3 WHERE task_id = $1",
         )
@@ -236,7 +270,10 @@ impl WorkflowEngine {
         .bind(now)
         .execute(db)
         .await
-        .map_err(|e| EngineError::Database(e.to_string()))?;
+        .map_err(|e| {
+            tracing::error!(workflow_id = %workflow_id, task_id = %task_id, error = %e, "DB error while marking task FAILED");
+            EngineError::Database(e.to_string())
+        })?;
         Ok(())
     }
 
@@ -255,7 +292,10 @@ impl WorkflowEngine {
         .bind(child_workflow_id)
         .fetch_optional(child_db)
         .await
-        .map_err(|e| EngineError::Database(e.to_string()))?;
+        .map_err(|e| {
+            tracing::error!(child_workflow_id = %child_workflow_id, error = %e, "Failed to look up parent_workflow_id for child");
+            EngineError::Database(e.to_string())
+        })?;
 
         if let Some((Some(parent_wf_id), Some(parent_task_id))) = parent_info {
             self.complete_sub_workflow_task(&parent_wf_id, &parent_task_id, child_output)
@@ -265,19 +305,33 @@ impl WorkflowEngine {
         Ok(())
     }
 
-    pub(crate) async fn fail_workflow(&self, workflow_id: &str, reason: Option<&str>) -> Result<(), EngineError> {
+    pub(crate) async fn fail_workflow(&self, workflow_id: &str, reason: Option<&str>, terminal_status: &str) -> Result<(), EngineError> {
+        tracing::error!(
+            workflow_id = %workflow_id,
+            status = %terminal_status,
+            reason = ?reason,
+            "Failing workflow"
+        );
+        // Only allow known terminal statuses to prevent SQL injection
+        let safe_status = match terminal_status {
+            "TIMED_OUT" => "TIMED_OUT",
+            _ => "FAILED",
+        };
         let db = self.shards.shard_for(workflow_id);
         let now = Utc::now();
 
         sqlx::query(
-            "UPDATE workflow SET status = 'FAILED', end_time = $2, update_time = $2, reason_for_incompletion = $3 WHERE workflow_id = $1 AND status = 'RUNNING'",
+            &format!("UPDATE workflow SET status = '{safe_status}', end_time = $2, update_time = $2, reason_for_incompletion = $3 WHERE workflow_id = $1 AND status = 'RUNNING'"),
         )
         .bind(workflow_id)
         .bind(now)
         .bind(reason)
         .execute(db)
         .await
-        .map_err(|e| EngineError::Database(e.to_string()))?;
+        .map_err(|e| {
+            tracing::error!(workflow_id = %workflow_id, error = %e, "DB error while setting workflow to {}", safe_status);
+            EngineError::Database(e.to_string())
+        })?;
 
         sqlx::query(
             "UPDATE task SET status = 'CANCELED', end_time = $2, update_time = $2 WHERE workflow_instance_id = $1 AND status IN ('SCHEDULED', 'IN_PROGRESS')",
@@ -286,7 +340,10 @@ impl WorkflowEngine {
         .bind(now)
         .execute(db)
         .await
-        .map_err(|e| EngineError::Database(e.to_string()))?;
+        .map_err(|e| {
+            tracing::error!(workflow_id = %workflow_id, error = %e, "DB error while canceling active tasks on workflow failure");
+            EngineError::Database(e.to_string())
+        })?;
 
         // If this is a child of a SUB_WORKFLOW, propagate failure to parent
         let parent_info: Option<(Option<String>, Option<String>)> = sqlx::query_as(
@@ -295,16 +352,25 @@ impl WorkflowEngine {
         .bind(workflow_id)
         .fetch_optional(db)
         .await
-        .map_err(|e| EngineError::Database(e.to_string()))?;
+        .map_err(|e| {
+            tracing::error!(workflow_id = %workflow_id, error = %e, "Failed to look up parent for failed child workflow");
+            EngineError::Database(e.to_string())
+        })?;
 
         if let Some((Some(parent_wf_id), Some(parent_task_id))) = parent_info {
+            tracing::error!(
+                child_workflow_id = %workflow_id,
+                parent_workflow_id = %parent_wf_id,
+                parent_task_id = %parent_task_id,
+                "Propagating failure from child sub-workflow to parent"
+            );
             self.fail_task(&parent_wf_id, &parent_task_id, reason.unwrap_or("Sub-workflow failed")).await?;
-            Box::pin(self.fail_workflow(&parent_wf_id, reason)).await?;
+            Box::pin(self.fail_workflow(&parent_wf_id, reason, terminal_status)).await?;
         }
 
         self.trigger_failure_workflow(workflow_id, reason).await?;
 
-        tracing::warn!(workflow_id = %workflow_id, "Workflow failed");
+        tracing::warn!(workflow_id = %workflow_id, status = %terminal_status, "Workflow terminated");
         Ok(())
     }
 
@@ -328,7 +394,10 @@ impl WorkflowEngine {
         let Some(def_json) = def_json else { return Ok(()) };
         let def: WorkflowDef = match serde_json::from_value(def_json) {
             Ok(d) => d,
-            Err(_) => return Ok(()),
+            Err(e) => {
+                tracing::error!(workflow_id = %failed_workflow_id, error = %e, "Failed to deserialize workflow_def for failure workflow trigger");
+                return Ok(());
+            }
         };
 
         let Some(failure_wf_name) = &def.failure_workflow else { return Ok(()) };

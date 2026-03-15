@@ -20,8 +20,14 @@ impl WorkflowEngine {
         .bind(workflow_id)
         .fetch_optional(db)
         .await
-        .map_err(|e| EngineError::Database(e.to_string()))?
-        .ok_or_else(|| EngineError::NotFound(format!("Workflow not found: {workflow_id}")))?;
+        .map_err(|e| {
+            tracing::error!(workflow_id = %workflow_id, error = %e, "DB error fetching workflow");
+            EngineError::Database(e.to_string())
+        })?
+        .ok_or_else(|| {
+            tracing::error!(workflow_id = %workflow_id, "Workflow not found");
+            EngineError::NotFound(format!("Workflow not found: {workflow_id}"))
+        })?;
 
         let tasks = sqlx::query_as::<_, TaskRow>(
             "SELECT * FROM task WHERE workflow_instance_id = $1 ORDER BY seq",
@@ -29,7 +35,10 @@ impl WorkflowEngine {
         .bind(workflow_id)
         .fetch_all(db)
         .await
-        .map_err(|e| EngineError::Database(e.to_string()))?;
+        .map_err(|e| {
+            tracing::error!(workflow_id = %workflow_id, error = %e, "DB error fetching workflow tasks");
+            EngineError::Database(e.to_string())
+        })?;
 
         let tasks: Vec<TaskResult> = tasks.into_iter().map(|r| r.into()).collect();
 
@@ -92,9 +101,13 @@ impl WorkflowEngine {
         .bind(reason)
         .execute(db)
         .await
-        .map_err(|e| EngineError::Database(e.to_string()))?;
+        .map_err(|e| {
+            tracing::error!(workflow_id = %workflow_id, error = %e, "DB error terminating workflow");
+            EngineError::Database(e.to_string())
+        })?;
 
         if result.rows_affected() == 0 {
+            tracing::error!(workflow_id = %workflow_id, "Terminate called but no RUNNING workflow found");
             return Err(EngineError::NotFound(format!(
                 "Running workflow not found: {workflow_id}"
             )));
@@ -179,6 +192,7 @@ impl WorkflowEngine {
     pub async fn retry_workflow(&self, workflow_id: &str) -> Result<(), EngineError> {
         let wf = self.get_workflow(workflow_id).await?;
         if wf.status != WorkflowStatus::Failed {
+            tracing::error!(workflow_id = %workflow_id, status = ?wf.status, "Retry called on non-FAILED workflow");
             return Err(EngineError::InvalidState(
                 "Can only retry FAILED workflows".into(),
             ));

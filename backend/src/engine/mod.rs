@@ -74,14 +74,20 @@ impl WorkflowEngine {
             .random_pool()
             .get()
             .await
-            .map_err(|e| EngineError::Redis(e.to_string()))?;
+            .map_err(|e| {
+                tracing::error!(task_id = %task_id, error = %e, "Redis connection failed while setting task routing");
+                EngineError::Redis(e.to_string())
+            })?;
         let _: () = deadpool_redis::redis::cmd("HSET")
             .arg(TASK_ROUTING_KEY)
             .arg(task_id)
             .arg(workflow_id)
             .query_async(&mut *conn)
             .await
-            .map_err(|e| EngineError::Redis(e.to_string()))?;
+            .map_err(|e| {
+                tracing::error!(task_id = %task_id, workflow_id = %workflow_id, error = %e, "Redis HSET failed for task routing");
+                EngineError::Redis(e.to_string())
+            })?;
         Ok(())
     }
 
@@ -95,13 +101,19 @@ impl WorkflowEngine {
             .random_pool()
             .get()
             .await
-            .map_err(|e| EngineError::Redis(e.to_string()))?;
+            .map_err(|e| {
+                tracing::error!(task_id = %task_id, error = %e, "Redis connection failed while getting task routing");
+                EngineError::Redis(e.to_string())
+            })?;
         let wf_id: Option<String> = deadpool_redis::redis::cmd("HGET")
             .arg(TASK_ROUTING_KEY)
             .arg(task_id)
             .query_async(&mut *conn)
             .await
-            .map_err(|e| EngineError::Redis(e.to_string()))?;
+            .map_err(|e| {
+                tracing::error!(task_id = %task_id, error = %e, "Redis HGET failed for task routing");
+                EngineError::Redis(e.to_string())
+            })?;
         Ok(wf_id)
     }
 
@@ -112,13 +124,19 @@ impl WorkflowEngine {
             .random_pool()
             .get()
             .await
-            .map_err(|e| EngineError::Redis(e.to_string()))?;
+            .map_err(|e| {
+                tracing::error!(task_id = %task_id, error = %e, "Redis connection failed while deleting task routing");
+                EngineError::Redis(e.to_string())
+            })?;
         let _: () = deadpool_redis::redis::cmd("HDEL")
             .arg(TASK_ROUTING_KEY)
             .arg(task_id)
             .query_async(&mut *conn)
             .await
-            .map_err(|e| EngineError::Redis(e.to_string()))?;
+            .map_err(|e| {
+                tracing::error!(task_id = %task_id, error = %e, "Redis HDEL failed for task routing cleanup");
+                EngineError::Redis(e.to_string())
+            })?;
         Ok(())
     }
 
@@ -155,7 +173,10 @@ impl WorkflowEngine {
                     .bind(task_id)
                     .fetch_optional(shard)
                     .await
-                    .map_err(|e| EngineError::Database(e.to_string()))?;
+                    .map_err(|e| {
+                        tracing::error!(task_id = %task_id, error = %e, "DB error during shard fan-out for task routing");
+                        EngineError::Database(e.to_string())
+                    })?;
             if let Some((wf_id,)) = row {
                 let _ = self.set_task_routing(task_id, &wf_id).await;
                 return Ok(Some((wf_id.clone(), self.shards.shard_for(&wf_id))));

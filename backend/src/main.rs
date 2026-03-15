@@ -2,29 +2,54 @@ mod api;
 mod config;
 mod engine;
 mod models;
+#[cfg(feature = "seq")]
+mod seq;
 mod store;
 mod swagger;
 
 use actix_cors::Cors;
 use actix_web::{App, HttpServer, middleware, web};
 use tracing_actix_web::TracingLogger;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 use utoipa_swagger_ui::SwaggerUi;
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "warn".into()),
-        )
-        .init();
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| "info".into());
+
+    let fmt_layer = tracing_subscriber::fmt::layer();
+
+    let registry = tracing_subscriber::registry()
+        .with(env_filter)
+        .with(fmt_layer);
+
+    // If SEQ_URL is set, also ship events to Seq
+    #[cfg(feature = "seq")]
+    {
+        if let Ok(seq_url) = std::env::var("SEQ_URL") {
+            let api_key = std::env::var("SEQ_API_KEY").ok();
+            let seq_layer = seq::SeqLayer::new(seq_url.clone(), api_key);
+            registry.with(seq_layer).init();
+            tracing::info!(seq_url = %seq_url, "Seq logging enabled");
+        } else {
+            registry.init();
+        }
+    }
+    #[cfg(not(feature = "seq"))]
+    {
+        registry.init();
+    }
 
     let cfg = config::AppConfig::from_env();
     // Initialize sharded Redis pool from comma-separated URLs
     let redis_urls: Vec<String> = cfg
-        .redis_url
+        .redis_urls
         .split(',')
         .map(|s| s.trim().to_string())
         .collect();
+
     let redis_pool = store::redis::ShardedRedis::new_async(&redis_urls)
         .await
         .expect("Failed to create sharded Redis pool");

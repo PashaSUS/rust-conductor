@@ -6,7 +6,10 @@ use crate::models::*;
 
 impl WorkflowEngine {
     pub async fn register_event_handler(&self, handler: &EventHandler) -> Result<(), EngineError> {
-        let json = serde_json::to_value(handler).map_err(|e| EngineError::Serde(e.to_string()))?;
+        let json = serde_json::to_value(handler).map_err(|e| {
+            tracing::error!(name = %handler.name, error = %e, "Failed to serialize event handler");
+            EngineError::Serde(e.to_string())
+        })?;
         sqlx::query(
             "INSERT INTO event_handler (name, event, definition) VALUES ($1, $2, $3)
              ON CONFLICT (name) DO UPDATE SET event = $2, definition = $3, updated_on = NOW()",
@@ -16,7 +19,10 @@ impl WorkflowEngine {
         .bind(&json)
         .execute(self.shards.primary())
         .await
-        .map_err(|e| EngineError::Database(e.to_string()))?;
+        .map_err(|e| {
+            tracing::error!(name = %handler.name, error = %e, "DB error registering event handler");
+            EngineError::Database(e.to_string())
+        })?;
         Ok(())
     }
 

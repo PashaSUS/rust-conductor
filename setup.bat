@@ -130,11 +130,29 @@ for /l %%r in (0,1,%LAST_REDIS_SHARD%) do (
     >> "%FILE%" echo       retries: 5
     >> "%FILE%" echo.
     if "!REDIS_URLS!"=="" (
-        set "REDIS_URLS=redis://redis-%%r:6379/0"
+        set "REDIS_URLS=redis://redis-%%r:6379"
     ) else (
-        set "REDIS_URLS=!REDIS_URLS!,redis://redis-%%r:6379/0"
+        set "REDIS_URLS=!REDIS_URLS!,redis://redis-%%r:6379"
     )
 )
+
+
+:: ── Seq (structured log server) ──
+>> "%FILE%" echo   # ── Seq ^(structured log server^) ──
+>> "%FILE%" echo   seq:
+>> "%FILE%" echo     image: datalust/seq:latest
+>> "%FILE%" echo     environment:
+>> "%FILE%" echo       ACCEPT_EULA: "Y"
+>> "%FILE%" echo     ports:
+>> "%FILE%" echo       - "9321:80"
+>> "%FILE%" echo     volumes:
+>> "%FILE%" echo       - seqdata:/data
+>> "%FILE%" echo     healthcheck:
+>> "%FILE%" echo       test: ["CMD", "curl", "-f", "http://localhost:80/api"]
+>> "%FILE%" echo       interval: 10s
+>> "%FILE%" echo       timeout: 5s
+>> "%FILE%" echo       retries: 5
+>> "%FILE%" echo.
 
 
 :: ── Backend Migrator (runs migrations once, then exits) ──
@@ -152,6 +170,7 @@ for /l %%r in (0,1,%LAST_REDIS_SHARD%) do (
 >> "%FILE%" echo       REDIS_URLS: "!REDIS_URLS!"
 >> "%FILE%" echo       RUST_LOG: "info"
 >> "%FILE%" echo       MIGRATE_ONLY: "true"
+>> "%FILE%" echo       SEQ_URL: "http://seq:80"
 >> "%FILE%" echo     depends_on:
 for /l %%i in (0,1,%LAST_SHARD%) do (
     >> "%FILE%" echo       postgres-shard-%%i:
@@ -161,6 +180,8 @@ for /l %%r in (0,1,%LAST_REDIS_SHARD%) do (
     >> "%FILE%" echo       redis-%%r:
     >> "%FILE%" echo         condition: service_healthy
 )
+>> "%FILE%" echo       seq:
+>> "%FILE%" echo         condition: service_healthy
 >> "%FILE%" echo.
 
 
@@ -179,6 +200,7 @@ for /l %%r in (0,1,%LAST_REDIS_SHARD%) do (
 >> "%FILE%" echo       REDIS_URLS: "!REDIS_URLS!"
 >> "%FILE%" echo       RUST_LOG: "warn"
 >> "%FILE%" echo       SKIP_MIGRATIONS: "true"
+>> "%FILE%" echo       SEQ_URL: "http://seq:80"
 >> "%FILE%" echo     deploy:
 >> "%FILE%" echo       replicas: %NUM_REPLICAS%
 >> "%FILE%" echo     depends_on:
@@ -192,6 +214,8 @@ for /l %%r in (0,1,%LAST_REDIS_SHARD%) do (
     >> "%FILE%" echo       redis-%%r:
     >> "%FILE%" echo         condition: service_healthy
 )
+>> "%FILE%" echo       seq:
+>> "%FILE%" echo         condition: service_healthy
 >> "%FILE%" echo.
 
 :: ── Nginx Load Balancer (in front of backend replicas) ──
@@ -226,6 +250,7 @@ for /l %%i in (0,1,%LAST_SHARD%) do (
 for /l %%r in (0,1,%LAST_REDIS_SHARD%) do (
     >> "%FILE%" echo   redisdata-%%r:
 )
+>> "%FILE%" echo   seqdata:
 
 echo.
 echo ========================================
@@ -234,23 +259,35 @@ echo ========================================
 echo.
 
 :: ── Clean and rebuild ──
-echo [1/6] Stopping all running containers...
+echo [1/3] Stopping all running containers...
 docker compose down --remove-orphans 2>nul
 
-echo [2/6] Removing old containers...
-for /f "tokens=*" %%i in ('docker ps -aq') do docker rm -f %%i 2>nul
+echo [2/3] Removing project containers...
+for /f "tokens=*" %%i in ('docker compose ps -aq') do docker rm -f %%i 2>nul
 
-echo [3/6] Removing old images...
-for /f "tokens=*" %%i in ('docker images -q') do docker rmi -f %%i 2>nul
-
-echo [4/6] Removing old volumes...
-docker volume prune -f 2>nul
-
-echo [5/6] Removing old networks...
+echo [3/3] Removing unused networks...
 docker network prune -f 2>nul
 
-echo [6/6] Removing build cache...
-docker builder prune -af 2>nul
+echo.
+set /p WIPE_DB="Wipe database volumes? This will DELETE all workflow/task data. (y/N): "
+if /i "%WIPE_DB%"=="y" (
+    echo Removing database and Redis volumes...
+    for /l %%i in (0,1,%LAST_SHARD%) do (
+        docker volume rm rust-conductor_pgdata_shard%%i 2>nul
+    )
+    set /a LAST_REDIS=%NUM_REDIS_SHARDS%-1
+    for /l %%i in (0,1,!LAST_REDIS!) do (
+        docker volume rm rust-conductor_redisdata-%%i 2>nul
+    )
+    docker volume rm rust-conductor_seqdata 2>nul
+    echo Database volumes removed.
+) else (
+    echo Keeping existing database data.
+)
+
+echo.
+echo NOTE: Images and build cache are preserved to avoid Docker Hub rate limits.
+echo       To force a full clean, run: docker system prune -af
 
 echo.
 echo ========================================
@@ -273,5 +310,6 @@ echo    Shards:     %NUM_SHARDS%
 echo    Postgres:   ports 5432-!LAST_PG_PORT!
 echo    PgBouncer:  ports 6432-!LAST_PGB_PORT!
 echo    Redis:      localhost:6379
+echo    Seq:        http://localhost:9321
 echo ========================================
 pause

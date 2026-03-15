@@ -61,6 +61,7 @@ function TaskNode({ data }: { data: { label: string; taskType: string; status?: 
         minWidth: 160,
         fontFamily: "system-ui, sans-serif",
         boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+        cursor: data.refName ? "pointer" : "default",
       }}
     >
       <Handle type="target" position={Position.Top} style={{ background: colors.border }} />
@@ -338,9 +339,10 @@ function buildGraph(
 interface WorkflowDiagramProps {
   definitionTasks: WorkflowTask[];
   runtimeTasks: TaskResult[];
+  onTaskClick?: (refName: string) => void;
 }
 
-export default function WorkflowDiagram({ definitionTasks, runtimeTasks }: WorkflowDiagramProps) {
+export default function WorkflowDiagram({ definitionTasks, runtimeTasks, onTaskClick }: WorkflowDiagramProps) {
   const { nodes, edges } = useMemo(
     () => buildGraph(definitionTasks, runtimeTasks),
     [definitionTasks, runtimeTasks],
@@ -350,6 +352,11 @@ export default function WorkflowDiagram({ definitionTasks, runtimeTasks }: Workf
     setTimeout(() => instance.fitView(), 50);
   }, []);
 
+  const handleNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
+    const refName = node.data?.refName as string;
+    if (refName && onTaskClick) onTaskClick(refName);
+  }, [onTaskClick]);
+
   return (
     <div style={{ width: "100%", height: 600, borderRadius: 8, overflow: "hidden", border: "1px solid #e5e7eb" }}>
       <ReactFlow
@@ -357,6 +364,7 @@ export default function WorkflowDiagram({ definitionTasks, runtimeTasks }: Workf
         edges={edges}
         nodeTypes={nodeTypes}
         onInit={onInit}
+        onNodeClick={handleNodeClick}
         fitView
         minZoom={0.2}
         maxZoom={2}

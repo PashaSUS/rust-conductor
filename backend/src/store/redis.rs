@@ -16,11 +16,15 @@ impl ShardedRedis {
     pub async fn new_async(redis_urls: &[String]) -> anyhow::Result<ShardedRedis> {
         assert!(!redis_urls.is_empty(), "At least one Redis URL required");
 
-        let mut pools: Vec<RedisPool> = Vec::with_capacity(redis_urls.len());
+        tracing::info!(
+            num_shards = redis_urls.len(),
+            "Initializing sharded Redis pool"
+        );
+        tracing::info!(urls = ?redis_urls, "Redis shard URLs");
 
+        let mut pools: Vec<RedisPool> = Vec::with_capacity(redis_urls.len());
         for url in redis_urls {
             let mut cfg: Config = Config::from_url(url);
-
             cfg.pool = Some(deadpool_redis::PoolConfig {
                 max_size: 128,
                 timeouts: deadpool_redis::Timeouts {

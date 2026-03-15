@@ -1,20 +1,24 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router";
 import { toast } from "sonner";
-import { metadataApi, type TaskDef } from "@/api/conductor";
+import { metadataApi, workflowApi, type TaskDef } from "@/api/conductor";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Trash2, Eye } from "lucide-react";
+import { Plus, Trash2, Eye, Play } from "lucide-react";
 
 export default function TaskDefs() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [jsonInput, setJsonInput] = useState("");
   const [viewDef, setViewDef] = useState<TaskDef | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [testRunDef, setTestRunDef] = useState<TaskDef | null>(null);
+  const [testInput, setTestInput] = useState("{}");
 
   const { data: defs, isLoading } = useQuery({
     queryKey: ["task-defs"],
@@ -38,6 +42,52 @@ export default function TaskDefs() {
       toast.success("Deleted");
       queryClient.invalidateQueries({ queryKey: ["task-defs"] });
     },
+  });
+
+  const testRunMut = useMutation({
+    mutationFn: async ({ taskName, input }: { taskName: string; input: Record<string, unknown> }) => {
+      const wfName = `__test_run_${taskName}`;
+      const taskRef = `test_${taskName}`;
+      // Register a fork-join workflow wrapping the single task
+      await metadataApi.registerWorkflowDef({
+        name: wfName,
+        version: 1,
+        description: `Auto-generated test workflow for task: ${taskName}`,
+        tasks: [
+          {
+            name: "fork_test",
+            taskReferenceName: "fork_test",
+            type: "FORK_JOIN",
+            forkTasks: [
+              [
+                {
+                  name: taskName,
+                  taskReferenceName: taskRef,
+                  type: "SIMPLE",
+                  inputParameters: input,
+                },
+              ],
+            ],
+          },
+          {
+            name: "join_test",
+            taskReferenceName: "join_test",
+            type: "JOIN",
+            joinOn: [taskRef],
+          },
+        ],
+      });
+      // Start the workflow
+      const workflowId = await workflowApi.start({ name: wfName, version: 1, input });
+      return workflowId;
+    },
+    onSuccess: (workflowId) => {
+      toast.success("Test workflow started");
+      setTestRunDef(null);
+      setTestInput("{}");
+      navigate(`/executions/${workflowId}`);
+    },
+    onError: (e) => toast.error(e.message),
   });
 
   const handleCreate = () => {
@@ -102,6 +152,9 @@ export default function TaskDefs() {
                     <TableCell className="text-muted-foreground text-xs">{def.ownerEmail ?? "—"}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex gap-1 justify-end">
+                        <Button variant="ghost" size="icon" onClick={() => { setTestRunDef(def); setTestInput("{}"); }} title="Test Run">
+                          <Play className="h-3 w-3" />
+                        </Button>
                         <Button variant="ghost" size="icon" onClick={() => setViewDef(def)} title="View">
                           <Eye className="h-3 w-3" />
                         </Button>
@@ -126,6 +179,39 @@ export default function TaskDefs() {
           <pre className="text-xs rounded-lg bg-muted p-4 overflow-auto max-h-[60vh]">
             {JSON.stringify(viewDef, null, 2)}
           </pre>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!testRunDef} onOpenChange={() => setTestRunDef(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Test Run: {testRunDef?.name}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            This will create a workflow with a FORK → <strong>{testRunDef?.name}</strong> → JOIN structure and start it.
+            The task will appear in its queue, ready to be polled and executed.
+          </p>
+          <label className="text-sm font-medium">Task Input (JSON)</label>
+          <Textarea
+            rows={8}
+            placeholder="{}"
+            value={testInput}
+            onChange={(e) => setTestInput(e.target.value)}
+            className="font-mono text-xs"
+          />
+          <Button
+            onClick={() => {
+              try {
+                const parsed = JSON.parse(testInput);
+                testRunMut.mutate({ taskName: testRunDef!.name, input: parsed });
+              } catch {
+                toast.error("Invalid JSON input");
+              }
+            }}
+            disabled={testRunMut.isPending}
+          >
+            {testRunMut.isPending ? "Starting..." : "Run Test"}
+          </Button>
         </DialogContent>
       </Dialog>
     </div>

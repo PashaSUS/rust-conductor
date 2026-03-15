@@ -27,17 +27,27 @@ impl WorkflowEngine {
             )
             .fetch_all(shard)
             .await
-            .map_err(|e| EngineError::Database(e.to_string()))?;
+            .map_err(|e| {
+                tracing::error!(error = %e, "DB error scanning for orphaned SCHEDULED tasks");
+                EngineError::Database(e.to_string())
+            })?;
 
             if !orphans.is_empty() {
+                tracing::error!(count = orphans.len(), "Found orphaned SCHEDULED tasks, re-queuing");
                 for orphan in &orphans {
                     self.set_task_routing(&orphan.task_id, &orphan.workflow_instance_id).await?;
                     let queue_key = format!("conductor:queue:{}", orphan.task_def_name);
                     let pool = self.redis.random_pool();
-                    let mut conn: deadpool_redis::Connection = pool.get().await.map_err(|e| EngineError::Redis(e.to_string()))?;
+                    let mut conn: deadpool_redis::Connection = pool.get().await.map_err(|e| {
+                        tracing::error!(task_id = %orphan.task_id, error = %e, "Redis connection failed while re-queuing orphaned task");
+                        EngineError::Redis(e.to_string())
+                    })?;
                     let _: () = deadpool_redis::redis::AsyncCommands::lpush(&mut conn, &queue_key, &orphan.task_id)
                         .await
-                        .map_err(|e| EngineError::Redis(e.to_string()))?;
+                        .map_err(|e| {
+                            tracing::error!(task_id = %orphan.task_id, queue = %queue_key, error = %e, "Redis LPUSH failed for orphaned task re-queue");
+                            EngineError::Redis(e.to_string())
+                        })?;
                     recovered += 1;
                 }
             }
@@ -55,10 +65,13 @@ impl WorkflowEngine {
             .bind(now)
             .fetch_all(shard)
             .await
-            .map_err(|e| EngineError::Database(e.to_string()))?;
+            .map_err(|e| {
+                tracing::error!(error = %e, "DB error timing out stale IN_PROGRESS tasks");
+                EngineError::Database(e.to_string())
+            })?;
 
             if !timed_out_workflows.is_empty() {
-                tracing::warn!(count = timed_out_workflows.len(), "Timed out stale IN_PROGRESS tasks");
+                tracing::error!(count = timed_out_workflows.len(), "Timed out stale IN_PROGRESS tasks");
 
                 // Advance each affected workflow so it detects the timed-out task
                 // and either fails the workflow or proceeds (if the task was optional).
@@ -81,11 +94,46 @@ impl WorkflowEngine {
             )
             .fetch_all(shard)
             .await
-            .map_err(|e| EngineError::Database(e.to_string()))?;
+            .map_err(|e| {
+                tracing::error!(error = %e, "DB error scanning for stale SUB_WORKFLOW tasks");
+                EngineError::Database(e.to_string())
+            })?;
+
+            if !stale_subs.is_empty() {
+                tracing::error!(count = stale_subs.len(), "Found stale SUB_WORKFLOW tasks, advancing parent workflows");
+            }
 
             for (wf_id,) in &stale_subs {
                 if let Err(e) = self.advance_workflow(wf_id).await {
                     tracing::error!(workflow_id = %wf_id, error = %e, "Sweep advance failed");
+                }
+            }
+
+            // 4. Detect RUNNING workflows with zero non-terminal tasks (orphans).
+            //    These got stuck because schedule_tasks failed after the workflow
+            //    row was created, or because all tasks completed but
+            //    advance_workflow was never triggered.
+            let stuck_workflows: Vec<(String,)> = sqlx::query_as(
+                "SELECT w.workflow_id FROM workflow w \
+                 WHERE w.status = 'RUNNING' \
+                   AND w.update_time < NOW() - INTERVAL '30 seconds' \
+                   AND NOT EXISTS ( \
+                     SELECT 1 FROM task t \
+                     WHERE t.workflow_instance_id = w.workflow_id \
+                       AND t.status IN ('SCHEDULED','IN_PROGRESS') \
+                   )",
+            )
+            .fetch_all(shard)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "DB error scanning for stuck RUNNING workflows");
+                EngineError::Database(e.to_string())
+            })?;
+
+            for (wf_id,) in &stuck_workflows {
+                tracing::error!(workflow_id = %wf_id, "Detected stuck RUNNING workflow with no active tasks, advancing");
+                if let Err(e) = self.advance_workflow(wf_id).await {
+                    tracing::error!(workflow_id = %wf_id, error = %e, "Sweep advance for stuck workflow failed");
                 }
             }
         }

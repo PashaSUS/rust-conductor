@@ -15,11 +15,15 @@ impl WorkflowEngine {
                 .bind(task_id)
                 .fetch_optional(db)
                 .await
-                .map_err(|e| EngineError::Database(e.to_string()))?
+                .map_err(|e| {
+                    tracing::error!(task_id = %task_id, error = %e, "DB error fetching task");
+                    EngineError::Database(e.to_string())
+                })?
             {
                 return Ok(r.into());
             }
         }
+        tracing::error!(task_id = %task_id, "Task not found on any shard");
         Err(EngineError::NotFound(format!("Task not found: {task_id}")))
     }
 
@@ -27,7 +31,10 @@ impl WorkflowEngine {
         let queue_key = format!("conductor:queue:{task_type}");
         let mut task_id: Option<String> = None;
         for pool in self.redis.all_pools_shuffled() {
-            let mut conn = pool.get().await.map_err(|e| EngineError::Redis(e.to_string()))?;
+            let mut conn = pool.get().await.map_err(|e| {
+                tracing::error!(task_type = %task_type, error = %e, "Redis connection failed during poll");
+                EngineError::Redis(e.to_string())
+            })?;
             if let Ok(Some(id)) = conn.rpop::<_, Option<String>>(&queue_key, None).await {
                 task_id = Some(id);
                 break;
@@ -39,44 +46,65 @@ impl WorkflowEngine {
         };
 
         // Resolve shard via routing hash (O(1) Redis lookup, no fan-out)
-        if let Some((wf_id, db)) = self.resolve_task_shard(&task_id).await? {
-            if let Some(r) = sqlx::query_as::<_, TaskRow>("SELECT * FROM task WHERE task_id = $1")
-                .bind(&task_id)
-                .fetch_optional(db)
-                .await
-                .map_err(|e| EngineError::Database(e.to_string()))?
-            {
-                let db = self.shards.shard_for(&wf_id);
-                let now = Utc::now();
-                sqlx::query(
-                    "UPDATE task SET status = 'IN_PROGRESS', start_time = $2, update_time = $2, poll_count = poll_count + 1, worker_id = $3 WHERE task_id = $1 AND status = 'SCHEDULED'",
-                )
-                .bind(&task_id)
-                .bind(now)
-                .bind(worker_id)
-                .execute(db)
-                .await
-                .map_err(|e| EngineError::Database(e.to_string()))?;
+        let result = async {
+            if let Some((wf_id, db)) = self.resolve_task_shard(&task_id).await? {
+                if let Some(r) = sqlx::query_as::<_, TaskRow>("SELECT * FROM task WHERE task_id = $1")
+                    .bind(&task_id)
+                    .fetch_optional(db)
+                    .await
+                    .map_err(|e| {
+                        tracing::error!(task_id = %task_id, error = %e, "DB error fetching task during poll");
+                        EngineError::Database(e.to_string())
+                    })?
+                {
+                    let db = self.shards.shard_for(&wf_id);
+                    let now = Utc::now();
+                    sqlx::query(
+                        "UPDATE task SET status = 'IN_PROGRESS', start_time = $2, update_time = $2, poll_count = poll_count + 1, worker_id = $3 WHERE task_id = $1 AND status = 'SCHEDULED'",
+                    )
+                    .bind(&task_id)
+                    .bind(now)
+                    .bind(worker_id)
+                    .execute(db)
+                    .await
+                    .map_err(|e| {
+                        tracing::error!(task_id = %task_id, workflow_id = %wf_id, error = %e, "DB error transitioning polled task to IN_PROGRESS");
+                        EngineError::Database(e.to_string())
+                    })?;
 
-                return Ok(Some(PollTask {
-                    task_id: r.task_id,
-                    workflow_instance_id: r.workflow_instance_id,
-                    task_type: r.task_type,
-                    task_def_name: r.task_def_name,
-                    reference_task_name: r.reference_task_name,
-                    status: TaskStatus::InProgress,
-                    input_data: r.input_data,
-                    scheduled_time: Some(r.scheduled_time.timestamp_millis()),
-                    start_time: Some(now.timestamp_millis()),
-                    callback_after_seconds: r.callback_after_seconds,
-                    poll_count: r.poll_count,
-                    retry_count: r.retry_count,
-                }));
+                    return Ok(Some(PollTask {
+                        task_id: r.task_id,
+                        workflow_instance_id: r.workflow_instance_id,
+                        task_type: r.task_type,
+                        task_def_name: r.task_def_name,
+                        reference_task_name: r.reference_task_name,
+                        status: TaskStatus::InProgress,
+                        input_data: r.input_data,
+                        scheduled_time: Some(r.scheduled_time.timestamp_millis()),
+                        start_time: Some(now.timestamp_millis()),
+                        callback_after_seconds: r.callback_after_seconds,
+                        poll_count: r.poll_count,
+                        retry_count: r.retry_count,
+                    }));
+                }
+            }
+            Ok::<Option<PollTask>, EngineError>(None)
+        }
+        .await;
+
+        match result {
+            Ok(poll_task) => Ok(poll_task),
+            Err(e) => {
+                // DB lookup failed after popping from Redis — re-queue the task so it is not lost
+                tracing::warn!(task_id = %task_id, error = %e, "Re-queuing task after poll DB failure");
+                let queue_key = format!("conductor:queue:{task_type}");
+                let pool = self.redis.random_pool();
+                if let Ok(mut conn) = pool.get().await {
+                    let _: Result<(), _> = deadpool_redis::redis::AsyncCommands::lpush(&mut conn, &queue_key, &task_id).await;
+                }
+                Err(e)
             }
         }
-
-        // Task not found in any shard — may have been deleted
-        Ok(None)
     }
 
     pub async fn update_task(&self, update: &TaskUpdateRequest) -> Result<String, EngineError> {
@@ -84,8 +112,23 @@ impl WorkflowEngine {
         let status_str = update.status.to_string();
         let is_terminal = matches!(
             update.status,
-            TaskStatus::Completed | TaskStatus::Failed | TaskStatus::FailedWithTerminalError
+            TaskStatus::Completed
+                | TaskStatus::CompletedWithErrors
+                | TaskStatus::Failed
+                | TaskStatus::FailedWithTerminalError
+                | TaskStatus::TimedOut
         );
+
+        if is_terminal && matches!(update.status, TaskStatus::Failed | TaskStatus::FailedWithTerminalError | TaskStatus::TimedOut) {
+            tracing::error!(
+                task_id = %update.task_id,
+                workflow_id = %update.workflow_instance_id,
+                status = %status_str,
+                reason = ?update.reason_for_incompletion,
+                worker_id = ?update.worker_id,
+                "Task update with error status"
+            );
+        }
 
         let db = self.shards.shard_for(&update.workflow_instance_id);
 
@@ -101,19 +144,30 @@ impl WorkflowEngine {
         .bind(&update.reason_for_incompletion)
         .execute(db)
         .await
-        .map_err(|e| EngineError::Database(e.to_string()))?;
+        .map_err(|e| {
+            tracing::error!(task_id = %update.task_id, workflow_id = %update.workflow_instance_id, error = %e, "DB error updating task status");
+            EngineError::Database(e.to_string())
+        })?;
 
         // Clean up routing entry when task reaches terminal status
         if is_terminal {
             let _ = self.delete_task_routing(&update.task_id).await;
         }
 
-        if update.status == TaskStatus::Completed {
+        if update.status == TaskStatus::Completed
+            || update.status == TaskStatus::CompletedWithErrors
+        {
             self.advance_workflow(&update.workflow_instance_id).await?;
         } else if update.status == TaskStatus::Failed
             || update.status == TaskStatus::FailedWithTerminalError
+            || update.status == TaskStatus::TimedOut
         {
-            self.fail_workflow(&update.workflow_instance_id, update.reason_for_incompletion.as_deref())
+            let wf_status = if update.status == TaskStatus::TimedOut {
+                "TIMED_OUT"
+            } else {
+                "FAILED"
+            };
+            self.fail_workflow(&update.workflow_instance_id, update.reason_for_incompletion.as_deref(), wf_status)
                 .await?;
         }
 
@@ -152,6 +206,7 @@ impl WorkflowEngine {
         let pools = self.redis.all_pools_shuffled();
         let mut remaining = count;
         'outer: while remaining > 0 {
+            let before = task_ids.len();
             for pool in &pools {
                 let mut conn = pool.get().await.map_err(|e| EngineError::Redis(e.to_string()))?;
                 if let Ok(Some(id)) = conn.rpop::<_, Option<String>>(&queue_key, None).await {
@@ -162,8 +217,8 @@ impl WorkflowEngine {
                     }
                 }
             }
-            // If no more tasks found in this round, break
-            if task_ids.len() == 0 || task_ids.len() == count {
+            // If no new tasks were found in this round, all queues are drained
+            if task_ids.len() == before {
                 break;
             }
         }

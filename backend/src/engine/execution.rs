@@ -27,10 +27,22 @@ impl WorkflowEngine {
         .bind(serde_json::to_value(&def).ok())
         .execute(db)
         .await
-        .map_err(|e| EngineError::Database(e.to_string()))?;
+        .map_err(|e| {
+            tracing::error!(workflow_id = %workflow_id, name = %req.name, error = %e, "Failed to INSERT workflow row");
+            EngineError::Database(e.to_string())
+        })?;
 
-        Box::pin(self.schedule_tasks(&workflow_id, &def.tasks, &req.input, 0))
-            .await?;
+        if let Err(e) = Box::pin(self.schedule_tasks(&workflow_id, &def.tasks, &req.input, 0)).await {
+            tracing::error!(workflow_id = %workflow_id, error = %e, "Failed to schedule initial tasks, marking workflow FAILED");
+            let _ = sqlx::query(
+                "UPDATE workflow SET status = 'FAILED', end_time = NOW(), update_time = NOW(), reason_for_incompletion = $2 WHERE workflow_id = $1",
+            )
+            .bind(&workflow_id)
+            .bind(format!("Failed to schedule initial tasks: {e}"))
+            .execute(db)
+            .await;
+            return Err(e);
+        }
 
         tracing::info!(workflow_id = %workflow_id, name = %req.name, "Workflow started");
         Ok(workflow_id)
@@ -75,6 +87,14 @@ impl WorkflowEngine {
                     .await?;
             }
             _ => {
+                if task_type != "SIMPLE" {
+                    tracing::error!(
+                        workflow_id = %workflow_id,
+                        task_type = %task_type,
+                        ref_name = %task_def.task_reference_name,
+                        "Unknown task type, treating as worker task"
+                    );
+                }
                 self.create_and_queue_worker_task(workflow_id, task_def, input, start_seq)
                     .await?;
             }

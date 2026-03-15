@@ -194,6 +194,7 @@ export interface TaskResult {
   seq: number;
   retryCount: number;
   reasonForIncompletion?: string;
+  subWorkflowId?: string;
 }
 
 export interface TaskUpdateRequest {

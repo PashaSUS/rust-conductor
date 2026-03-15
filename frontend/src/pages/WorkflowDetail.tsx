@@ -1,20 +1,23 @@
 import { useState } from "react";
-import { useParams } from "react-router";
+import { useParams, useNavigate } from "react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { workflowApi, metadataApi, formatTs } from "@/api/conductor";
+import { workflowApi, metadataApi, formatTs, type TaskResult } from "@/api/conductor";
 import WorkflowDiagram from "@/components/WorkflowDiagram";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Pause, Play, XCircle, RotateCcw, RefreshCcw, ChevronDown, ChevronRight } from "lucide-react";
+import { Pause, Play, XCircle, RotateCcw, RefreshCcw, ChevronDown, ChevronRight, ExternalLink, X } from "lucide-react";
+import { CopyButton } from "@/components/CopyButton";
 
 export default function WorkflowDetail() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
+  const [selectedDiagramTask, setSelectedDiagramTask] = useState<TaskResult | null>(null);
 
   const toggleTask = (taskId: string) => {
     setExpandedTasks((prev) => {
@@ -53,7 +56,7 @@ export default function WorkflowDetail() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">{wf.workflowName}</h2>
-          <p className="text-muted-foreground text-sm">v{wf.workflowVersion} &middot; {wf.workflowId}</p>
+          <p className="text-muted-foreground text-sm flex items-center gap-1">v{wf.workflowVersion} &middot; <span className="font-mono">{wf.workflowId}</span><CopyButton value={wf.workflowId} /></p>
         </div>
         <div className="flex items-center gap-2">
           <StatusBadge status={wf.status} />
@@ -110,7 +113,12 @@ export default function WorkflowDetail() {
                           {expandedTasks.has(t.taskId) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                         </TableCell>
                         <TableCell>{t.seq}</TableCell>
-                        <TableCell className="font-medium">{t.referenceTaskName}</TableCell>
+                        <TableCell className="font-medium">
+                          <div className="flex items-center gap-1">
+                            {t.referenceTaskName}
+                            <CopyButton value={t.taskId} />
+                          </div>
+                        </TableCell>
                         <TableCell className="text-muted-foreground text-xs">{t.taskType}</TableCell>
                         <TableCell><TaskStatusBadge status={t.status} /></TableCell>
                         <TableCell className="text-xs">{formatTs(t.startTime)}</TableCell>
@@ -140,6 +148,18 @@ export default function WorkflowDetail() {
                                 <p className="text-xs text-destructive">{t.reasonForIncompletion}</p>
                               </div>
                             )}
+                            {t.taskType === "SUB_WORKFLOW" && t.subWorkflowId && (
+                              <div className="mt-3">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={(e) => { e.stopPropagation(); navigate(`/executions/${t.subWorkflowId}`); }}
+                                >
+                                  <ExternalLink className="h-3 w-3 mr-1" />
+                                  View Sub-Workflow
+                                </Button>
+                              </div>
+                            )}
                           </TableCell>
                         </TableRow>
                       )}
@@ -154,14 +174,101 @@ export default function WorkflowDetail() {
         <TabsContent value="diagram">
           <Card>
             <CardContent className="pt-6">
-              {wfDef ? (
-                <WorkflowDiagram
-                  definitionTasks={wfDef.tasks}
-                  runtimeTasks={wf.tasks}
-                />
-              ) : (
-                <p className="text-muted-foreground text-sm">Loading workflow definition...</p>
-              )}
+              <div className="flex gap-4">
+                {/* Task detail panel */}
+                {selectedDiagramTask && (
+                  <div className="w-80 shrink-0 border rounded-lg bg-muted/20 overflow-auto max-h-150">
+                    <div className="flex items-center justify-between p-3 border-b bg-muted/40">
+                      <h4 className="font-semibold text-sm truncate">{selectedDiagramTask.referenceTaskName}</h4>
+                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setSelectedDiagramTask(null)}>
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                    <div className="p-3 space-y-3 text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Status</span>
+                        <TaskStatusBadge status={selectedDiagramTask.status} />
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Type</span>
+                        <span>{selectedDiagramTask.taskType}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-muted-foreground">Task ID</span>
+                        <span className="flex items-center gap-1"><span className="font-mono truncate max-w-32" title={selectedDiagramTask.taskId}>{selectedDiagramTask.taskId}</span><CopyButton value={selectedDiagramTask.taskId} /></span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Worker</span>
+                        <span>{selectedDiagramTask.workerId ?? "—"}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Poll Count</span>
+                        <span>{selectedDiagramTask.pollCount}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Retry Count</span>
+                        <span>{selectedDiagramTask.retryCount}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Scheduled</span>
+                        <span>{formatTs(selectedDiagramTask.scheduledTime)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Started</span>
+                        <span>{formatTs(selectedDiagramTask.startTime)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Ended</span>
+                        <span>{formatTs(selectedDiagramTask.endTime)}</span>
+                      </div>
+                      {selectedDiagramTask.reasonForIncompletion && (
+                        <div>
+                          <p className="text-muted-foreground mb-1">Reason</p>
+                          <p className="text-destructive">{selectedDiagramTask.reasonForIncompletion}</p>
+                        </div>
+                      )}
+                      <div>
+                        <p className="text-muted-foreground font-semibold mb-1">Input</p>
+                        <pre className="rounded-lg bg-muted p-2 overflow-auto max-h-40 text-[10px]">
+                          {JSON.stringify(selectedDiagramTask.inputData, null, 2)}
+                        </pre>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground font-semibold mb-1">Output</p>
+                        <pre className="rounded-lg bg-muted p-2 overflow-auto max-h-40 text-[10px]">
+                          {JSON.stringify(selectedDiagramTask.outputData, null, 2)}
+                        </pre>
+                      </div>
+                      {selectedDiagramTask.taskType === "SUB_WORKFLOW" && selectedDiagramTask.subWorkflowId && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full"
+                          onClick={() => navigate(`/executions/${selectedDiagramTask.subWorkflowId}`)}
+                        >
+                          <ExternalLink className="h-3 w-3 mr-1" />
+                          View Sub-Workflow
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {/* Diagram */}
+                <div className="flex-1 min-w-0">
+                  {wfDef ? (
+                    <WorkflowDiagram
+                      definitionTasks={wfDef.tasks}
+                      runtimeTasks={wf.tasks}
+                      onTaskClick={(refName) => {
+                        const task = wf.tasks.find((t) => t.referenceTaskName === refName);
+                        setSelectedDiagramTask(task ?? null);
+                      }}
+                    />
+                  ) : (
+                    <p className="text-muted-foreground text-sm">Loading workflow definition...</p>
+                  )}
+                </div>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -189,8 +296,8 @@ export default function WorkflowDetail() {
         <TabsContent value="info">
           <Card>
             <CardContent className="pt-6 space-y-2 text-sm">
-              <InfoRow label="Workflow ID" value={wf.workflowId} />
-              <InfoRow label="Correlation ID" value={wf.correlationId ?? "—"} />
+              <InfoRow label="Workflow ID" value={wf.workflowId} copyable />
+              <InfoRow label="Correlation ID" value={wf.correlationId ?? "—"} copyable />
               <InfoRow label="Priority" value={String(wf.priority)} />
               <InfoRow label="Started" value={formatTs(wf.startTime)} />
               <InfoRow label="Ended" value={formatTs(wf.endTime)} />
@@ -204,11 +311,12 @@ export default function WorkflowDetail() {
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
+function InfoRow({ label, value, copyable }: { label: string; value: string; copyable?: boolean }) {
   return (
-    <div className="flex">
+    <div className="flex items-center">
       <span className="font-medium text-muted-foreground w-36">{label}</span>
       <span className="font-mono text-xs break-all">{value}</span>
+      {copyable && value && value !== "—" && <CopyButton value={value} className="ml-1" />}
     </div>
   );
 }

@@ -1,22 +1,62 @@
-import { useState } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { toast } from "sonner";
-import { workflowApi, formatTs, type SearchParams } from "@/api/conductor";
+import { workflowApi, metadataApi, formatTs, type SearchParams } from "@/api/conductor";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Search, XCircle, Pause, Play, RotateCcw, ChevronLeft, ChevronRight } from "lucide-react";
+import { CopyButton } from "@/components/CopyButton";
 
 const PAGE_SIZE = 25;
+
+function useFilterParams() {
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const params: SearchParams = useMemo(() => ({
+    status: searchParams.get("status") || undefined,
+    workflowType: searchParams.get("workflowType") || undefined,
+    freeText: searchParams.get("freeText") || undefined,
+    start: searchParams.has("start") ? Number(searchParams.get("start")) : 0,
+    size: PAGE_SIZE,
+  }), [searchParams]);
+
+  const setParams = useCallback((updater: (prev: SearchParams) => SearchParams) => {
+    setSearchParams((prev) => {
+      const current: SearchParams = {
+        status: prev.get("status") || undefined,
+        workflowType: prev.get("workflowType") || undefined,
+        freeText: prev.get("freeText") || undefined,
+        start: prev.has("start") ? Number(prev.get("start")) : 0,
+        size: PAGE_SIZE,
+      };
+      const next = updater(current);
+      const qs = new URLSearchParams();
+      if (next.status) qs.set("status", next.status);
+      if (next.workflowType) qs.set("workflowType", next.workflowType);
+      if (next.freeText) qs.set("freeText", next.freeText);
+      if (next.start) qs.set("start", String(next.start));
+      return qs;
+    });
+  }, [setSearchParams]);
+
+  return { params, setParams };
+}
 
 export default function Workflows() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [params, setParams] = useState<SearchParams>({ size: PAGE_SIZE, start: 0 });
-  const [search, setSearch] = useState("");
+  const { params, setParams } = useFilterParams();
+  const [search, setSearch] = useState(params.freeText ?? "");
+  const [workflowName, setWorkflowName] = useState(params.workflowType ?? "");
+
+  const { data: workflowDefs } = useQuery({
+    queryKey: ["workflow-defs-list"],
+    queryFn: () => metadataApi.listWorkflowDefs(),
+  });
 
   const { data, isLoading } = useQuery({
     queryKey: ["workflow-search", params],
@@ -56,10 +96,19 @@ export default function Workflows() {
   });
 
   const handleSearch = () => {
-    setParams((p) => ({ ...p, freeText: search || undefined, start: 0 }));
+    setParams((p) => ({
+      ...p,
+      freeText: search || undefined,
+      workflowType: workflowName || undefined,
+      start: 0,
+    }));
   };
 
   const statuses = ["", "RUNNING", "COMPLETED", "FAILED", "TERMINATED", "PAUSED", "TIMED_OUT"];
+
+  const uniqueNames = workflowDefs
+    ? [...new Set(workflowDefs.map((d) => d.name))].sort()
+    : [];
 
   return (
     <div className="space-y-4">
@@ -69,10 +118,23 @@ export default function Workflows() {
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-medium">Search & Filter</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-3">
           <div className="flex gap-2">
+            <select
+              value={workflowName}
+              onChange={(e) => {
+                setWorkflowName(e.target.value);
+                setParams((p) => ({ ...p, workflowType: e.target.value || undefined, start: 0 }));
+              }}
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              <option value="">All Workflow Types</option>
+              {uniqueNames.map((n) => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </select>
             <Input
-              placeholder="Search workflows..."
+              placeholder="Search by name, ID, or correlation ID..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSearch()}
@@ -81,18 +143,18 @@ export default function Workflows() {
             <Button variant="outline" size="sm" onClick={handleSearch}>
               <Search className="h-4 w-4" />
             </Button>
-            <div className="flex gap-1 ml-4">
-              {statuses.map((s) => (
-                <Button
-                  key={s || "all"}
-                  variant={params.status === (s || undefined) ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setParams((p) => ({ ...p, status: s || undefined, start: 0 }))}
-                >
-                  {s || "All"}
-                </Button>
-              ))}
-            </div>
+          </div>
+          <div className="flex gap-1">
+            {statuses.map((s) => (
+              <Button
+                key={s || "all"}
+                variant={params.status === (s || undefined) ? "default" : "outline"}
+                size="sm"
+                onClick={() => setParams((p) => ({ ...p, status: s || undefined, start: 0 }))}
+              >
+                {s || "All"}
+              </Button>
+            ))}
           </div>
         </CardContent>
       </Card>
@@ -133,7 +195,7 @@ export default function Workflows() {
                           <span className="font-medium">{wf.workflowType}</span>
                           <span className="text-muted-foreground text-xs ml-1">v{wf.version}</span>
                         </div>
-                        <div className="text-xs text-muted-foreground truncate max-w-xs">{wf.workflowId}</div>
+                        <div className="text-xs text-muted-foreground truncate max-w-xs flex items-center gap-1">{wf.workflowId}<CopyButton value={wf.workflowId} /></div>
                       </TableCell>
                       <TableCell>
                         <StatusBadge status={wf.status} />

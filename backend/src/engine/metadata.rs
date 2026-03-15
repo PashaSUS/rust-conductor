@@ -8,7 +8,10 @@ impl WorkflowEngine {
     // ── Workflow Definition CRUD ──
 
     pub async fn register_workflow_def(&self, def: &WorkflowDef) -> Result<(), EngineError> {
-        let json = serde_json::to_value(def).map_err(|e| EngineError::Serde(e.to_string()))?;
+        let json = serde_json::to_value(def).map_err(|e| {
+            tracing::error!(name = %def.name, version = def.version, error = %e, "Failed to serialize workflow def");
+            EngineError::Serde(e.to_string())
+        })?;
         sqlx::query(
             "INSERT INTO workflow_def (name, version, definition) VALUES ($1, $2, $3)
              ON CONFLICT (name, version) DO UPDATE SET definition = $3, updated_on = NOW()",
@@ -18,7 +21,10 @@ impl WorkflowEngine {
         .bind(&json)
         .execute(self.shards.primary())
         .await
-        .map_err(|e| EngineError::Database(e.to_string()))?;
+        .map_err(|e| {
+            tracing::error!(name = %def.name, version = def.version, error = %e, "DB error registering workflow def");
+            EngineError::Database(e.to_string())
+        })?;
         Ok(())
     }
 
@@ -49,10 +55,16 @@ impl WorkflowEngine {
         .map_err(|e| EngineError::Database(e.to_string()))?;
 
         match row {
-            Some(json) => serde_json::from_value(json).map_err(|e| EngineError::Serde(e.to_string())),
-            None => Err(EngineError::NotFound(format!(
-                "Workflow definition not found: {name}"
-            ))),
+            Some(json) => serde_json::from_value(json).map_err(|e| {
+                tracing::error!(name = %name, version = ?version, error = %e, "Failed to deserialize workflow def from DB");
+                EngineError::Serde(e.to_string())
+            }),
+            None => {
+                tracing::error!(name = %name, version = ?version, "Workflow definition not found");
+                Err(EngineError::NotFound(format!(
+                    "Workflow definition not found: {name}"
+                )))
+            }
         }
     }
 
@@ -89,7 +101,10 @@ impl WorkflowEngine {
     // ── Task Definition CRUD ──
 
     pub async fn register_task_def(&self, def: &TaskDef) -> Result<(), EngineError> {
-        let json = serde_json::to_value(def).map_err(|e| EngineError::Serde(e.to_string()))?;
+        let json = serde_json::to_value(def).map_err(|e| {
+            tracing::error!(name = %def.name, error = %e, "Failed to serialize task def");
+            EngineError::Serde(e.to_string())
+        })?;
         sqlx::query(
             "INSERT INTO task_def (name, definition) VALUES ($1, $2)
              ON CONFLICT (name) DO UPDATE SET definition = $2, updated_on = NOW()",
@@ -98,7 +113,10 @@ impl WorkflowEngine {
         .bind(&json)
         .execute(self.shards.primary())
         .await
-        .map_err(|e| EngineError::Database(e.to_string()))?;
+        .map_err(|e| {
+            tracing::error!(name = %def.name, error = %e, "DB error registering task def");
+            EngineError::Database(e.to_string())
+        })?;
         Ok(())
     }
 
@@ -109,11 +127,20 @@ impl WorkflowEngine {
         .bind(name)
         .fetch_optional(self.shards.primary())
         .await
-        .map_err(|e| EngineError::Database(e.to_string()))?;
+        .map_err(|e| {
+            tracing::error!(name = %name, error = %e, "DB error fetching task def");
+            EngineError::Database(e.to_string())
+        })?;
 
         match row {
-            Some(json) => serde_json::from_value(json).map_err(|e| EngineError::Serde(e.to_string())),
-            None => Err(EngineError::NotFound(format!("Task def not found: {name}"))),
+            Some(json) => serde_json::from_value(json).map_err(|e| {
+                tracing::error!(name = %name, error = %e, "Failed to deserialize task def from DB");
+                EngineError::Serde(e.to_string())
+            }),
+            None => {
+                tracing::error!(name = %name, "Task def not found");
+                Err(EngineError::NotFound(format!("Task def not found: {name}")))
+            }
         }
     }
 

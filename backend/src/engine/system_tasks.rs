@@ -34,7 +34,10 @@ impl WorkflowEngine {
         .bind(&task_def.task_reference_name)
         .fetch_optional(db)
         .await
-        .map_err(|e| EngineError::Database(e.to_string()))?;
+        .map_err(|e| {
+            tracing::error!(workflow_id = %workflow_id, ref_name = %task_def.task_reference_name, error = %e, "DB error during task dedup check");
+            EngineError::Database(e.to_string())
+        })?;
 
         if let Some(existing_id) = existing {
             tracing::debug!(
@@ -63,7 +66,10 @@ impl WorkflowEngine {
                 .bind(workflow_id)
                 .fetch_all(db)
                 .await
-                .map_err(|e| EngineError::Database(e.to_string()))?;
+                .map_err(|e| {
+                    tracing::error!(workflow_id = %workflow_id, ref_name = %task_def.task_reference_name, error = %e, "DB error fetching task outputs for template resolution");
+                    EngineError::Database(e.to_string())
+                })?;
                 let task_outputs: HashMap<String, Value> = task_output_rows.into_iter().collect();
                 resolve_value(&raw, input, &task_outputs, workflow_id)
             } else {
@@ -111,6 +117,11 @@ impl WorkflowEngine {
                     || err_str.contains("duplicate key")
                     || err_str.contains("unique constraint")
                 {
+                    tracing::error!(
+                        workflow_id = %workflow_id,
+                        ref_name = %task_def.task_reference_name,
+                        "Task insert race condition detected, resolving duplicate"
+                    );
                     let id: String = sqlx::query_scalar(
                         "SELECT task_id FROM task WHERE workflow_instance_id = $1 AND reference_task_name = $2 AND status NOT IN ('FAILED', 'TIMED_OUT', 'CANCELED') LIMIT 1",
                     )
@@ -118,7 +129,10 @@ impl WorkflowEngine {
                     .bind(&task_def.task_reference_name)
                     .fetch_one(db)
                     .await
-                    .map_err(|e2| EngineError::Database(e2.to_string()))?;
+                    .map_err(|e2| {
+                        tracing::error!(workflow_id = %workflow_id, ref_name = %task_def.task_reference_name, error = %e2, "Failed to fetch winner task_id after insert race");
+                        EngineError::Database(e2.to_string())
+                    })?;
 
                     tracing::debug!(
                         task_id = %id,
@@ -127,6 +141,13 @@ impl WorkflowEngine {
                     );
                     Ok((id, false))
                 } else {
+                    tracing::error!(
+                        workflow_id = %workflow_id,
+                        ref_name = %task_def.task_reference_name,
+                        task_type = %task_def.task_type,
+                        error = %err_str,
+                        "Failed to insert task record"
+                    );
                     Err(EngineError::Database(err_str))
                 }
             }
@@ -182,6 +203,14 @@ impl WorkflowEngine {
             .insert_task_record(workflow_id, task_def, input, seq, "IN_PROGRESS", &Value::Object(Default::default()), None)
             .await?;
 
+        if task_def.join_on.is_empty() {
+            tracing::error!(
+                workflow_id = %workflow_id,
+                ref_name = %task_def.task_reference_name,
+                "JOIN task has empty join_on list, auto-completing"
+            );
+        }
+
         if self.check_join_prerequisites(workflow_id, task_def).await? {
             self.complete_task_by_id(workflow_id, &task_id).await?;
             tracing::info!(workflow_id = %workflow_id, "JOIN auto-completed — all branches done");
@@ -207,7 +236,10 @@ impl WorkflowEngine {
             .bind(ref_name)
             .fetch_optional(db)
             .await
-            .map_err(|e| EngineError::Database(e.to_string()))?;
+            .map_err(|e| {
+                tracing::error!(workflow_id = %workflow_id, join_ref = %ref_name, error = %e, "DB error checking join prerequisite");
+                EngineError::Database(e.to_string())
+            })?;
 
             match status.as_deref() {
                 Some("COMPLETED") | Some("SKIPPED") | Some("COMPLETED_WITH_ERRORS") => continue,
@@ -299,6 +331,11 @@ impl WorkflowEngine {
         seq: i32,
     ) -> Result<(), EngineError> {
         let params = task_def.sub_workflow_param.as_ref().ok_or_else(|| {
+            tracing::error!(
+                workflow_id = %workflow_id,
+                ref_name = %task_def.task_reference_name,
+                "SUB_WORKFLOW task missing sub_workflow_param"
+            );
             EngineError::InvalidState(
                 "SUB_WORKFLOW task missing sub_workflow_param".into(),
             )
@@ -342,19 +379,23 @@ impl WorkflowEngine {
         // The child workflow lives on its own shard (determined by child_id).
         // Link child → parent (on child's shard).
         let child_db = self.shards.shard_for(&child_id);
-        sqlx::query(
+        if let Err(e) = sqlx::query(
             "UPDATE workflow SET parent_workflow_id = $2, parent_workflow_task_id = $3 WHERE workflow_id = $1",
         )
         .bind(&child_id)
         .bind(workflow_id)
-        .bind(&task_def.task_reference_name)
+        .bind(&task_id)
         .execute(child_db)
         .await
-        .map_err(|e| EngineError::Database(e.to_string()))?;
+        {
+            tracing::error!(child_id = %child_id, error = %e, "Failed to link child→parent, failing sub-workflow task");
+            self.fail_task(workflow_id, &task_id, &format!("Failed to link child workflow: {e}")).await?;
+            return Err(EngineError::Database(e.to_string()));
+        }
 
         // Update the parent's task with the child's id (on parent's shard).
         let parent_db = self.shards.shard_for(workflow_id);
-        sqlx::query(
+        if let Err(e) = sqlx::query(
             "UPDATE task SET sub_workflow_id = $2, output_data = $3 WHERE task_id = $1",
         )
         .bind(&task_id)
@@ -362,7 +403,11 @@ impl WorkflowEngine {
         .bind(&serde_json::json!({ "subWorkflowId": &child_id }))
         .execute(parent_db)
         .await
-        .map_err(|e| EngineError::Database(e.to_string()))?;
+        {
+            tracing::error!(task_id = %task_id, child_id = %child_id, error = %e, "Failed to link parent task→child, failing sub-workflow task");
+            self.fail_task(workflow_id, &task_id, &format!("Failed to set sub_workflow_id on parent task: {e}")).await?;
+            return Err(EngineError::Database(e.to_string()));
+        }
 
         tracing::info!(
             workflow_id = %workflow_id,
@@ -388,10 +433,16 @@ impl WorkflowEngine {
             self.set_task_routing(&task_id, workflow_id).await?;
             let queue_key = format!("conductor:queue:{}", task_def.name);
             let pool = self.redis.random_pool();
-            let mut conn: deadpool_redis::Connection = pool.get().await.map_err(|e| EngineError::Redis(e.to_string()))?;
+            let mut conn: deadpool_redis::Connection = pool.get().await.map_err(|e| {
+                tracing::error!(workflow_id = %workflow_id, task_id = %task_id, error = %e, "Redis connection failed while queuing worker task");
+                EngineError::Redis(e.to_string())
+            })?;
             let _: () = deadpool_redis::redis::AsyncCommands::lpush(&mut conn, &queue_key, &task_id)
                 .await
-                .map_err(|e| EngineError::Redis(e.to_string()))?;
+                .map_err(|e| {
+                    tracing::error!(workflow_id = %workflow_id, task_id = %task_id, queue = %queue_key, error = %e, "Redis LPUSH failed for worker task");
+                    EngineError::Redis(e.to_string())
+                })?;
         }
         Ok(())
     }
@@ -407,7 +458,10 @@ impl WorkflowEngine {
         .bind(now)
         .execute(db)
         .await
-        .map_err(|e| EngineError::Database(e.to_string()))?;
+        .map_err(|e| {
+            tracing::error!(workflow_id = %workflow_id, task_id = %task_id, error = %e, "DB error while completing task by ID");
+            EngineError::Database(e.to_string())
+        })?;
         Ok(())
     }
 }
