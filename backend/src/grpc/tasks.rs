@@ -2,9 +2,9 @@ use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
 use crate::engine::WorkflowEngine;
-use crate::models;
 use super::pb;
 use super::metadata::engine_err_to_status;
+use super::proto_conv;
 
 pub struct TaskServiceImpl {
     engine: Arc<WorkflowEngine>,
@@ -26,9 +26,7 @@ impl pb::task_service_server::TaskService for TaskServiceImpl {
         &self,
         request: Request<pb::UpdateTaskRequest>,
     ) -> Result<Response<pb::UpdateTaskResponse>, Status> {
-        let update: models::TaskUpdateRequest =
-            serde_json::from_str(&request.into_inner().task_update_json)
-                .map_err(|e| Status::invalid_argument(format!("Invalid TaskUpdateRequest JSON: {e}")))?;
+        let update = proto_conv::task_update_from_proto(request.into_inner())?;
         let task_id = self
             .engine
             .update_task(&update)
@@ -40,17 +38,13 @@ impl pb::task_service_server::TaskService for TaskServiceImpl {
     async fn get_task(
         &self,
         request: Request<pb::GetTaskRequest>,
-    ) -> Result<Response<pb::TaskResultResponse>, Status> {
+    ) -> Result<Response<pb::TaskResultPb>, Status> {
         let task = self
             .engine
             .get_task(&request.into_inner().task_id)
             .await
             .map_err(engine_err_to_status)?;
-        let json = serde_json::to_string(&task)
-            .map_err(|e| Status::internal(format!("Serialization error: {e}")))?;
-        Ok(Response::new(pb::TaskResultResponse {
-            task_result_json: json,
-        }))
+        Ok(Response::new(proto_conv::task_result_to_proto(task)))
     }
 
     async fn poll_task(
@@ -64,17 +58,13 @@ impl pb::task_service_server::TaskService for TaskServiceImpl {
             .await
             .map_err(engine_err_to_status)?;
         match result {
-            Some(task) => {
-                let json = serde_json::to_string(&task)
-                    .map_err(|e| Status::internal(format!("Serialization error: {e}")))?;
-                Ok(Response::new(pb::PollTaskResponse {
-                    found: true,
-                    poll_task_json: json,
-                }))
-            }
+            Some(task) => Ok(Response::new(pb::PollTaskResponse {
+                found: true,
+                task: Some(proto_conv::poll_task_to_proto(task)),
+            })),
             None => Ok(Response::new(pb::PollTaskResponse {
                 found: false,
-                poll_task_json: String::new(),
+                task: None,
             })),
         }
     }
@@ -94,11 +84,8 @@ impl pb::task_service_server::TaskService for TaskServiceImpl {
             )
             .await
             .map_err(engine_err_to_status)?;
-        let jsons: Result<Vec<String>, _> =
-            tasks.iter().map(|t| serde_json::to_string(t)).collect();
-        let jsons = jsons.map_err(|e| Status::internal(format!("Serialization error: {e}")))?;
         Ok(Response::new(pb::BatchPollTasksResponse {
-            poll_tasks_json: jsons,
+            tasks: tasks.into_iter().map(proto_conv::poll_task_to_proto).collect(),
         }))
     }
 
@@ -164,12 +151,9 @@ impl pb::task_service_server::TaskService for TaskServiceImpl {
             )
             .await
             .map_err(engine_err_to_status)?;
-        let jsons: Result<Vec<String>, _> =
-            result.results.iter().map(|r| serde_json::to_string(r)).collect();
-        let jsons = jsons.map_err(|e| Status::internal(format!("Serialization error: {e}")))?;
         Ok(Response::new(pb::TaskSearchResponse {
             total_hits: result.total_hits,
-            results_json: jsons,
+            results: result.results.iter().map(proto_conv::task_summary_to_proto).collect(),
         }))
     }
 

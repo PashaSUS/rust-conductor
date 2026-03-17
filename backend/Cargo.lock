@@ -2227,6 +2227,7 @@ dependencies = [
  "tokio-stream",
  "tonic",
  "tonic-build",
+ "tower 0.5.3",
  "tracing",
  "tracing-actix-web",
  "tracing-subscriber",
@@ -2943,6 +2944,7 @@ dependencies = [
  "axum",
  "base64",
  "bytes",
+ "flate2",
  "h2 0.4.13",
  "http 1.4.0",
  "http-body",
@@ -3007,8 +3009,10 @@ dependencies = [
  "pin-project-lite",
  "sync_wrapper",
  "tokio",
+ "tokio-util",
  "tower-layer",
  "tower-service",
+ "tracing",
 ]
 
 [[package]]

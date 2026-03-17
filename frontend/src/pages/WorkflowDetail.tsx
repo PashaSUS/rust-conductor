@@ -70,10 +70,10 @@ export default function WorkflowDetail() {
             {wf.status === "PAUSED" && (
               <Button variant="outline" size="sm" onClick={() => resumeMut.mutate()}><Play className="h-3 w-3 mr-1" />Resume</Button>
             )}
-            {wf.status === "FAILED" && (
+            {(wf.status === "FAILED" || wf.status === "TIMED_OUT") && (
               <Button variant="outline" size="sm" onClick={() => retryMut.mutate()}><RefreshCcw className="h-3 w-3 mr-1" />Retry</Button>
             )}
-            {(wf.status === "FAILED" || wf.status === "TERMINATED" || wf.status === "COMPLETED") && (
+            {(wf.status === "FAILED" || wf.status === "TIMED_OUT" || wf.status === "TERMINATED" || wf.status === "COMPLETED") && (
               <Button variant="outline" size="sm" onClick={() => restartMut.mutate()}><RotateCcw className="h-3 w-3 mr-1" />Restart</Button>
             )}
           </div>
@@ -322,11 +322,11 @@ function InfoRow({ label, value, copyable }: { label: string; value: string; cop
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const variant = status === "COMPLETED" ? "success" : status === "RUNNING" ? "default" : status === "FAILED" ? "destructive" : status === "PAUSED" ? "warning" : "secondary";
+  const variant = status === "COMPLETED" ? "success" : status === "RUNNING" ? "default" : status === "FAILED" ? "destructive" : status === "TIMED_OUT" ? "destructive" : status === "PAUSED" ? "warning" : "secondary";
   return <Badge variant={variant as "default"} className="text-sm">{status}</Badge>;
 }
 
 function TaskStatusBadge({ status }: { status: string }) {
-  const variant = status === "COMPLETED" ? "success" : status === "IN_PROGRESS" ? "default" : status === "FAILED" ? "destructive" : status === "SCHEDULED" ? "warning" : "secondary";
+  const variant = status === "COMPLETED" ? "success" : status === "IN_PROGRESS" ? "default" : status === "FAILED" ? "destructive" : status === "TIMED_OUT" ? "destructive" : status === "SCHEDULED" ? "warning" : "secondary";
   return <Badge variant={variant as "default"}>{status}</Badge>;
 }

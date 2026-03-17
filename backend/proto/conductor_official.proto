@@ -1,0 +1,581 @@
+syntax = "proto3";
+
+package conductor.grpc;
+
+import "google/protobuf/struct.proto";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Official Conductor-compatible gRPC Service Definitions  (typed proto messages)
+//
+// This proto mirrors the service and method names used by the official
+// Netflix Conductor gRPC contract (conductor-grpc-server module).
+// Package: conductor.grpc — matching official Conductor.
+//
+// Dynamic payloads (workflow input/output, task data, variables) use
+// google.protobuf.Struct — zero serde_json round-trips on the hot path.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MetadataService
+// ══════════════════════════════════════════════════════════════════════════════
+
+service MetadataService {
+  rpc CreateWorkflow(CreateWorkflowRequest)       returns (CreateWorkflowResponse);
+  rpc ValidateWorkflow(ValidateWorkflowRequest)   returns (ValidateWorkflowResponse);
+  rpc UpdateWorkflows(UpdateWorkflowsRequest)     returns (UpdateWorkflowsResponse);
+  rpc GetWorkflow(GetWorkflowDefRequest)          returns (GetWorkflowDefResponse);
+  rpc CreateTasks(CreateTasksRequest)             returns (CreateTasksResponse);
+  rpc UpdateTask(UpdateTaskDefRequest)            returns (UpdateTaskDefResponse);
+  rpc GetTask(GetTaskDefRequest)                  returns (GetTaskDefResponse);
+  rpc DeleteTask(DeleteTaskDefRequest)            returns (DeleteTaskDefResponse);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// WorkflowService
+// ══════════════════════════════════════════════════════════════════════════════
+
+service WorkflowService {
+  rpc StartWorkflow(OfStartWorkflowRequest)              returns (OfStartWorkflowResponse);
+  rpc GetWorkflows(OfGetWorkflowRequest)                 returns (OfGetWorkflowResponse);
+  rpc GetWorkflowStatus(OfGetWorkflowStatusRequest)      returns (OfGetWorkflowStatusResponse);
+  rpc RemoveWorkflow(OfRemoveWorkflowRequest)            returns (OfRemoveWorkflowResponse);
+  rpc GetRunningWorkflows(OfGetRunningWorkflowsRequest)  returns (OfGetRunningWorkflowsResponse);
+  rpc DecideWorkflow(OfDecideWorkflowRequest)            returns (OfDecideWorkflowResponse);
+  rpc PauseWorkflow(OfPauseWorkflowRequest)              returns (OfPauseWorkflowResponse);
+  rpc ResumeWorkflow(OfResumeWorkflowRequest)            returns (OfResumeWorkflowResponse);
+  rpc SkipTaskFromWorkflow(OfSkipTaskRequest)            returns (OfSkipTaskResponse);
+  rpc RerunWorkflow(OfRerunWorkflowRequest)              returns (OfRerunWorkflowResponse);
+  rpc RestartWorkflow(OfRestartWorkflowRequest)          returns (OfRestartWorkflowResponse);
+  rpc RetryWorkflow(OfRetryWorkflowRequest)              returns (OfRetryWorkflowResponse);
+  rpc ResetWorkflowCallbacks(OfResetCallbacksRequest)    returns (OfResetCallbacksResponse);
+  rpc TerminateWorkflow(OfTerminateWorkflowRequest)      returns (OfTerminateWorkflowResponse);
+  rpc Search(OfSearchWorkflowsRequest)                   returns (OfSearchWorkflowsResponse);
+  rpc SearchV2(OfSearchWorkflowsRequest)                 returns (OfSearchWorkflowsResponse);
+  rpc SearchByTasks(OfSearchByTasksRequest)              returns (OfSearchByTasksResponse);
+  rpc SearchByTasksV2(OfSearchByTasksRequest)            returns (OfSearchByTasksResponse);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TaskService
+// ══════════════════════════════════════════════════════════════════════════════
+
+service TaskService {
+  rpc Poll(OfPollRequest)                 returns (OfPollResponse);
+  rpc BatchPoll(OfBatchPollRequest)       returns (OfBatchPollResponse);
+  rpc GetTask(OfGetTaskRequest)           returns (OfGetTaskResponse);
+  rpc UpdateTask(OfUpdateTaskRequest)     returns (OfUpdateTaskResponse);
+  rpc AckTask(OfAckTaskRequest)           returns (OfAckTaskResponse);
+  rpc AddLog(OfAddLogRequest)             returns (OfAddLogResponse);
+  rpc GetTaskLogs(OfGetTaskLogsRequest)   returns (OfGetTaskLogsResponse);
+  rpc Search(OfSearchTasksRequest)        returns (OfSearchTasksResponse);
+  rpc SearchV2(OfSearchTasksRequest)      returns (OfSearchTasksResponse);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// EventService
+// ══════════════════════════════════════════════════════════════════════════════
+
+service EventService {
+  rpc AddEventHandler(OfAddEventHandlerRequest)                   returns (OfAddEventHandlerResponse);
+  rpc UpdateEventHandler(OfUpdateEventHandlerRequest)             returns (OfUpdateEventHandlerResponse);
+  rpc RemoveEventHandler(OfRemoveEventHandlerRequest)             returns (OfRemoveEventHandlerResponse);
+  rpc GetEventHandlers(OfGetEventHandlersRequest)                 returns (OfGetEventHandlersResponse);
+  rpc GetEventHandlersForEvent(OfGetEventHandlersForEventRequest) returns (OfGetEventHandlersForEventResponse);
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Shared typed messages (reused across services)
+// ══════════════════════════════════════════════════════════════════════════════
+
+message OfWorkflowDefPb {
+  string name                          = 1;
+  string description                   = 2;
+  int32  version                       = 3;
+  repeated OfWorkflowTaskPb tasks      = 4;
+  repeated string input_parameters     = 5;
+  google.protobuf.Struct output_parameters = 6;
+  string failure_workflow              = 7;
+  int32  schema_version                = 8;
+  bool   restartable                   = 9;
+  bool   workflow_status_listener_enabled = 10;
+  string owner_email                   = 11;
+  string timeout_policy                = 12;
+  int64  timeout_seconds               = 13;
+  google.protobuf.Struct variables     = 14;
+  google.protobuf.Struct input_template = 15;
+  string owner_app                     = 16;
+  int64  create_time                   = 17;
+  int64  update_time                   = 18;
+}
+
+message OfWorkflowTaskPb {
+  string name                          = 1;
+  string task_reference_name           = 2;
+  string type                          = 3;
+  string description                   = 4;
+  google.protobuf.Struct input_parameters = 5;
+  bool   optional                      = 6;
+  int32  start_delay                   = 7;
+  OfSubWorkflowParamsPb sub_workflow_param = 8;
+  repeated string join_on              = 9;
+  repeated OfForkBranchPb fork_tasks   = 10;
+  map<string, OfTaskListPb> decision_cases = 11;
+  repeated OfWorkflowTaskPb default_case = 12;
+  string case_expression               = 13;
+  string case_value_param              = 14;
+  string sink                          = 15;
+  bool   async_complete                = 16;
+  int32  retry_count                   = 17;
+  string evaluator_type                = 18;
+  string expression                    = 19;
+  string script_expression             = 20;
+  string dynamic_task_name_param       = 21;
+}
+
+message OfForkBranchPb {
+  repeated OfWorkflowTaskPb tasks = 1;
+}
+
+message OfTaskListPb {
+  repeated OfWorkflowTaskPb tasks = 1;
+}
+
+message OfSubWorkflowParamsPb {
+  string name    = 1;
+  int32  version = 2;
+  map<string, string> task_to_domain = 3;
+}
+
+message OfTaskDefPb {
+  string name                          = 1;
+  string description                   = 2;
+  int32  retry_count                   = 3;
+  string retry_logic                   = 4;
+  int32  retry_delay_seconds           = 5;
+  int64  timeout_seconds               = 6;
+  string timeout_policy                = 7;
+  int64  response_timeout_seconds      = 8;
+  int32  concurrent_exec_limit         = 9;
+  repeated string input_keys           = 10;
+  repeated string output_keys          = 11;
+  google.protobuf.Struct input_template = 12;
+  int32  rate_limit_per_frequency      = 13;
+  int32  rate_limit_frequency_in_seconds = 14;
+  string owner_email                   = 15;
+  int32  poll_timeout_seconds          = 16;
+  int32  backoff_scale_factor          = 17;
+  string owner_app                     = 18;
+  int64  create_time                   = 19;
+  int64  update_time                   = 20;
+}
+
+message OfTaskResultPb {
+  string task_id                       = 1;
+  string workflow_instance_id          = 2;
+  string task_type                     = 3;
+  string task_def_name                 = 4;
+  string reference_task_name           = 5;
+  string status                        = 6;
+  google.protobuf.Struct input_data    = 7;
+  google.protobuf.Struct output_data   = 8;
+  string reason_for_incompletion       = 9;
+  int64  scheduled_time                = 10;
+  int64  start_time                    = 11;
+  int64  end_time                      = 12;
+  int64  update_time                   = 13;
+  int32  poll_count                    = 14;
+  string worker_id                     = 15;
+  int32  seq                           = 16;
+  int32  retry_count                   = 17;
+  int64  callback_after_seconds        = 18;
+  string sub_workflow_id               = 19;
+}
+
+message OfPollTaskPb {
+  string task_id                       = 1;
+  string workflow_instance_id          = 2;
+  string task_type                     = 3;
+  string task_def_name                 = 4;
+  string reference_task_name           = 5;
+  string status                        = 6;
+  google.protobuf.Struct input_data    = 7;
+  int64  scheduled_time                = 8;
+  int64  start_time                    = 9;
+  int64  callback_after_seconds        = 10;
+  int32  poll_count                    = 11;
+  int32  retry_count                   = 12;
+}
+
+message OfWorkflowPb {
+  string workflow_id                   = 1;
+  string workflow_name                 = 2;
+  int32  workflow_version              = 3;
+  string status                        = 4;
+  google.protobuf.Struct input         = 5;
+  google.protobuf.Struct output        = 6;
+  repeated OfTaskResultPb tasks        = 7;
+  string correlation_id                = 8;
+  int64  start_time                    = 9;
+  int64  end_time                      = 10;
+  int64  update_time                   = 11;
+  string reason_for_incompletion       = 12;
+  int32  priority                      = 13;
+  google.protobuf.Struct variables     = 14;
+  string parent_workflow_id            = 15;
+  string parent_workflow_task_id       = 16;
+  map<string, string> task_to_domain   = 17;
+  repeated string failed_reference_task_names = 18;
+  string created_by                    = 19;
+}
+
+message OfWorkflowSummaryPb {
+  string workflow_id                   = 1;
+  string workflow_type                 = 2;
+  int32  version                       = 3;
+  string status                        = 4;
+  int64  start_time                    = 5;
+  int64  update_time                   = 6;
+  int64  end_time                      = 7;
+  string correlation_id                = 8;
+  string reason_for_incompletion       = 9;
+  int32  priority                      = 10;
+  int64  execution_time                = 11;
+}
+
+message OfTaskSummaryPb {
+  string task_id                       = 1;
+  string workflow_instance_id          = 2;
+  string task_type                     = 3;
+  string task_def_name                 = 4;
+  string reference_task_name           = 5;
+  string status                        = 6;
+  int64  scheduled_time                = 7;
+  int64  start_time                    = 8;
+  int64  end_time                      = 9;
+  int64  update_time                   = 10;
+}
+
+message OfEventHandlerPb {
+  string name                          = 1;
+  string event                         = 2;
+  string condition                     = 3;
+  repeated OfEventActionPb actions     = 4;
+  bool   active                        = 5;
+  string evaluator_type                = 6;
+}
+
+message OfEventActionPb {
+  string action                        = 1;
+  google.protobuf.Struct start_workflow = 2;
+  google.protobuf.Struct complete_task = 3;
+  google.protobuf.Struct fail_task     = 4;
+  google.protobuf.Struct terminate_workflow = 5;
+  google.protobuf.Struct update_workflow_variables = 6;
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  MetadataService messages
+// ══════════════════════════════════════════════════════════════════════════════
+
+message CreateWorkflowRequest {
+  OfWorkflowDefPb workflow_def = 1;
+}
+message CreateWorkflowResponse {}
+
+message ValidateWorkflowRequest {
+  OfWorkflowDefPb workflow_def = 1;
+}
+message ValidateWorkflowResponse {}
+
+message UpdateWorkflowsRequest {
+  repeated OfWorkflowDefPb workflow_defs = 1;
+}
+message UpdateWorkflowsResponse {}
+
+message GetWorkflowDefRequest {
+  string name    = 1;
+  int32  version = 2;
+}
+message GetWorkflowDefResponse {
+  OfWorkflowDefPb workflow_def = 1;
+}
+
+message CreateTasksRequest {
+  repeated OfTaskDefPb task_defs = 1;
+}
+message CreateTasksResponse {}
+
+message UpdateTaskDefRequest {
+  OfTaskDefPb task_def = 1;
+}
+message UpdateTaskDefResponse {}
+
+message GetTaskDefRequest {
+  string name = 1;
+}
+message GetTaskDefResponse {
+  OfTaskDefPb task_def = 1;
+}
+
+message DeleteTaskDefRequest {
+  string name = 1;
+}
+message DeleteTaskDefResponse {}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  WorkflowService messages
+// ══════════════════════════════════════════════════════════════════════════════
+
+message OfStartWorkflowRequest {
+  string name                          = 1;
+  int32  version                       = 2;
+  google.protobuf.Struct input         = 3;
+  string correlation_id                = 4;
+  int32  priority                      = 5;
+  map<string, string> task_to_domain   = 6;
+  string created_by                    = 7;
+  string idempotency_key               = 8;
+  string external_input_payload_storage_path = 9;
+}
+message OfStartWorkflowResponse {
+  string workflow_id = 1;
+}
+
+message OfGetWorkflowRequest {
+  string workflow_id    = 1;
+  bool   include_tasks  = 2;
+}
+message OfGetWorkflowResponse {
+  OfWorkflowPb workflow = 1;
+}
+
+message OfGetWorkflowStatusRequest {
+  string workflow_id    = 1;
+  bool   include_output = 2;
+  bool   include_variables = 3;
+}
+message OfGetWorkflowStatusResponse {
+  OfWorkflowPb workflow = 1;
+}
+
+message OfRemoveWorkflowRequest {
+  string workflow_id      = 1;
+  bool   archive_workflow = 2;
+}
+message OfRemoveWorkflowResponse {}
+
+message OfGetRunningWorkflowsRequest {
+  string name       = 1;
+  int32  version    = 2;
+  int64  start_time = 3;
+  int64  end_time   = 4;
+}
+message OfGetRunningWorkflowsResponse {
+  repeated string workflow_ids = 1;
+}
+
+message OfDecideWorkflowRequest {
+  string workflow_id = 1;
+}
+message OfDecideWorkflowResponse {}
+
+message OfPauseWorkflowRequest {
+  string workflow_id = 1;
+}
+message OfPauseWorkflowResponse {}
+
+message OfResumeWorkflowRequest {
+  string workflow_id = 1;
+}
+message OfResumeWorkflowResponse {}
+
+message OfSkipTaskRequest {
+  string workflow_id                   = 1;
+  string task_reference_name           = 2;
+  google.protobuf.Struct task_input    = 3;
+  google.protobuf.Struct task_output   = 4;
+}
+message OfSkipTaskResponse {}
+
+message OfRerunWorkflowRequest {
+  string workflow_id              = 1;
+  string re_run_from_workflow_id  = 2;
+  google.protobuf.Struct workflow_input = 3;
+  string re_run_from_task_id      = 4;
+  google.protobuf.Struct task_input = 5;
+  string correlation_id           = 6;
+}
+message OfRerunWorkflowResponse {
+  string workflow_id = 1;
+}
+
+message OfRestartWorkflowRequest {
+  string workflow_id           = 1;
+  bool   use_latest_definitions = 2;
+}
+message OfRestartWorkflowResponse {}
+
+message OfRetryWorkflowRequest {
+  string workflow_id       = 1;
+  bool   resume_subworkflow_tasks = 2;
+}
+message OfRetryWorkflowResponse {}
+
+message OfResetCallbacksRequest {
+  string workflow_id = 1;
+}
+message OfResetCallbacksResponse {}
+
+message OfTerminateWorkflowRequest {
+  string workflow_id = 1;
+  string reason      = 2;
+}
+message OfTerminateWorkflowResponse {}
+
+message OfSearchWorkflowsRequest {
+  int64  start     = 1;
+  int64  size      = 2;
+  string sort      = 3;
+  string free_text = 4;
+  string query     = 5;
+}
+message OfSearchWorkflowsResponse {
+  int64                         total_hits = 1;
+  repeated OfWorkflowSummaryPb  results    = 2;
+}
+
+message OfSearchByTasksRequest {
+  int64  start     = 1;
+  int64  size      = 2;
+  string sort      = 3;
+  string free_text = 4;
+  string query     = 5;
+}
+message OfSearchByTasksResponse {
+  int64                     total_hits = 1;
+  repeated OfTaskSummaryPb  results    = 2;
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  TaskService messages
+// ══════════════════════════════════════════════════════════════════════════════
+
+message OfPollRequest {
+  string task_type  = 1;
+  string worker_id  = 2;
+  string domain     = 3;
+}
+message OfPollResponse {
+  bool         found = 1;
+  OfPollTaskPb task  = 2;
+}
+
+message OfBatchPollRequest {
+  string task_type   = 1;
+  string worker_id   = 2;
+  string domain      = 3;
+  int32  count       = 4;
+  int32  timeout     = 5;
+}
+message OfBatchPollResponse {
+  repeated OfPollTaskPb tasks = 1;
+}
+
+message OfGetTaskRequest {
+  string task_id = 1;
+}
+message OfGetTaskResponse {
+  OfTaskResultPb task = 1;
+}
+
+message OfUpdateTaskRequest {
+  string task_id                       = 1;
+  string workflow_instance_id          = 2;
+  string status                        = 3;
+  google.protobuf.Struct output_data   = 4;
+  string reason_for_incompletion       = 5;
+  int64  callback_after_seconds        = 6;
+  string worker_id                     = 7;
+}
+message OfUpdateTaskResponse {
+  string task_id = 1;
+}
+
+message OfAckTaskRequest {
+  string task_id   = 1;
+  string worker_id = 2;
+}
+message OfAckTaskResponse {
+  bool acknowledged = 1;
+}
+
+message OfAddLogRequest {
+  string task_id = 1;
+  string log     = 2;
+}
+message OfAddLogResponse {}
+
+message OfGetTaskLogsRequest {
+  string task_id = 1;
+}
+message OfGetTaskLogsResponse {
+  repeated OfTaskExecLog logs = 1;
+}
+
+message OfTaskExecLog {
+  string log          = 1;
+  string task_id      = 2;
+  int64  created_time = 3;
+}
+
+message OfSearchTasksRequest {
+  int64  start     = 1;
+  int64  size      = 2;
+  string sort      = 3;
+  string free_text = 4;
+  string query     = 5;
+}
+message OfSearchTasksResponse {
+  int64                     total_hits = 1;
+  repeated OfTaskSummaryPb  results    = 2;
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  EventService messages
+// ══════════════════════════════════════════════════════════════════════════════
+
+message OfAddEventHandlerRequest {
+  OfEventHandlerPb event_handler = 1;
+}
+message OfAddEventHandlerResponse {}
+
+message OfUpdateEventHandlerRequest {
+  OfEventHandlerPb event_handler = 1;
+}
+message OfUpdateEventHandlerResponse {}
+
+message OfRemoveEventHandlerRequest {
+  string name = 1;
+}
+message OfRemoveEventHandlerResponse {}
+
+message OfGetEventHandlersRequest {
+  string event       = 1;
+  bool   active_only = 2;
+}
+message OfGetEventHandlersResponse {
+  repeated OfEventHandlerPb event_handlers = 1;
+}
+
+message OfGetEventHandlersForEventRequest {
+  string event       = 1;
+  bool   active_only = 2;
+}
+message OfGetEventHandlersForEventResponse {
+  repeated OfEventHandlerPb event_handlers = 1;
+}

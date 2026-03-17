@@ -89,17 +89,24 @@ async fn main() -> std::io::Result<()> {
 
     let openapi = swagger::build_openapi();
 
-    // ── gRPC server (runs on a separate port) ──────────────────────────
+    // ── gRPC server (dedicated multi-thread runtime) ──────────────────
     let grpc_engine = std::sync::Arc::new(engine.clone());
     let grpc_addr: std::net::SocketAddr = format!("{}:{}", cfg.host, cfg.grpc_port)
         .parse()
         .expect("Invalid gRPC address");
     tracing::info!("Starting gRPC server on {}", grpc_addr);
     let grpc_router = grpc::grpc_router(grpc_engine);
-    tokio::spawn(async move {
-        if let Err(e) = grpc_router.serve(grpc_addr).await {
-            tracing::error!(error = %e, "gRPC server failed");
-        }
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(num_cpus::get())
+            .enable_all()
+            .build()
+            .expect("Failed to build gRPC tokio runtime");
+        rt.block_on(async move {
+            if let Err(e) = grpc_router.serve(grpc_addr).await {
+                tracing::error!(error = %e, "gRPC server failed");
+            }
+        });
     });
 
     tracing::info!("Starting Rust Conductor on {}:{}", cfg.host, cfg.port);

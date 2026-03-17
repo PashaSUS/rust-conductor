@@ -2,8 +2,8 @@ use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
 use crate::engine::WorkflowEngine;
-use crate::models::WorkflowDef;
 use super::pb;
+use super::proto_conv;
 
 pub struct MetadataServiceImpl {
     engine: Arc<WorkflowEngine>,
@@ -21,8 +21,9 @@ impl pb::metadata_service_server::MetadataService for MetadataServiceImpl {
         &self,
         request: Request<pb::RegisterWorkflowDefRequest>,
     ) -> Result<Response<pb::Empty>, Status> {
-        let def: WorkflowDef = serde_json::from_str(&request.into_inner().workflow_def_json)
-            .map_err(|e| Status::invalid_argument(format!("Invalid WorkflowDef JSON: {e}")))?;
+        let pb_def = request.into_inner().workflow_def
+            .ok_or_else(|| Status::invalid_argument("Missing workflow_def"))?;
+        let def = proto_conv::workflow_def_from_proto(&pb_def);
         self.engine
             .register_workflow_def(&def)
             .await
@@ -35,9 +36,8 @@ impl pb::metadata_service_server::MetadataService for MetadataServiceImpl {
         request: Request<pb::UpdateWorkflowDefsRequest>,
     ) -> Result<Response<pb::Empty>, Status> {
         let inner = request.into_inner();
-        for json_str in &inner.workflow_defs_json {
-            let def: WorkflowDef = serde_json::from_str(json_str)
-                .map_err(|e| Status::invalid_argument(format!("Invalid WorkflowDef JSON: {e}")))?;
+        for pb_def in &inner.workflow_defs {
+            let def = proto_conv::workflow_def_from_proto(pb_def);
             self.engine
                 .register_workflow_def(&def)
                 .await
@@ -49,7 +49,7 @@ impl pb::metadata_service_server::MetadataService for MetadataServiceImpl {
     async fn get_workflow_def(
         &self,
         request: Request<pb::GetWorkflowDefRequest>,
-    ) -> Result<Response<pb::WorkflowDefResponse>, Status> {
+    ) -> Result<Response<pb::WorkflowDefPb>, Status> {
         let req = request.into_inner();
         let version = if req.version == 0 { None } else { Some(req.version) };
         let def = self
@@ -57,11 +57,7 @@ impl pb::metadata_service_server::MetadataService for MetadataServiceImpl {
             .get_workflow_def(&req.name, version)
             .await
             .map_err(engine_err_to_status)?;
-        let json = serde_json::to_string(&def)
-            .map_err(|e| Status::internal(format!("Serialization error: {e}")))?;
-        Ok(Response::new(pb::WorkflowDefResponse {
-            workflow_def_json: json,
-        }))
+        Ok(Response::new(proto_conv::workflow_def_to_proto(&def)))
     }
 
     async fn list_workflow_defs(
@@ -73,10 +69,8 @@ impl pb::metadata_service_server::MetadataService for MetadataServiceImpl {
             .list_workflow_defs()
             .await
             .map_err(engine_err_to_status)?;
-        let jsons: Result<Vec<String>, _> = defs.iter().map(|d| serde_json::to_string(d)).collect();
-        let jsons = jsons.map_err(|e| Status::internal(format!("Serialization error: {e}")))?;
         Ok(Response::new(pb::ListWorkflowDefsResponse {
-            workflow_defs_json: jsons,
+            workflow_defs: defs.iter().map(proto_conv::workflow_def_to_proto).collect(),
         }))
     }
 
@@ -97,9 +91,8 @@ impl pb::metadata_service_server::MetadataService for MetadataServiceImpl {
         request: Request<pb::RegisterTaskDefsRequest>,
     ) -> Result<Response<pb::Empty>, Status> {
         let inner = request.into_inner();
-        for json_str in &inner.task_defs_json {
-            let def: crate::models::TaskDef = serde_json::from_str(json_str)
-                .map_err(|e| Status::invalid_argument(format!("Invalid TaskDef JSON: {e}")))?;
+        for pb_def in &inner.task_defs {
+            let def = proto_conv::task_def_from_proto(pb_def);
             self.engine
                 .register_task_def(&def)
                 .await
@@ -111,18 +104,14 @@ impl pb::metadata_service_server::MetadataService for MetadataServiceImpl {
     async fn get_task_def(
         &self,
         request: Request<pb::GetTaskDefRequest>,
-    ) -> Result<Response<pb::TaskDefResponse>, Status> {
+    ) -> Result<Response<pb::TaskDefPb>, Status> {
         let req = request.into_inner();
         let def = self
             .engine
             .get_task_def(&req.name)
             .await
             .map_err(engine_err_to_status)?;
-        let json = serde_json::to_string(&def)
-            .map_err(|e| Status::internal(format!("Serialization error: {e}")))?;
-        Ok(Response::new(pb::TaskDefResponse {
-            task_def_json: json,
-        }))
+        Ok(Response::new(proto_conv::task_def_to_proto(&def)))
     }
 
     async fn list_task_defs(
@@ -134,10 +123,8 @@ impl pb::metadata_service_server::MetadataService for MetadataServiceImpl {
             .list_task_defs()
             .await
             .map_err(engine_err_to_status)?;
-        let jsons: Result<Vec<String>, _> = defs.iter().map(|d| serde_json::to_string(d)).collect();
-        let jsons = jsons.map_err(|e| Status::internal(format!("Serialization error: {e}")))?;
         Ok(Response::new(pb::ListTaskDefsResponse {
-            task_defs_json: jsons,
+            task_defs: defs.iter().map(proto_conv::task_def_to_proto).collect(),
         }))
     }
 

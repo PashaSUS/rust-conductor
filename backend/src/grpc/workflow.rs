@@ -2,9 +2,9 @@ use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
 use crate::engine::WorkflowEngine;
-use crate::models;
 use super::pb;
 use super::metadata::engine_err_to_status;
+use super::proto_conv;
 
 pub struct WorkflowServiceImpl {
     engine: Arc<WorkflowEngine>,
@@ -26,9 +26,7 @@ impl pb::workflow_service_server::WorkflowService for WorkflowServiceImpl {
         &self,
         request: Request<pb::StartWorkflowRequest>,
     ) -> Result<Response<pb::StartWorkflowResponse>, Status> {
-        let req: models::StartWorkflowRequest =
-            serde_json::from_str(&request.into_inner().start_workflow_json)
-                .map_err(|e| Status::invalid_argument(format!("Invalid StartWorkflowRequest JSON: {e}")))?;
+        let req = proto_conv::start_workflow_from_proto(request.into_inner());
         let wf_id = self.engine.start_workflow(&req).await.map_err(engine_err_to_status)?;
         Ok(Response::new(pb::StartWorkflowResponse { workflow_id: wf_id }))
     }
@@ -36,15 +34,13 @@ impl pb::workflow_service_server::WorkflowService for WorkflowServiceImpl {
     async fn get_workflow(
         &self,
         request: Request<pb::GetWorkflowRequest>,
-    ) -> Result<Response<pb::WorkflowResponse>, Status> {
+    ) -> Result<Response<pb::WorkflowPb>, Status> {
         let wf = self
             .engine
             .get_workflow(&request.into_inner().workflow_id)
             .await
             .map_err(engine_err_to_status)?;
-        let json = serde_json::to_string(&wf)
-            .map_err(|e| Status::internal(format!("Serialization error: {e}")))?;
-        Ok(Response::new(pb::WorkflowResponse { workflow_json: json }))
+        Ok(Response::new(proto_conv::workflow_to_proto(wf)))
     }
 
     async fn terminate_workflow(
@@ -120,9 +116,7 @@ impl pb::workflow_service_server::WorkflowService for WorkflowServiceImpl {
         request: Request<pb::RerunWorkflowRequest>,
     ) -> Result<Response<pb::StartWorkflowResponse>, Status> {
         let inner = request.into_inner();
-        let req: models::RerunWorkflowRequest =
-            serde_json::from_str(&inner.rerun_request_json)
-                .map_err(|e| Status::invalid_argument(format!("Invalid RerunWorkflowRequest JSON: {e}")))?;
+        let req = proto_conv::rerun_from_proto(&inner);
         let wf_id = self
             .engine
             .rerun_workflow(&inner.workflow_id, &req)
@@ -147,9 +141,7 @@ impl pb::workflow_service_server::WorkflowService for WorkflowServiceImpl {
         request: Request<pb::SkipTaskRequest>,
     ) -> Result<Response<pb::Empty>, Status> {
         let inner = request.into_inner();
-        let skip_req: models::SkipTaskRequest =
-            serde_json::from_str(&inner.skip_request_json)
-                .map_err(|e| Status::invalid_argument(format!("Invalid SkipTaskRequest JSON: {e}")))?;
+        let skip_req = proto_conv::skip_task_from_proto(&inner);
         self.engine
             .skip_task(&inner.workflow_id, &inner.task_reference_name, &skip_req)
             .await
@@ -181,12 +173,9 @@ impl pb::workflow_service_server::WorkflowService for WorkflowServiceImpl {
             )
             .await
             .map_err(engine_err_to_status)?;
-        let jsons: Result<Vec<String>, _> =
-            result.results.iter().map(|r| serde_json::to_string(r)).collect();
-        let jsons = jsons.map_err(|e| Status::internal(format!("Serialization error: {e}")))?;
         Ok(Response::new(pb::WorkflowSearchResponse {
             total_hits: result.total_hits,
-            results_json: jsons,
+            results: result.results.iter().map(proto_conv::workflow_summary_to_proto).collect(),
         }))
     }
 

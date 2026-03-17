@@ -1,5 +1,7 @@
 use deadpool_redis::{Config, Pool, Runtime};
 use rand::{seq::SliceRandom, thread_rng};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -51,7 +53,16 @@ impl ShardedRedis {
         })
     }
 
-    /// Randomly pick a pool for a push (to spread hot queues across all shards).
+    /// Deterministically route a key to a specific Redis shard.
+    /// This ensures HSET and HGET for the same key always hit the same shard.
+    pub fn pool_for_key(&self, key: &str) -> &RedisPool {
+        let mut hasher = DefaultHasher::new();
+        key.hash(&mut hasher);
+        let idx = (hasher.finish() as usize) % self.pools.len();
+        &self.pools[idx]
+    }
+
+    /// Randomly pick a pool for operations that don't need deterministic routing.
     pub fn random_pool(&self) -> &RedisPool {
         let pools = &self.pools;
         let mut rng = thread_rng();

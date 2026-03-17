@@ -7,16 +7,22 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 
+const CONSUMER_POOL_SIZE: usize = 4;
+
 /// Kafka-backed task queue. Each task type maps to a Kafka topic
 /// (`conductor.task.{task_type}`). Provides durable, at-least-once delivery
 /// with automatic redelivery on consumer failure.
 ///
-/// Redis is still used for O(1) task-routing lookups and queue pause flags.
+/// Uses a pool of consumers per task type to avoid mutex serialization
+/// under high concurrency.
 #[derive(Clone)]
 pub struct KafkaTaskQueue {
     producer: FutureProducer,
-    consumers: Arc<std::sync::RwLock<HashMap<String, Arc<Mutex<StreamConsumer>>>>>,
+    /// Per-task-type pool of consumers. Each entry is a Vec of mutex-wrapped
+    /// consumers; callers round-robin across them to reduce contention.
+    consumer_pools: Arc<std::sync::RwLock<HashMap<String, Arc<Vec<Arc<Mutex<StreamConsumer>>>>>>>,
     brokers: String,
+    next_idx: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl KafkaTaskQueue {
@@ -37,8 +43,9 @@ impl KafkaTaskQueue {
 
         Ok(Self {
             producer,
-            consumers: Arc::new(std::sync::RwLock::new(HashMap::new())),
+            consumer_pools: Arc::new(std::sync::RwLock::new(HashMap::new())),
             brokers: brokers.to_string(),
+            next_idx: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         })
     }
 
@@ -46,44 +53,55 @@ impl KafkaTaskQueue {
         format!("conductor.task.{task_type}")
     }
 
-    /// Get or create a consumer for the given task type.
+    /// Get or create a consumer pool for the given task type.
+    /// Returns one consumer from the pool via round-robin to reduce contention.
     fn get_or_create_consumer(&self, task_type: &str) -> Arc<Mutex<StreamConsumer>> {
+        let pool = self.get_or_create_pool(task_type);
+        let idx = self.next_idx.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % pool.len();
+        pool[idx].clone()
+    }
+
+    fn get_or_create_pool(&self, task_type: &str) -> Arc<Vec<Arc<Mutex<StreamConsumer>>>> {
         // Fast path: read lock
         {
-            let consumers = self.consumers.read().unwrap();
-            if let Some(c) = consumers.get(task_type) {
-                return c.clone();
+            let pools = self.consumer_pools.read().unwrap();
+            if let Some(pool) = pools.get(task_type) {
+                return pool.clone();
             }
         }
 
-        // Slow path: create consumer outside lock, then insert
+        // Slow path: create consumer pool outside lock, then insert
         let topic = Self::topic_name(task_type);
-        let consumer: StreamConsumer = ClientConfig::new()
-            .set("bootstrap.servers", &self.brokers)
-            .set("group.id", "conductor-workers")
-            .set("enable.auto.commit", "false")
-            .set("auto.offset.reset", "earliest")
-            .set("session.timeout.ms", "10000")
-            .set("max.poll.interval.ms", "300000")
-            .set("fetch.min.bytes", "1")
-            .set("fetch.wait.max.ms", "100")
-            .create()
-            .expect("Failed to create Kafka consumer");
+        let mut pool = Vec::with_capacity(CONSUMER_POOL_SIZE);
+        for i in 0..CONSUMER_POOL_SIZE {
+            let consumer: StreamConsumer = ClientConfig::new()
+                .set("bootstrap.servers", &self.brokers)
+                .set("group.id", "conductor-workers")
+                .set("enable.auto.commit", "false")
+                .set("auto.offset.reset", "earliest")
+                .set("session.timeout.ms", "10000")
+                .set("max.poll.interval.ms", "300000")
+                .set("fetch.min.bytes", "1")
+                .set("fetch.wait.max.ms", "100")
+                .create()
+                .expect("Failed to create Kafka consumer");
 
-        consumer
-            .subscribe(&[&topic])
-            .expect("Failed to subscribe to Kafka topic");
+            consumer
+                .subscribe(&[&topic])
+                .expect("Failed to subscribe to Kafka topic");
 
-        tracing::info!(task_type = %task_type, topic = %topic, "Created Kafka consumer");
+            tracing::info!(task_type = %task_type, topic = %topic, pool_idx = i, "Created Kafka consumer");
+            pool.push(Arc::new(Mutex::new(consumer)));
+        }
 
-        let arc = Arc::new(Mutex::new(consumer));
+        let arc_pool = Arc::new(pool);
 
         // Write lock to insert (double-check)
-        let mut consumers = self.consumers.write().unwrap();
-        consumers
+        let mut pools = self.consumer_pools.write().unwrap();
+        pools
             .entry(task_type.to_string())
-            .or_insert_with(|| arc.clone());
-        consumers.get(task_type).unwrap().clone()
+            .or_insert_with(|| arc_pool.clone());
+        pools.get(task_type).unwrap().clone()
     }
 
     /// Enqueue a task_id onto the Kafka topic for the given task type.

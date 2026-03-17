@@ -443,6 +443,38 @@ impl WorkflowEngine {
                     );
                     EngineError::Redis(e)
                 })?;
+        } else {
+            // Task already exists — if it's still SCHEDULED, re-enqueue it
+            // because the original Kafka push may have been lost.
+            let db = self.shards.shard_for(workflow_id);
+            let status: Option<String> = sqlx::query_scalar(
+                "SELECT status FROM task WHERE task_id = $1",
+            )
+            .bind(&task_id)
+            .fetch_optional(db)
+            .await
+            .map_err(|e| EngineError::Database(e.to_string()))?;
+
+            if status.as_deref() == Some("SCHEDULED") {
+                tracing::warn!(
+                    workflow_id = %workflow_id,
+                    task_id = %task_id,
+                    "Re-enqueuing existing SCHEDULED task (possible lost enqueue)"
+                );
+                self.set_task_routing(&task_id, workflow_id).await?;
+                self.kafka
+                    .enqueue(&task_def.name, &task_id)
+                    .await
+                    .map_err(|e| {
+                        tracing::error!(
+                            workflow_id = %workflow_id,
+                            task_id = %task_id,
+                            error = %e,
+                            "Kafka re-enqueue failed for existing SCHEDULED task"
+                        );
+                        EngineError::Redis(e)
+                    })?;
+            }
         }
         Ok(())
     }

@@ -73,7 +73,7 @@ impl WorkflowEngine {
     ) -> Result<(), EngineError> {
         let mut conn = self
             .redis
-            .random_pool()
+            .pool_for_key(task_id)
             .get()
             .await
             .map_err(|e| {
@@ -100,7 +100,7 @@ impl WorkflowEngine {
     ) -> Result<Option<String>, EngineError> {
         let mut conn = self
             .redis
-            .random_pool()
+            .pool_for_key(task_id)
             .get()
             .await
             .map_err(|e| {
@@ -123,7 +123,7 @@ impl WorkflowEngine {
     pub(crate) async fn delete_task_routing(&self, task_id: &str) -> Result<(), EngineError> {
         let mut conn = self
             .redis
-            .random_pool()
+            .pool_for_key(task_id)
             .get()
             .await
             .map_err(|e| {
@@ -168,18 +168,14 @@ impl WorkflowEngine {
             }
             return Ok(None);
         }
-        // Fallback: sequential probe (much cheaper than parallel fan-out)
-        for shard in self.shards.all_shards() {
-            let row: Option<(String,)> =
-                sqlx::query_as("SELECT workflow_instance_id FROM task WHERE task_id = $1")
-                    .bind(task_id)
-                    .fetch_optional(shard)
-                    .await
-                    .map_err(|e| {
-                        tracing::error!(task_id = %task_id, error = %e, "DB error during shard fan-out for task routing");
-                        EngineError::Database(e.to_string())
-                    })?;
-            if let Some((wf_id,)) = row {
+        // Fallback: parallel fan-out across all shards
+        let futs: Vec<_> = self.shards.all_shards().iter().map(|shard| {
+            sqlx::query_as::<_, (String,)>("SELECT workflow_instance_id FROM task WHERE task_id = $1")
+                .bind(task_id)
+                .fetch_optional(shard)
+        }).collect();
+        for result in futures::future::join_all(futs).await {
+            if let Ok(Some((wf_id,))) = result {
                 let _ = self.set_task_routing(task_id, &wf_id).await;
                 return Ok(Some((wf_id.clone(), self.shards.shard_for(&wf_id))));
             }

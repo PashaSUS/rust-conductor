@@ -3,6 +3,7 @@ use tonic::{Request, Response, Status};
 
 use crate::engine::WorkflowEngine;
 use super::pb;
+use super::proto_conv;
 use super::metadata::engine_err_to_status;
 
 pub struct AdminServiceImpl {
@@ -26,9 +27,9 @@ impl pb::admin_service_server::AdminService for AdminServiceImpl {
             .get_all_config()
             .await
             .map_err(engine_err_to_status)?;
-        let json = serde_json::to_string(&config)
-            .map_err(|e| Status::internal(format!("Serialization error: {e}")))?;
-        Ok(Response::new(pb::ConfigResponse { config_json: json }))
+        Ok(Response::new(pb::ConfigResponse {
+            config: Some(proto_conv::hashmap_to_struct(&config)),
+        }))
     }
 
     async fn sweep_workflow(
@@ -81,11 +82,6 @@ impl pb::admin_service_server::AdminService for AdminServiceImpl {
         _request: Request<pb::Empty>,
     ) -> Result<Response<pb::HealthCheckResponse>, Status> {
         let status = self.engine.health_check().await.map_err(engine_err_to_status)?;
-        let json = serde_json::to_string(&status)
-            .map_err(|e| Status::internal(format!("Serialization error: {e}")))?;
-        Ok(Response::new(pb::HealthCheckResponse {
-            healthy: status.healthy,
-            health_results_json: json,
-        }))
+        Ok(Response::new(proto_conv::health_to_proto(&status)))
     }
 }

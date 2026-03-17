@@ -2,9 +2,8 @@
 FROM rust:1.94-slim AS builder
 WORKDIR /app
 RUN apt-get update && apt-get install -y \
-    pkg-config libssl-dev curl protobuf-compiler \
-    cmake build-essential \
-    zlib1g-dev libsasl2-dev \
+    pkg-config libssl-dev libcurl4-openssl-dev curl protobuf-compiler \
+    build-essential cmake \
     && rm -rf /var/lib/apt/lists/*
 COPY Cargo.toml Cargo.lock ./
 COPY build.rs ./
@@ -19,7 +18,7 @@ COPY src ./src
 RUN cargo build --release
 
 # Runtime stage
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app/target/release/rust-conductor /usr/local/bin/rust-conductor
 EXPOSE 8080 50051

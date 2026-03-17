@@ -2,41 +2,40 @@ syntax = "proto3";
 
 package conductor;
 
+import "google/protobuf/struct.proto";
+
 // ─────────────────────────────────────────────────────────────────────────────
-// Conductor gRPC Service Definitions
+// Conductor gRPC Service Definitions  (typed proto messages)
 //
-// JSON-encoded strings are used for fields that contain arbitrary nested data
-// (workflow inputs/outputs, variables, task data) to preserve full fidelity
-// with the existing REST API. This avoids lossy proto ↔ JSON round-trips for
-// dynamic payloads while keeping typed fields for everything structural.
+// Dynamic JSON payloads (workflow input/output, task data, variables) use
+// google.protobuf.Struct for zero-copy interop.  All structural fields are
+// strongly typed so the server never has to JSON-parse the hot path.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Metadata Service — workflow & task definitions
+// Metadata Service
 // ══════════════════════════════════════════════════════════════════════════════
 
 service MetadataService {
-  // Workflow definitions
   rpc RegisterWorkflowDef(RegisterWorkflowDefRequest)  returns (Empty);
   rpc UpdateWorkflowDefs(UpdateWorkflowDefsRequest)     returns (Empty);
-  rpc GetWorkflowDef(GetWorkflowDefRequest)             returns (WorkflowDefResponse);
+  rpc GetWorkflowDef(GetWorkflowDefRequest)             returns (WorkflowDefPb);
   rpc ListWorkflowDefs(Empty)                           returns (ListWorkflowDefsResponse);
   rpc DeleteWorkflowDef(DeleteWorkflowDefRequest)       returns (Empty);
 
-  // Task definitions
   rpc RegisterTaskDefs(RegisterTaskDefsRequest)         returns (Empty);
-  rpc GetTaskDef(GetTaskDefRequest)                     returns (TaskDefResponse);
+  rpc GetTaskDef(GetTaskDefRequest)                     returns (TaskDefPb);
   rpc ListTaskDefs(Empty)                               returns (ListTaskDefsResponse);
   rpc DeleteTaskDef(DeleteTaskDefRequest)               returns (Empty);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Workflow Service — execution lifecycle
+// Workflow Service
 // ══════════════════════════════════════════════════════════════════════════════
 
 service WorkflowService {
   rpc StartWorkflow(StartWorkflowRequest)               returns (StartWorkflowResponse);
-  rpc GetWorkflow(GetWorkflowRequest)                   returns (WorkflowResponse);
+  rpc GetWorkflow(GetWorkflowRequest)                   returns (WorkflowPb);
   rpc TerminateWorkflow(TerminateWorkflowRequest)       returns (Empty);
   rpc DeleteWorkflow(DeleteWorkflowRequest)             returns (Empty);
   rpc PauseWorkflow(WorkflowIdRequest)                  returns (Empty);
@@ -52,12 +51,12 @@ service WorkflowService {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Task Service — worker poll / update / ack
+// Task Service
 // ══════════════════════════════════════════════════════════════════════════════
 
 service TaskService {
   rpc UpdateTask(UpdateTaskRequest)                     returns (UpdateTaskResponse);
-  rpc GetTask(GetTaskRequest)                           returns (TaskResultResponse);
+  rpc GetTask(GetTaskRequest)                           returns (TaskResultPb);
   rpc PollTask(PollTaskRequest)                         returns (PollTaskResponse);
   rpc BatchPollTasks(BatchPollTasksRequest)             returns (BatchPollTasksResponse);
   rpc AckTask(AckTaskRequest)                           returns (AckTaskResponse);
@@ -68,19 +67,19 @@ service TaskService {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Event Service — event handler management
+// Event Service
 // ══════════════════════════════════════════════════════════════════════════════
 
 service EventService {
-  rpc RegisterEventHandler(EventHandlerProto)           returns (Empty);
-  rpc UpdateEventHandler(EventHandlerProto)             returns (Empty);
+  rpc RegisterEventHandler(EventHandlerPb)              returns (Empty);
+  rpc UpdateEventHandler(EventHandlerPb)                returns (Empty);
   rpc ListEventHandlers(Empty)                          returns (ListEventHandlersResponse);
   rpc GetEventHandlersForEvent(GetEventHandlersRequest) returns (ListEventHandlersResponse);
   rpc DeleteEventHandler(DeleteEventHandlerRequest)     returns (Empty);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Admin Service — config, sweep, queue control
+// Admin Service
 // ══════════════════════════════════════════════════════════════════════════════
 
 service AdminService {
@@ -93,7 +92,7 @@ service AdminService {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Bulk Service — batch workflow operations
+// Bulk Service
 // ══════════════════════════════════════════════════════════════════════════════
 
 service BulkService {
@@ -105,7 +104,7 @@ service BulkService {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Common / Shared Messages
+// Common / Shared
 // ══════════════════════════════════════════════════════════════════════════════
 
 message Empty {}
@@ -119,31 +118,114 @@ message QueueNameRequest {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// Workflow Definition (typed)
+// ══════════════════════════════════════════════════════════════════════════════
+
+message WorkflowDefPb {
+  string name                          = 1;
+  string description                   = 2;
+  int32  version                       = 3;
+  repeated WorkflowTaskPb tasks        = 4;
+  repeated string input_parameters     = 5;
+  google.protobuf.Struct output_parameters = 6;
+  string failure_workflow              = 7;
+  int32  schema_version                = 8;
+  bool   restartable                   = 9;
+  bool   workflow_status_listener_enabled = 10;
+  string owner_email                   = 11;
+  string timeout_policy                = 12;
+  int64  timeout_seconds               = 13;
+  google.protobuf.Struct variables     = 14;
+  google.protobuf.Struct input_template = 15;
+  string owner_app                     = 16;
+  int64  create_time                   = 17;
+  int64  update_time                   = 18;
+}
+
+message WorkflowTaskPb {
+  string name                          = 1;
+  string task_reference_name           = 2;
+  string type                          = 3;
+  string description                   = 4;
+  google.protobuf.Struct input_parameters = 5;
+  bool   optional                      = 6;
+  int32  start_delay                   = 7;
+  SubWorkflowParamsPb sub_workflow_param = 8;
+  repeated string join_on              = 9;
+  repeated ForkBranchPb fork_tasks     = 10;
+  map<string, TaskListPb> decision_cases = 11;
+  repeated WorkflowTaskPb default_case = 12;
+  string case_expression               = 13;
+  string case_value_param              = 14;
+  string sink                          = 15;
+  bool   async_complete                = 16;
+  int32  retry_count                   = 17;
+  string evaluator_type                = 18;
+  string expression                    = 19;
+  string script_expression             = 20;
+  string dynamic_task_name_param       = 21;
+}
+
+message ForkBranchPb {
+  repeated WorkflowTaskPb tasks = 1;
+}
+
+message TaskListPb {
+  repeated WorkflowTaskPb tasks = 1;
+}
+
+message SubWorkflowParamsPb {
+  string name    = 1;
+  int32  version = 2;
+  map<string, string> task_to_domain = 3;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Task Definition (typed)
+// ══════════════════════════════════════════════════════════════════════════════
+
+message TaskDefPb {
+  string name                          = 1;
+  string description                   = 2;
+  int32  retry_count                   = 3;
+  string retry_logic                   = 4;
+  int32  retry_delay_seconds           = 5;
+  int64  timeout_seconds               = 6;
+  string timeout_policy                = 7;
+  int64  response_timeout_seconds      = 8;
+  int32  concurrent_exec_limit         = 9;
+  repeated string input_keys           = 10;
+  repeated string output_keys          = 11;
+  google.protobuf.Struct input_template = 12;
+  int32  rate_limit_per_frequency      = 13;
+  int32  rate_limit_frequency_in_seconds = 14;
+  string owner_email                   = 15;
+  int32  poll_timeout_seconds          = 16;
+  int32  backoff_scale_factor          = 17;
+  string owner_app                     = 18;
+  int64  create_time                   = 19;
+  int64  update_time                   = 20;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // Metadata Messages
 // ══════════════════════════════════════════════════════════════════════════════
 
-// Workflow/task definitions are carried as JSON strings to preserve the full
-// nested structure without duplicating the entire schema in proto.
-
 message RegisterWorkflowDefRequest {
-  string workflow_def_json = 1;   // JSON-encoded WorkflowDef
+  WorkflowDefPb workflow_def = 1;
 }
 
 message UpdateWorkflowDefsRequest {
-  repeated string workflow_defs_json = 1;  // each element is a JSON-encoded WorkflowDef
+  repeated WorkflowDefPb workflow_defs = 1;
 }
 
 message GetWorkflowDefRequest {
   string name    = 1;
-  int32  version = 2;  // 0 = latest
-}
-
-message WorkflowDefResponse {
-  string workflow_def_json = 1;
+  int32  version = 2;
 }
 
 message ListWorkflowDefsResponse {
-  repeated string workflow_defs_json = 1;
+  repeated WorkflowDefPb workflow_defs = 1;
 }
 
 message DeleteWorkflowDefRequest {
@@ -152,19 +234,15 @@ message DeleteWorkflowDefRequest {
 }
 
 message RegisterTaskDefsRequest {
-  repeated string task_defs_json = 1;
+  repeated TaskDefPb task_defs = 1;
 }
 
 message GetTaskDefRequest {
   string name = 1;
 }
 
-message TaskDefResponse {
-  string task_def_json = 1;
-}
-
 message ListTaskDefsResponse {
-  repeated string task_defs_json = 1;
+  repeated TaskDefPb task_defs = 1;
 }
 
 message DeleteTaskDefRequest {
@@ -172,11 +250,19 @@ message DeleteTaskDefRequest {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Workflow Messages
+// Workflow Messages (typed)
 // ══════════════════════════════════════════════════════════════════════════════
 
 message StartWorkflowRequest {
-  string start_workflow_json = 1;  // JSON-encoded StartWorkflowRequest
+  string name                          = 1;
+  int32  version                       = 2;
+  google.protobuf.Struct input         = 3;
+  string correlation_id                = 4;
+  int32  priority                      = 5;
+  map<string, string> task_to_domain   = 6;
+  string created_by                    = 7;
+  string idempotency_key               = 8;
+  string external_input_payload_storage_path = 9;
 }
 
 message StartWorkflowResponse {
@@ -185,10 +271,29 @@ message StartWorkflowResponse {
 
 message GetWorkflowRequest {
   string workflow_id = 1;
+  bool   include_tasks = 2;
 }
 
-message WorkflowResponse {
-  string workflow_json = 1;  // JSON-encoded Workflow
+message WorkflowPb {
+  string workflow_id                   = 1;
+  string workflow_name                 = 2;
+  int32  workflow_version              = 3;
+  string status                        = 4;
+  google.protobuf.Struct input         = 5;
+  google.protobuf.Struct output        = 6;
+  repeated TaskResultPb tasks          = 7;
+  string correlation_id                = 8;
+  int64  start_time                    = 9;
+  int64  end_time                      = 10;
+  int64  update_time                   = 11;
+  string reason_for_incompletion       = 12;
+  int32  priority                      = 13;
+  google.protobuf.Struct variables     = 14;
+  string parent_workflow_id            = 15;
+  string parent_workflow_task_id       = 16;
+  map<string, string> task_to_domain   = 17;
+  repeated string failed_reference_task_names = 18;
+  string created_by                    = 19;
 }
 
 message TerminateWorkflowRequest {
@@ -202,14 +307,19 @@ message DeleteWorkflowRequest {
 }
 
 message RerunWorkflowRequest {
-  string workflow_id       = 1;
-  string rerun_request_json = 2;  // JSON-encoded RerunWorkflowRequest
+  string workflow_id              = 1;
+  string re_run_from_workflow_id  = 2;
+  google.protobuf.Struct workflow_input = 3;
+  string re_run_from_task_id      = 4;
+  google.protobuf.Struct task_input = 5;
+  string correlation_id           = 6;
 }
 
 message SkipTaskRequest {
-  string workflow_id          = 1;
-  string task_reference_name  = 2;
-  string skip_request_json    = 3;  // JSON-encoded SkipTaskRequest
+  string workflow_id                   = 1;
+  string task_reference_name           = 2;
+  google.protobuf.Struct task_input    = 3;
+  google.protobuf.Struct task_output   = 4;
 }
 
 message WorkflowStatsResponse {
@@ -225,8 +335,22 @@ message SearchWorkflowsRequest {
 }
 
 message WorkflowSearchResponse {
-  int64           total_hits = 1;
-  repeated string results_json = 2;  // each element is JSON-encoded WorkflowSummary
+  int64                     total_hits = 1;
+  repeated WorkflowSummaryPb results  = 2;
+}
+
+message WorkflowSummaryPb {
+  string workflow_id                   = 1;
+  string workflow_type                 = 2;
+  int32  version                       = 3;
+  string status                        = 4;
+  int64  start_time                    = 5;
+  int64  update_time                   = 6;
+  int64  end_time                      = 7;
+  string correlation_id                = 8;
+  string reason_for_incompletion       = 9;
+  int32  priority                      = 10;
+  int64  execution_time                = 11;
 }
 
 message GetRunningWorkflowsRequest {
@@ -241,11 +365,17 @@ message RunningWorkflowsResponse {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Task Messages
+// Task Messages (typed)
 // ══════════════════════════════════════════════════════════════════════════════
 
 message UpdateTaskRequest {
-  string task_update_json = 1;  // JSON-encoded TaskUpdateRequest
+  string task_id                       = 1;
+  string workflow_instance_id          = 2;
+  string status                        = 3;
+  google.protobuf.Struct output_data   = 4;
+  string reason_for_incompletion       = 5;
+  int64  callback_after_seconds        = 6;
+  string worker_id                     = 7;
 }
 
 message UpdateTaskResponse {
@@ -256,8 +386,26 @@ message GetTaskRequest {
   string task_id = 1;
 }
 
-message TaskResultResponse {
-  string task_result_json = 1;  // JSON-encoded TaskResult
+message TaskResultPb {
+  string task_id                       = 1;
+  string workflow_instance_id          = 2;
+  string task_type                     = 3;
+  string task_def_name                 = 4;
+  string reference_task_name           = 5;
+  string status                        = 6;
+  google.protobuf.Struct input_data    = 7;
+  google.protobuf.Struct output_data   = 8;
+  string reason_for_incompletion       = 9;
+  int64  scheduled_time                = 10;
+  int64  start_time                    = 11;
+  int64  end_time                      = 12;
+  int64  update_time                   = 13;
+  int32  poll_count                    = 14;
+  string worker_id                     = 15;
+  int32  seq                           = 16;
+  int32  retry_count                   = 17;
+  int64  callback_after_seconds        = 18;
+  string sub_workflow_id               = 19;
 }
 
 message PollTaskRequest {
@@ -266,8 +414,23 @@ message PollTaskRequest {
 }
 
 message PollTaskResponse {
-  bool   found          = 1;
-  string poll_task_json = 2;  // JSON-encoded PollTask (empty string if !found)
+  bool   found                         = 1;
+  PollTaskPb task                      = 2;
+}
+
+message PollTaskPb {
+  string task_id                       = 1;
+  string workflow_instance_id          = 2;
+  string task_type                     = 3;
+  string task_def_name                 = 4;
+  string reference_task_name           = 5;
+  string status                        = 6;
+  google.protobuf.Struct input_data    = 7;
+  int64  scheduled_time                = 8;
+  int64  start_time                    = 9;
+  int64  callback_after_seconds        = 10;
+  int32  poll_count                    = 11;
+  int32  retry_count                   = 12;
 }
 
 message BatchPollTasksRequest {
@@ -278,7 +441,7 @@ message BatchPollTasksRequest {
 }
 
 message BatchPollTasksResponse {
-  repeated string poll_tasks_json = 1;
+  repeated PollTaskPb tasks = 1;
 }
 
 message AckTaskRequest {
@@ -319,8 +482,21 @@ message SearchTasksRequest {
 }
 
 message TaskSearchResponse {
-  int64           total_hits   = 1;
-  repeated string results_json = 2;  // each element is JSON-encoded TaskSummary
+  int64                  total_hits = 1;
+  repeated TaskSummaryPb results   = 2;
+}
+
+message TaskSummaryPb {
+  string task_id                       = 1;
+  string workflow_instance_id          = 2;
+  string task_type                     = 3;
+  string task_def_name                 = 4;
+  string reference_task_name           = 5;
+  string status                        = 6;
+  int64  scheduled_time                = 7;
+  int64  start_time                    = 8;
+  int64  end_time                      = 9;
+  int64  update_time                   = 10;
 }
 
 message QueueSizesResponse {
@@ -328,15 +504,29 @@ message QueueSizesResponse {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Event Messages
+// Event Messages (typed)
 // ══════════════════════════════════════════════════════════════════════════════
 
-message EventHandlerProto {
-  string event_handler_json = 1;  // JSON-encoded EventHandler
+message EventHandlerPb {
+  string name                          = 1;
+  string event                         = 2;
+  string condition                     = 3;
+  repeated EventActionPb actions       = 4;
+  bool   active                        = 5;
+  string evaluator_type                = 6;
+}
+
+message EventActionPb {
+  string action                        = 1;
+  google.protobuf.Struct start_workflow = 2;
+  google.protobuf.Struct complete_task = 3;
+  google.protobuf.Struct fail_task     = 4;
+  google.protobuf.Struct terminate_workflow = 5;
+  google.protobuf.Struct update_workflow_variables = 6;
 }
 
 message ListEventHandlersResponse {
-  repeated string event_handlers_json = 1;
+  repeated EventHandlerPb event_handlers = 1;
 }
 
 message GetEventHandlersRequest {
@@ -353,7 +543,7 @@ message DeleteEventHandlerRequest {
 // ══════════════════════════════════════════════════════════════════════════════
 
 message ConfigResponse {
-  string config_json = 1;  // JSON-encoded HashMap<String, Value>
+  google.protobuf.Struct config = 1;
 }
 
 message QueueStatusResponse {
@@ -362,7 +552,7 @@ message QueueStatusResponse {
 
 message HealthCheckResponse {
   bool   healthy              = 1;
-  string health_results_json  = 2;  // JSON-encoded HealthCheckStatus
+  google.protobuf.Struct details = 2;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

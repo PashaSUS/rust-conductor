@@ -6,10 +6,43 @@ use serde_json::Value;
 use super::error::EngineError;
 use super::{is_task_failed, is_task_terminal, WorkflowEngine};
 use crate::models::*;
+use deadpool_redis::redis;
 
 impl WorkflowEngine {
     pub(crate) async fn advance_workflow(&self, workflow_id: &str) -> Result<(), EngineError> {
-        self.advance_workflow_inner(workflow_id).await
+        // Per-workflow distributed lock to prevent concurrent advance_workflow
+        // calls from racing to schedule the same next task.
+        let lock_key = format!("conductor:advance_lock:{}", workflow_id);
+        let pool = self.redis.pool_for_key(workflow_id);
+        let mut conn = pool.get().await.map_err(|e| {
+            tracing::error!(workflow_id = %workflow_id, error = %e, "Redis conn failed for advance lock");
+            EngineError::Redis(e.to_string())
+        })?;
+
+        let acquired: Option<String> = redis::cmd("SET")
+            .arg(&lock_key)
+            .arg("1")
+            .arg("NX")
+            .arg("EX")
+            .arg(30_u32)
+            .query_async(&mut *conn)
+            .await
+            .unwrap_or(None);
+
+        if acquired.is_none() {
+            tracing::debug!(workflow_id = %workflow_id, "advance_workflow skipped — lock held by another caller");
+            return Ok(());
+        }
+
+        let result = self.advance_workflow_inner(workflow_id).await;
+
+        // Release lock
+        let _: Result<(), _> = redis::cmd("DEL")
+            .arg(&lock_key)
+            .query_async(&mut *conn)
+            .await;
+
+        result
     }
 
     async fn advance_workflow_inner(&self, workflow_id: &str) -> Result<(), EngineError> {
@@ -171,8 +204,8 @@ impl WorkflowEngine {
                         }
                         "SUB_WORKFLOW" => {
                             if let Some(sub_id) = &task.sub_workflow_id {
-                                if let Ok(sub_wf) = self.get_workflow(sub_id).await {
-                                    match sub_wf.status {
+                                match self.get_workflow(sub_id).await {
+                                    Ok(sub_wf) => match sub_wf.status {
                                         WorkflowStatus::Completed => {
                                             self.complete_sub_workflow_task(
                                                 workflow_id,
@@ -190,7 +223,7 @@ impl WorkflowEngine {
                                                 sub_workflow_id = %sub_id,
                                                 sub_status = ?sub_wf.status,
                                                 task_id = %task.task_id,
-                                                "Sub-workflow ended with non-success status, failing parent task"
+                                                "Sub-workflow ended with non-success status, failing parent task and workflow"
                                             );
                                             self.fail_task(
                                                 workflow_id,
@@ -198,9 +231,32 @@ impl WorkflowEngine {
                                                 "Sub-workflow ended with non-success status",
                                             )
                                             .await?;
-                                            return Ok(false);
+                                            if !task_def.optional {
+                                                let wf_status = match sub_wf.status {
+                                                    WorkflowStatus::TimedOut => "TIMED_OUT",
+                                                    _ => "FAILED",
+                                                };
+                                                self.fail_workflow(
+                                                    workflow_id,
+                                                    Some(&format!(
+                                                        "Sub-workflow {} ended with status {:?}",
+                                                        sub_id, sub_wf.status
+                                                    )),
+                                                    wf_status,
+                                                )
+                                                .await?;
+                                            }
+                                            return Ok(true);
                                         }
                                         _ => {}
+                                    },
+                                    Err(e) => {
+                                        tracing::error!(
+                                            workflow_id = %workflow_id,
+                                            sub_workflow_id = %sub_id,
+                                            error = %e,
+                                            "Failed to fetch sub-workflow status"
+                                        );
                                     }
                                 }
                             }

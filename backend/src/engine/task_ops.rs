@@ -193,25 +193,26 @@ impl WorkflowEngine {
         }
 
         let mut tasks = Vec::with_capacity(task_ids.len());
-        for task_id in task_ids {
-            if let Some((_wf_id, db)) = self.resolve_task_shard(&task_id).await? {
-                if let Some(r) = sqlx::query_as::<_, TaskRow>("SELECT * FROM task WHERE task_id = $1")
-                    .bind(&task_id)
-                    .fetch_optional(db)
-                    .await
-                    .map_err(|e| EngineError::Database(e.to_string()))?
-                {
-                    let db = self.shards.shard_for(&r.workflow_instance_id);
-                    let now = Utc::now();
-                    sqlx::query(
-                        "UPDATE task SET status = 'IN_PROGRESS', start_time = $2, update_time = $2, poll_count = poll_count + 1, worker_id = $3 WHERE task_id = $1 AND status = 'SCHEDULED'",
-                    )
-                    .bind(&task_id)
-                    .bind(now)
-                    .bind(worker_id)
-                    .execute(db)
-                    .await
-                    .map_err(|e| EngineError::Database(e.to_string()))?;
+        for task_id in &task_ids {
+            let result = async {
+                if let Some((_wf_id, db)) = self.resolve_task_shard(task_id).await? {
+                    if let Some(r) = sqlx::query_as::<_, TaskRow>("SELECT * FROM task WHERE task_id = $1")
+                        .bind(task_id)
+                        .fetch_optional(db)
+                        .await
+                        .map_err(|e| EngineError::Database(e.to_string()))?
+                    {
+                        let db = self.shards.shard_for(&r.workflow_instance_id);
+                        let now = Utc::now();
+                        sqlx::query(
+                            "UPDATE task SET status = 'IN_PROGRESS', start_time = $2, update_time = $2, poll_count = poll_count + 1, worker_id = $3 WHERE task_id = $1 AND status = 'SCHEDULED'",
+                        )
+                        .bind(task_id)
+                        .bind(now)
+                        .bind(worker_id)
+                        .execute(db)
+                        .await
+                        .map_err(|e| EngineError::Database(e.to_string()))?;
 
                     tasks.push(PollTask {
                         task_id: r.task_id,
@@ -228,6 +229,15 @@ impl WorkflowEngine {
                         retry_count: r.retry_count,
                     });
                 }
+            }
+                Ok::<(), EngineError>(())
+            }
+            .await;
+
+            if let Err(e) = result {
+                // Re-enqueue on failure so the task is not lost from Kafka
+                tracing::warn!(task_id = %task_id, error = %e, "Re-enqueuing task after batch poll DB failure");
+                let _ = self.kafka.enqueue(task_type, task_id).await;
             }
         }
         Ok(tasks)

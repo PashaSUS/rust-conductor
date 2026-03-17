@@ -30,13 +30,14 @@ rand = { version = "0.8", features = ["std", "small_rng"] }
 anyhow = "1.0.102"
 
 # gRPC
-tonic = "0.12"
+tonic = { version = "0.12", features = ["gzip"] }
 prost = "0.13"
 prost-types = "0.13"
 tokio-stream = "0.1"
+tower = { version = "0.5", features = ["limit"] }
 
 # Kafka
-rdkafka = { version = "0.36", features = ["cmake-build", "tokio"] }
+rdkafka = { version = "0.36", features = ["tokio", "cmake-build"] }
 
 [build-dependencies]
 tonic-build = "0.12"

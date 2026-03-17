@@ -154,6 +154,7 @@ for /l %%r in (0,1,%LAST_REDIS_SHARD%) do (
 >> "%FILE%" echo     image: datalust/seq:latest
 >> "%FILE%" echo     environment:
 >> "%FILE%" echo       ACCEPT_EULA: "Y"
+>> "%FILE%" echo       SEQ_FIRSTRUN_NOAUTHENTICATION: "true"
 >> "%FILE%" echo     ports:
 >> "%FILE%" echo       - "9321:80"
 >> "%FILE%" echo     volumes:
@@ -224,7 +225,7 @@ for /l %%k in (0,1,%LAST_KAFKA%) do (
     >> "%FILE%" echo     volumes:
     >> "%FILE%" echo       - kafkadata-%%k:/var/lib/kafka/data
     >> "%FILE%" echo     healthcheck:
-    >> "%FILE%" echo       test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 ^> /dev/null 2^>^&1"]
+    >> "%FILE%" echo       test: ["CMD-SHELL", "nc -z localhost 9092"]
     >> "%FILE%" echo       interval: 10s
     >> "%FILE%" echo       timeout: 10s
     >> "%FILE%" echo       retries: 10
@@ -394,7 +395,7 @@ echo  Docker cleaned. Starting build...
 echo ========================================
 echo.
 
-docker compose up --build -d
+docker compose up --build --scale backend=%NUM_REPLICAS% -d
 
 set /a LAST_PG_PORT=5432+%LAST_SHARD%
 set /a LAST_PGB_PORT=6432+%LAST_SHARD%
