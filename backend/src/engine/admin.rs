@@ -88,6 +88,18 @@ impl WorkflowEngine {
             },
         });
 
+        let kafka_ok = self.kafka.health_check().await;
+
+        health_results.push(Health {
+            healthy: kafka_ok,
+            error_message: if kafka_ok { None } else { Some("Kafka connection failed".into()) },
+            details: {
+                let mut m = HashMap::new();
+                m.insert("name".into(), Value::String("kafka".into()));
+                m
+            },
+        });
+
         let all_healthy = health_results.iter().all(|h| h.healthy);
 
         Ok(HealthCheckStatus {

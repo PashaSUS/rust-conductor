@@ -431,17 +431,17 @@ impl WorkflowEngine {
 
         if is_new {
             self.set_task_routing(&task_id, workflow_id).await?;
-            let queue_key = format!("conductor:queue:{}", task_def.name);
-            let pool = self.redis.random_pool();
-            let mut conn: deadpool_redis::Connection = pool.get().await.map_err(|e| {
-                tracing::error!(workflow_id = %workflow_id, task_id = %task_id, error = %e, "Redis connection failed while queuing worker task");
-                EngineError::Redis(e.to_string())
-            })?;
-            let _: () = deadpool_redis::redis::AsyncCommands::lpush(&mut conn, &queue_key, &task_id)
+            self.kafka
+                .enqueue(&task_def.name, &task_id)
                 .await
                 .map_err(|e| {
-                    tracing::error!(workflow_id = %workflow_id, task_id = %task_id, queue = %queue_key, error = %e, "Redis LPUSH failed for worker task");
-                    EngineError::Redis(e.to_string())
+                    tracing::error!(
+                        workflow_id = %workflow_id,
+                        task_id = %task_id,
+                        error = %e,
+                        "Kafka enqueue failed for worker task"
+                    );
+                    EngineError::Redis(e)
                 })?;
         }
         Ok(())

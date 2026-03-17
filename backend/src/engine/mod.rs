@@ -11,6 +11,7 @@ mod system_tasks;
 mod task_ops;
 mod workflow_ops;
 
+use crate::store::kafka::KafkaTaskQueue;
 use crate::store::redis::ShardedRedis;
 pub use error::EngineError;
 pub use shard::ShardedPool;
@@ -53,11 +54,12 @@ const TASK_ROUTING_KEY: &str = "conductor:task_routing";
 pub struct WorkflowEngine {
     shards: ShardedPool,
     redis: ShardedRedis,
+    kafka: KafkaTaskQueue,
 }
 
 impl WorkflowEngine {
-    pub fn new(shards: ShardedPool, redis: ShardedRedis) -> Self {
-        Self { shards, redis }
+    pub fn new(shards: ShardedPool, redis: ShardedRedis, kafka: KafkaTaskQueue) -> Self {
+        Self { shards, redis, kafka }
     }
 
     // ── Task-shard routing helpers ─────────────────────────────────────

@@ -1,7 +1,9 @@
 pub struct AppConfig {
     pub host: String,
     pub port: u16,
+    pub grpc_port: u16,
     pub redis_urls: String,
+    pub kafka_brokers: String,
     /// Resolved list of shard database URLs (one per shard).
     pub shard_database_urls: Vec<String>,
 }
@@ -42,8 +44,14 @@ impl AppConfig {
                 .ok()
                 .and_then(|p| p.parse().ok())
                 .unwrap_or(8080),
+            grpc_port: std::env::var("GRPC_PORT")
+                .ok()
+                .and_then(|p| p.parse().ok())
+                .unwrap_or(50051),
             redis_urls: std::env::var("REDIS_URLS")
                 .unwrap_or_else(|_| "redis://localhost:6379".into()),
+            kafka_brokers: std::env::var("KAFKA_BROKERS")
+                .unwrap_or_else(|_| "localhost:9092".into()),
             shard_database_urls,
         }
     }

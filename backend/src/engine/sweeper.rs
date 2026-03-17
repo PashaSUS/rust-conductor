@@ -36,17 +36,16 @@ impl WorkflowEngine {
                 tracing::error!(count = orphans.len(), "Found orphaned SCHEDULED tasks, re-queuing");
                 for orphan in &orphans {
                     self.set_task_routing(&orphan.task_id, &orphan.workflow_instance_id).await?;
-                    let queue_key = format!("conductor:queue:{}", orphan.task_def_name);
-                    let pool = self.redis.random_pool();
-                    let mut conn: deadpool_redis::Connection = pool.get().await.map_err(|e| {
-                        tracing::error!(task_id = %orphan.task_id, error = %e, "Redis connection failed while re-queuing orphaned task");
-                        EngineError::Redis(e.to_string())
-                    })?;
-                    let _: () = deadpool_redis::redis::AsyncCommands::lpush(&mut conn, &queue_key, &orphan.task_id)
+                    self.kafka
+                        .enqueue(&orphan.task_def_name, &orphan.task_id)
                         .await
                         .map_err(|e| {
-                            tracing::error!(task_id = %orphan.task_id, queue = %queue_key, error = %e, "Redis LPUSH failed for orphaned task re-queue");
-                            EngineError::Redis(e.to_string())
+                            tracing::error!(
+                                task_id = %orphan.task_id,
+                                error = %e,
+                                "Kafka enqueue failed for orphaned task re-queue"
+                            );
+                            EngineError::Redis(e)
                         })?;
                     recovered += 1;
                 }

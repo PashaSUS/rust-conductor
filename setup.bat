@@ -40,6 +40,17 @@ if not defined valid (
     goto ask_redis_shards
 )
 
+:ask_kafka_brokers
+set /p NUM_KAFKA_BROKERS="How many Kafka brokers do you want? (1-4): "
+
+:: Validate input is a number between 1 and 4
+set "valid="
+for /l %%n in (1,1,4) do if "!NUM_KAFKA_BROKERS!"=="%%n" set "valid=1"
+if not defined valid (
+    echo Invalid input. Please enter a number between 1 and 4.
+    goto ask_kafka_brokers
+)
+
 echo.
 echo Configuring %NUM_SHARDS% shard(s)...
 echo.
@@ -155,6 +166,73 @@ for /l %%r in (0,1,%LAST_REDIS_SHARD%) do (
 >> "%FILE%" echo.
 
 
+:: ── Kafka Brokers (KRaft mode — no Zookeeper) ──
+set /a LAST_KAFKA=%NUM_KAFKA_BROKERS%-1
+
+:: Build controller quorum voters string: 1@kafka-0:9093,2@kafka-1:9093,...
+set "KAFKA_VOTERS="
+for /l %%k in (0,1,%LAST_KAFKA%) do (
+    set /a VOTER_ID=%%k+1
+    if "!KAFKA_VOTERS!"=="" (
+        set "KAFKA_VOTERS=!VOTER_ID!@kafka-%%k:9093"
+    ) else (
+        set "KAFKA_VOTERS=!KAFKA_VOTERS!,!VOTER_ID!@kafka-%%k:9093"
+    )
+)
+
+:: Build KAFKA_BROKERS connection string for backend
+set "KAFKA_BROKERS="
+for /l %%k in (0,1,%LAST_KAFKA%) do (
+    if "!KAFKA_BROKERS!"=="" (
+        set "KAFKA_BROKERS=kafka-%%k:9092"
+    ) else (
+        set "KAFKA_BROKERS=!KAFKA_BROKERS!,kafka-%%k:9092"
+    )
+)
+
+for /l %%k in (0,1,%LAST_KAFKA%) do (
+    set /a KAFKA_PORT=9092+%%k
+    set /a KAFKA_NODE=%%k+1
+    if !NUM_KAFKA_BROKERS! GTR 1 (
+        set "KAFKA_RF=3"
+        if !NUM_KAFKA_BROKERS! LSS 3 set "KAFKA_RF=!NUM_KAFKA_BROKERS!"
+    ) else (
+        set "KAFKA_RF=1"
+    )
+    >> "%FILE%" echo   # ── Kafka Broker %%k ──
+    >> "%FILE%" echo   kafka-%%k:
+    >> "%FILE%" echo     image: apache/kafka:3.8.0
+    >> "%FILE%" echo     ports:
+    >> "%FILE%" echo       - "!KAFKA_PORT!:9092"
+    >> "%FILE%" echo     environment:
+    >> "%FILE%" echo       KAFKA_NODE_ID: "!KAFKA_NODE!"
+    >> "%FILE%" echo       KAFKA_PROCESS_ROLES: "broker,controller"
+    >> "%FILE%" echo       KAFKA_CONTROLLER_QUORUM_VOTERS: "!KAFKA_VOTERS!"
+    >> "%FILE%" echo       KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093"
+    >> "%FILE%" echo       KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka-%%k:9092"
+    >> "%FILE%" echo       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT"
+    >> "%FILE%" echo       KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+    >> "%FILE%" echo       KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+    >> "%FILE%" echo       KAFKA_LOG_DIRS: "/var/lib/kafka/data"
+    >> "%FILE%" echo       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    >> "%FILE%" echo       KAFKA_NUM_PARTITIONS: "%NUM_REPLICAS%"
+    >> "%FILE%" echo       KAFKA_DEFAULT_REPLICATION_FACTOR: "!KAFKA_RF!"
+    >> "%FILE%" echo       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "!KAFKA_RF!"
+    >> "%FILE%" echo       KAFKA_LOG_RETENTION_HOURS: "168"
+    >> "%FILE%" echo       KAFKA_LOG_SEGMENT_BYTES: "1073741824"
+    >> "%FILE%" echo       CLUSTER_ID: "conductor-kafka-cluster-001"
+    >> "%FILE%" echo     volumes:
+    >> "%FILE%" echo       - kafkadata-%%k:/var/lib/kafka/data
+    >> "%FILE%" echo     healthcheck:
+    >> "%FILE%" echo       test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 ^> /dev/null 2^>^&1"]
+    >> "%FILE%" echo       interval: 10s
+    >> "%FILE%" echo       timeout: 10s
+    >> "%FILE%" echo       retries: 10
+    >> "%FILE%" echo       start_period: 30s
+    >> "%FILE%" echo.
+)
+
+
 :: ── Backend Migrator (runs migrations once, then exits) ──
 :: Connects DIRECTLY to Postgres (bypassing PgBouncer) to avoid
 :: transaction-pooling interference with DDL statements.
@@ -168,6 +246,7 @@ for /l %%r in (0,1,%LAST_REDIS_SHARD%) do (
 >> "%FILE%" echo       NUM_SHARDS: "%NUM_SHARDS%"
 >> "%FILE%" echo       SHARD_DB_URL_TEMPLATE: "postgres://conductor:conductor@postgres-shard-{i}:5432/conductor"
 >> "%FILE%" echo       REDIS_URLS: "!REDIS_URLS!"
+>> "%FILE%" echo       KAFKA_BROKERS: "!KAFKA_BROKERS!"
 >> "%FILE%" echo       RUST_LOG: "info"
 >> "%FILE%" echo       MIGRATE_ONLY: "true"
 >> "%FILE%" echo       SEQ_URL: "http://seq:80"
@@ -178,6 +257,10 @@ for /l %%i in (0,1,%LAST_SHARD%) do (
 )
 for /l %%r in (0,1,%LAST_REDIS_SHARD%) do (
     >> "%FILE%" echo       redis-%%r:
+    >> "%FILE%" echo         condition: service_healthy
+)
+for /l %%k in (0,1,%LAST_KAFKA%) do (
+    >> "%FILE%" echo       kafka-%%k:
     >> "%FILE%" echo         condition: service_healthy
 )
 >> "%FILE%" echo       seq:
@@ -192,12 +275,15 @@ for /l %%r in (0,1,%LAST_REDIS_SHARD%) do (
 >> "%FILE%" echo       dockerfile: Dockerfile
 >> "%FILE%" echo     expose:
 >> "%FILE%" echo       - "8080"
+>> "%FILE%" echo       - "50051"
 >> "%FILE%" echo     environment:
 >> "%FILE%" echo       HOST: "0.0.0.0"
 >> "%FILE%" echo       PORT: "8080"
+>> "%FILE%" echo       GRPC_PORT: "50051"
 >> "%FILE%" echo       NUM_SHARDS: "%NUM_SHARDS%"
 >> "%FILE%" echo       SHARD_DB_URL_TEMPLATE: "postgres://conductor:conductor@pgbouncer-shard-{i}:6432/conductor"
 >> "%FILE%" echo       REDIS_URLS: "!REDIS_URLS!"
+>> "%FILE%" echo       KAFKA_BROKERS: "!KAFKA_BROKERS!"
 >> "%FILE%" echo       RUST_LOG: "warn"
 >> "%FILE%" echo       SKIP_MIGRATIONS: "true"
 >> "%FILE%" echo       SEQ_URL: "http://seq:80"
@@ -214,6 +300,10 @@ for /l %%r in (0,1,%LAST_REDIS_SHARD%) do (
     >> "%FILE%" echo       redis-%%r:
     >> "%FILE%" echo         condition: service_healthy
 )
+for /l %%k in (0,1,%LAST_KAFKA%) do (
+    >> "%FILE%" echo       kafka-%%k:
+    >> "%FILE%" echo         condition: service_healthy
+)
 >> "%FILE%" echo       seq:
 >> "%FILE%" echo         condition: service_healthy
 >> "%FILE%" echo.
@@ -223,6 +313,7 @@ for /l %%r in (0,1,%LAST_REDIS_SHARD%) do (
 >> "%FILE%" echo     image: nginx:alpine
 >> "%FILE%" echo     ports:
 >> "%FILE%" echo       - "8080:8080"
+>> "%FILE%" echo       - "50051:50051"
 >> "%FILE%" echo     volumes:
 >> "%FILE%" echo       - ./nginx-lb.conf:/etc/nginx/conf.d/default.conf:ro
 >> "%FILE%" echo     depends_on:
@@ -250,11 +341,16 @@ for /l %%i in (0,1,%LAST_SHARD%) do (
 for /l %%r in (0,1,%LAST_REDIS_SHARD%) do (
     >> "%FILE%" echo   redisdata-%%r:
 )
+for /l %%k in (0,1,%LAST_KAFKA%) do (
+    >> "%FILE%" echo   kafkadata-%%k:
+)
 >> "%FILE%" echo   seqdata:
 
 echo.
 echo ========================================
-echo  docker-compose.yml generated with %NUM_SHARDS% shard(s)
+echo  docker-compose.yml generated with:
+echo    %NUM_SHARDS% DB shard(s), %NUM_REDIS_SHARDS% Redis shard(s),
+echo    %NUM_KAFKA_BROKERS% Kafka broker(s), %NUM_REPLICAS% backend replica(s)
 echo ========================================
 echo.
 
@@ -271,7 +367,7 @@ docker network prune -f 2>nul
 echo.
 set /p WIPE_DB="Wipe database volumes? This will DELETE all workflow/task data. (y/N): "
 if /i "%WIPE_DB%"=="y" (
-    echo Removing database and Redis volumes...
+    echo Removing database, Redis, and Kafka volumes...
     for /l %%i in (0,1,%LAST_SHARD%) do (
         docker volume rm rust-conductor_pgdata_shard%%i 2>nul
     )
@@ -279,8 +375,11 @@ if /i "%WIPE_DB%"=="y" (
     for /l %%i in (0,1,!LAST_REDIS!) do (
         docker volume rm rust-conductor_redisdata-%%i 2>nul
     )
+    for /l %%k in (0,1,%LAST_KAFKA%) do (
+        docker volume rm rust-conductor_kafkadata-%%k 2>nul
+    )
     docker volume rm rust-conductor_seqdata 2>nul
-    echo Database volumes removed.
+    echo Volumes removed.
 ) else (
     echo Keeping existing database data.
 )
@@ -299,16 +398,19 @@ docker compose up --build -d
 
 set /a LAST_PG_PORT=5432+%LAST_SHARD%
 set /a LAST_PGB_PORT=6432+%LAST_SHARD%
+set /a LAST_KAFKA_PORT=9092+%LAST_KAFKA%
 
 echo.
 echo ========================================
 echo  Build complete! Services:
 echo    Backend:    http://localhost:8080 (via nginx-lb)
+echo    gRPC:       localhost:50051
 echo    Replicas:   %NUM_REPLICAS%
 echo    Frontend:   http://localhost:3000
 echo    Shards:     %NUM_SHARDS%
 echo    Postgres:   ports 5432-!LAST_PG_PORT!
 echo    PgBouncer:  ports 6432-!LAST_PGB_PORT!
+echo    Kafka:      ports 9092-!LAST_KAFKA_PORT! (%NUM_KAFKA_BROKERS% broker(s))
 echo    Redis:      localhost:6379
 echo    Seq:        http://localhost:9321
 echo ========================================

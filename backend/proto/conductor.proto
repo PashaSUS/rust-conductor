@@ -1,0 +1,384 @@
+syntax = "proto3";
+
+package conductor;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Conductor gRPC Service Definitions
+//
+// JSON-encoded strings are used for fields that contain arbitrary nested data
+// (workflow inputs/outputs, variables, task data) to preserve full fidelity
+// with the existing REST API. This avoids lossy proto ↔ JSON round-trips for
+// dynamic payloads while keeping typed fields for everything structural.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Metadata Service — workflow & task definitions
+// ══════════════════════════════════════════════════════════════════════════════
+
+service MetadataService {
+  // Workflow definitions
+  rpc RegisterWorkflowDef(RegisterWorkflowDefRequest)  returns (Empty);
+  rpc UpdateWorkflowDefs(UpdateWorkflowDefsRequest)     returns (Empty);
+  rpc GetWorkflowDef(GetWorkflowDefRequest)             returns (WorkflowDefResponse);
+  rpc ListWorkflowDefs(Empty)                           returns (ListWorkflowDefsResponse);
+  rpc DeleteWorkflowDef(DeleteWorkflowDefRequest)       returns (Empty);
+
+  // Task definitions
+  rpc RegisterTaskDefs(RegisterTaskDefsRequest)         returns (Empty);
+  rpc GetTaskDef(GetTaskDefRequest)                     returns (TaskDefResponse);
+  rpc ListTaskDefs(Empty)                               returns (ListTaskDefsResponse);
+  rpc DeleteTaskDef(DeleteTaskDefRequest)               returns (Empty);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Workflow Service — execution lifecycle
+// ══════════════════════════════════════════════════════════════════════════════
+
+service WorkflowService {
+  rpc StartWorkflow(StartWorkflowRequest)               returns (StartWorkflowResponse);
+  rpc GetWorkflow(GetWorkflowRequest)                   returns (WorkflowResponse);
+  rpc TerminateWorkflow(TerminateWorkflowRequest)       returns (Empty);
+  rpc DeleteWorkflow(DeleteWorkflowRequest)             returns (Empty);
+  rpc PauseWorkflow(WorkflowIdRequest)                  returns (Empty);
+  rpc ResumeWorkflow(WorkflowIdRequest)                 returns (Empty);
+  rpc RestartWorkflow(WorkflowIdRequest)                returns (Empty);
+  rpc RetryWorkflow(WorkflowIdRequest)                  returns (Empty);
+  rpc RerunWorkflow(RerunWorkflowRequest)               returns (StartWorkflowResponse);
+  rpc DecideWorkflow(WorkflowIdRequest)                 returns (Empty);
+  rpc SkipTask(SkipTaskRequest)                         returns (Empty);
+  rpc GetWorkflowStats(Empty)                           returns (WorkflowStatsResponse);
+  rpc SearchWorkflows(SearchWorkflowsRequest)           returns (WorkflowSearchResponse);
+  rpc GetRunningWorkflows(GetRunningWorkflowsRequest)   returns (RunningWorkflowsResponse);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Task Service — worker poll / update / ack
+// ══════════════════════════════════════════════════════════════════════════════
+
+service TaskService {
+  rpc UpdateTask(UpdateTaskRequest)                     returns (UpdateTaskResponse);
+  rpc GetTask(GetTaskRequest)                           returns (TaskResultResponse);
+  rpc PollTask(PollTaskRequest)                         returns (PollTaskResponse);
+  rpc BatchPollTasks(BatchPollTasksRequest)             returns (BatchPollTasksResponse);
+  rpc AckTask(AckTaskRequest)                           returns (AckTaskResponse);
+  rpc GetTaskLogs(GetTaskLogsRequest)                   returns (TaskLogsResponse);
+  rpc AddTaskLog(AddTaskLogRequest)                     returns (Empty);
+  rpc SearchTasks(SearchTasksRequest)                   returns (TaskSearchResponse);
+  rpc GetQueueSizes(Empty)                              returns (QueueSizesResponse);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Event Service — event handler management
+// ══════════════════════════════════════════════════════════════════════════════
+
+service EventService {
+  rpc RegisterEventHandler(EventHandlerProto)           returns (Empty);
+  rpc UpdateEventHandler(EventHandlerProto)             returns (Empty);
+  rpc ListEventHandlers(Empty)                          returns (ListEventHandlersResponse);
+  rpc GetEventHandlersForEvent(GetEventHandlersRequest) returns (ListEventHandlersResponse);
+  rpc DeleteEventHandler(DeleteEventHandlerRequest)     returns (Empty);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Admin Service — config, sweep, queue control
+// ══════════════════════════════════════════════════════════════════════════════
+
+service AdminService {
+  rpc GetConfig(Empty)                                  returns (ConfigResponse);
+  rpc SweepWorkflow(WorkflowIdRequest)                  returns (Empty);
+  rpc PauseQueue(QueueNameRequest)                      returns (Empty);
+  rpc ResumeQueue(QueueNameRequest)                     returns (Empty);
+  rpc GetQueueStatus(QueueNameRequest)                  returns (QueueStatusResponse);
+  rpc HealthCheck(Empty)                                returns (HealthCheckResponse);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Bulk Service — batch workflow operations
+// ══════════════════════════════════════════════════════════════════════════════
+
+service BulkService {
+  rpc BulkPause(BulkWorkflowIdsRequest)                 returns (BulkResponseProto);
+  rpc BulkResume(BulkWorkflowIdsRequest)                returns (BulkResponseProto);
+  rpc BulkRetry(BulkWorkflowIdsRequest)                 returns (BulkResponseProto);
+  rpc BulkRestart(BulkWorkflowIdsRequest)               returns (BulkResponseProto);
+  rpc BulkTerminate(BulkTerminateRequest)               returns (BulkResponseProto);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Common / Shared Messages
+// ══════════════════════════════════════════════════════════════════════════════
+
+message Empty {}
+
+message WorkflowIdRequest {
+  string workflow_id = 1;
+}
+
+message QueueNameRequest {
+  string queue_name = 1;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Metadata Messages
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Workflow/task definitions are carried as JSON strings to preserve the full
+// nested structure without duplicating the entire schema in proto.
+
+message RegisterWorkflowDefRequest {
+  string workflow_def_json = 1;   // JSON-encoded WorkflowDef
+}
+
+message UpdateWorkflowDefsRequest {
+  repeated string workflow_defs_json = 1;  // each element is a JSON-encoded WorkflowDef
+}
+
+message GetWorkflowDefRequest {
+  string name    = 1;
+  int32  version = 2;  // 0 = latest
+}
+
+message WorkflowDefResponse {
+  string workflow_def_json = 1;
+}
+
+message ListWorkflowDefsResponse {
+  repeated string workflow_defs_json = 1;
+}
+
+message DeleteWorkflowDefRequest {
+  string name    = 1;
+  int32  version = 2;
+}
+
+message RegisterTaskDefsRequest {
+  repeated string task_defs_json = 1;
+}
+
+message GetTaskDefRequest {
+  string name = 1;
+}
+
+message TaskDefResponse {
+  string task_def_json = 1;
+}
+
+message ListTaskDefsResponse {
+  repeated string task_defs_json = 1;
+}
+
+message DeleteTaskDefRequest {
+  string name = 1;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Workflow Messages
+// ══════════════════════════════════════════════════════════════════════════════
+
+message StartWorkflowRequest {
+  string start_workflow_json = 1;  // JSON-encoded StartWorkflowRequest
+}
+
+message StartWorkflowResponse {
+  string workflow_id = 1;
+}
+
+message GetWorkflowRequest {
+  string workflow_id = 1;
+}
+
+message WorkflowResponse {
+  string workflow_json = 1;  // JSON-encoded Workflow
+}
+
+message TerminateWorkflowRequest {
+  string workflow_id = 1;
+  string reason      = 2;
+}
+
+message DeleteWorkflowRequest {
+  string workflow_id      = 1;
+  bool   archive_workflow = 2;
+}
+
+message RerunWorkflowRequest {
+  string workflow_id       = 1;
+  string rerun_request_json = 2;  // JSON-encoded RerunWorkflowRequest
+}
+
+message SkipTaskRequest {
+  string workflow_id          = 1;
+  string task_reference_name  = 2;
+  string skip_request_json    = 3;  // JSON-encoded SkipTaskRequest
+}
+
+message WorkflowStatsResponse {
+  map<string, int64> stats = 1;
+}
+
+message SearchWorkflowsRequest {
+  string status        = 1;
+  string workflow_type = 2;
+  string free_text     = 3;
+  int64  start         = 4;
+  int64  size          = 5;
+}
+
+message WorkflowSearchResponse {
+  int64           total_hits = 1;
+  repeated string results_json = 2;  // each element is JSON-encoded WorkflowSummary
+}
+
+message GetRunningWorkflowsRequest {
+  string name       = 1;
+  int32  version    = 2;
+  int64  start_time = 3;
+  int64  end_time   = 4;
+}
+
+message RunningWorkflowsResponse {
+  repeated string workflow_ids = 1;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Task Messages
+// ══════════════════════════════════════════════════════════════════════════════
+
+message UpdateTaskRequest {
+  string task_update_json = 1;  // JSON-encoded TaskUpdateRequest
+}
+
+message UpdateTaskResponse {
+  string task_id = 1;
+}
+
+message GetTaskRequest {
+  string task_id = 1;
+}
+
+message TaskResultResponse {
+  string task_result_json = 1;  // JSON-encoded TaskResult
+}
+
+message PollTaskRequest {
+  string task_type  = 1;
+  string worker_id  = 2;
+}
+
+message PollTaskResponse {
+  bool   found          = 1;
+  string poll_task_json = 2;  // JSON-encoded PollTask (empty string if !found)
+}
+
+message BatchPollTasksRequest {
+  string task_type  = 1;
+  string worker_id  = 2;
+  int32  count      = 3;
+  uint64 timeout_ms = 4;
+}
+
+message BatchPollTasksResponse {
+  repeated string poll_tasks_json = 1;
+}
+
+message AckTaskRequest {
+  string task_id   = 1;
+  string worker_id = 2;
+}
+
+message AckTaskResponse {
+  bool acknowledged = 1;
+}
+
+message GetTaskLogsRequest {
+  string task_id = 1;
+}
+
+message TaskLogsResponse {
+  repeated TaskExecLogProto logs = 1;
+}
+
+message TaskExecLogProto {
+  string log          = 1;
+  string task_id      = 2;
+  int64  created_time = 3;
+}
+
+message AddTaskLogRequest {
+  string task_id = 1;
+  string log     = 2;
+}
+
+message SearchTasksRequest {
+  string workflow_id = 1;
+  string task_type   = 2;
+  string status      = 3;
+  string free_text   = 4;
+  int64  start       = 5;
+  int64  size        = 6;
+}
+
+message TaskSearchResponse {
+  int64           total_hits   = 1;
+  repeated string results_json = 2;  // each element is JSON-encoded TaskSummary
+}
+
+message QueueSizesResponse {
+  map<string, int64> sizes = 1;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Event Messages
+// ══════════════════════════════════════════════════════════════════════════════
+
+message EventHandlerProto {
+  string event_handler_json = 1;  // JSON-encoded EventHandler
+}
+
+message ListEventHandlersResponse {
+  repeated string event_handlers_json = 1;
+}
+
+message GetEventHandlersRequest {
+  string event       = 1;
+  bool   active_only = 2;
+}
+
+message DeleteEventHandlerRequest {
+  string name = 1;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Admin Messages
+// ══════════════════════════════════════════════════════════════════════════════
+
+message ConfigResponse {
+  string config_json = 1;  // JSON-encoded HashMap<String, Value>
+}
+
+message QueueStatusResponse {
+  bool paused = 1;
+}
+
+message HealthCheckResponse {
+  bool   healthy              = 1;
+  string health_results_json  = 2;  // JSON-encoded HealthCheckStatus
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Bulk Messages
+// ══════════════════════════════════════════════════════════════════════════════
+
+message BulkWorkflowIdsRequest {
+  repeated string workflow_ids = 1;
+}
+
+message BulkTerminateRequest {
+  repeated string workflow_ids = 1;
+  string          reason       = 2;
+}
+
+message BulkResponseProto {
+  map<string, string> bulk_error_results      = 1;
+  repeated string     bulk_successful_results = 2;
+}

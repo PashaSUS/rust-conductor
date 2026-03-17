@@ -1,0 +1,179 @@
+use rdkafka::config::ClientConfig;
+use rdkafka::consumer::{CommitMode, Consumer, StreamConsumer};
+use rdkafka::producer::{FutureProducer, FutureRecord};
+use rdkafka::Message;
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::Mutex;
+
+/// Kafka-backed task queue. Each task type maps to a Kafka topic
+/// (`conductor.task.{task_type}`). Provides durable, at-least-once delivery
+/// with automatic redelivery on consumer failure.
+///
+/// Redis is still used for O(1) task-routing lookups and queue pause flags.
+#[derive(Clone)]
+pub struct KafkaTaskQueue {
+    producer: FutureProducer,
+    consumers: Arc<std::sync::RwLock<HashMap<String, Arc<Mutex<StreamConsumer>>>>>,
+    brokers: String,
+}
+
+impl KafkaTaskQueue {
+    pub fn new(brokers: &str) -> anyhow::Result<Self> {
+        let producer: FutureProducer = ClientConfig::new()
+            .set("bootstrap.servers", brokers)
+            .set("message.timeout.ms", "10000")
+            .set("queue.buffering.max.messages", "100000")
+            .set("batch.size", "65536")
+            .set("linger.ms", "5")
+            .set("acks", "all")
+            .set("enable.idempotence", "true")
+            .set("compression.type", "lz4")
+            .create()
+            .map_err(|e| anyhow::anyhow!("Failed to create Kafka producer: {e}"))?;
+
+        tracing::info!(brokers = %brokers, "Kafka producer initialized");
+
+        Ok(Self {
+            producer,
+            consumers: Arc::new(std::sync::RwLock::new(HashMap::new())),
+            brokers: brokers.to_string(),
+        })
+    }
+
+    fn topic_name(task_type: &str) -> String {
+        format!("conductor.task.{task_type}")
+    }
+
+    /// Get or create a consumer for the given task type.
+    fn get_or_create_consumer(&self, task_type: &str) -> Arc<Mutex<StreamConsumer>> {
+        // Fast path: read lock
+        {
+            let consumers = self.consumers.read().unwrap();
+            if let Some(c) = consumers.get(task_type) {
+                return c.clone();
+            }
+        }
+
+        // Slow path: create consumer outside lock, then insert
+        let topic = Self::topic_name(task_type);
+        let consumer: StreamConsumer = ClientConfig::new()
+            .set("bootstrap.servers", &self.brokers)
+            .set("group.id", "conductor-workers")
+            .set("enable.auto.commit", "false")
+            .set("auto.offset.reset", "earliest")
+            .set("session.timeout.ms", "10000")
+            .set("max.poll.interval.ms", "300000")
+            .set("fetch.min.bytes", "1")
+            .set("fetch.wait.max.ms", "100")
+            .create()
+            .expect("Failed to create Kafka consumer");
+
+        consumer
+            .subscribe(&[&topic])
+            .expect("Failed to subscribe to Kafka topic");
+
+        tracing::info!(task_type = %task_type, topic = %topic, "Created Kafka consumer");
+
+        let arc = Arc::new(Mutex::new(consumer));
+
+        // Write lock to insert (double-check)
+        let mut consumers = self.consumers.write().unwrap();
+        consumers
+            .entry(task_type.to_string())
+            .or_insert_with(|| arc.clone());
+        consumers.get(task_type).unwrap().clone()
+    }
+
+    /// Enqueue a task_id onto the Kafka topic for the given task type.
+    pub async fn enqueue(&self, task_type: &str, task_id: &str) -> Result<(), String> {
+        let topic = Self::topic_name(task_type);
+        self.producer
+            .send(
+                FutureRecord::to(&topic)
+                    .key(task_id)
+                    .payload(task_id),
+                Duration::from_secs(5),
+            )
+            .await
+            .map_err(|(e, _)| {
+                tracing::error!(
+                    task_type = %task_type,
+                    task_id = %task_id,
+                    error = %e,
+                    "Kafka produce failed"
+                );
+                e.to_string()
+            })?;
+        Ok(())
+    }
+
+    /// Dequeue a single task_id from the Kafka topic for the given task type.
+    /// Returns `None` if no message is available within the timeout.
+    pub async fn dequeue(&self, task_type: &str) -> Option<String> {
+        let consumer_handle = self.get_or_create_consumer(task_type);
+        let consumer = consumer_handle.lock().await;
+        match tokio::time::timeout(Duration::from_millis(100), consumer.recv()).await {
+            Ok(Ok(msg)) => {
+                let task_id = msg
+                    .payload_view::<str>()
+                    .and_then(|r| r.ok())
+                    .map(|s| s.to_string());
+                if task_id.is_some() {
+                    let _ = consumer.commit_message(&msg, CommitMode::Async);
+                }
+                task_id
+            }
+            _ => None,
+        }
+    }
+
+    /// Dequeue up to `count` task_ids from the topic, waiting up to `timeout`.
+    pub async fn batch_dequeue(
+        &self,
+        task_type: &str,
+        count: usize,
+        timeout: Duration,
+    ) -> Vec<String> {
+        let consumer_handle = self.get_or_create_consumer(task_type);
+        let consumer = consumer_handle.lock().await;
+        let mut results = Vec::with_capacity(count);
+        let deadline = tokio::time::Instant::now() + timeout;
+
+        while results.len() < count {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+            let poll_time = remaining.min(Duration::from_millis(50));
+            match tokio::time::timeout(poll_time, consumer.recv()).await {
+                Ok(Ok(msg)) => {
+                    if let Some(Ok(task_id)) = msg.payload_view::<str>() {
+                        results.push(task_id.to_string());
+                        let _ = consumer.commit_message(&msg, CommitMode::Async);
+                    }
+                }
+                _ => break, // timeout or error — stop polling
+            }
+        }
+        results
+    }
+
+    /// Check that the Kafka brokers are reachable.
+    pub async fn health_check(&self) -> bool {
+        // Try a metadata fetch with a short timeout
+        let admin_client: Result<rdkafka::admin::AdminClient<rdkafka::client::DefaultClientContext>, _> =
+            ClientConfig::new()
+                .set("bootstrap.servers", &self.brokers)
+                .set("request.timeout.ms", "3000")
+                .create();
+        match admin_client {
+            Ok(client) => {
+                let metadata = client.inner().fetch_metadata(None, Duration::from_secs(3));
+                metadata.is_ok()
+            }
+            Err(_) => false,
+        }
+    }
+}

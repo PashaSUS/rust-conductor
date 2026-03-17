@@ -1,5 +1,4 @@
 use chrono::Utc;
-use deadpool_redis::redis::AsyncCommands;
 use futures::future::join_all;
 use serde_json::Value;
 
@@ -28,19 +27,7 @@ impl WorkflowEngine {
     }
 
     pub async fn poll_task(&self, task_type: &str, worker_id: Option<&str>) -> Result<Option<PollTask>, EngineError> {
-        let queue_key = format!("conductor:queue:{task_type}");
-        let mut task_id: Option<String> = None;
-        for pool in self.redis.all_pools_shuffled() {
-            let mut conn = pool.get().await.map_err(|e| {
-                tracing::error!(task_type = %task_type, error = %e, "Redis connection failed during poll");
-                EngineError::Redis(e.to_string())
-            })?;
-            if let Ok(Some(id)) = conn.rpop::<_, Option<String>>(&queue_key, None).await {
-                task_id = Some(id);
-                break;
-            }
-        }
-        let task_id = match task_id {
+        let task_id = match self.kafka.dequeue(task_type).await {
             Some(id) => id,
             None => return Ok(None),
         };
@@ -95,13 +82,9 @@ impl WorkflowEngine {
         match result {
             Ok(poll_task) => Ok(poll_task),
             Err(e) => {
-                // DB lookup failed after popping from Redis — re-queue the task so it is not lost
-                tracing::warn!(task_id = %task_id, error = %e, "Re-queuing task after poll DB failure");
-                let queue_key = format!("conductor:queue:{task_type}");
-                let pool = self.redis.random_pool();
-                if let Ok(mut conn) = pool.get().await {
-                    let _: Result<(), _> = deadpool_redis::redis::AsyncCommands::lpush(&mut conn, &queue_key, &task_id).await;
-                }
+                // DB lookup failed after dequeue — re-enqueue the task via Kafka so it is not lost
+                tracing::warn!(task_id = %task_id, error = %e, "Re-enqueuing task after poll DB failure");
+                let _ = self.kafka.enqueue(task_type, &task_id).await;
                 Err(e)
             }
         }
@@ -200,28 +183,10 @@ impl WorkflowEngine {
             return Ok(vec![]);
         }
 
-        let queue_key = format!("conductor:queue:{task_type}");
-        let mut task_ids = Vec::new();
-        // Try to pop up to `count` tasks, round-robin across all shards
-        let pools = self.redis.all_pools_shuffled();
-        let mut remaining = count;
-        'outer: while remaining > 0 {
-            let before = task_ids.len();
-            for pool in &pools {
-                let mut conn = pool.get().await.map_err(|e| EngineError::Redis(e.to_string()))?;
-                if let Ok(Some(id)) = conn.rpop::<_, Option<String>>(&queue_key, None).await {
-                    task_ids.push(id);
-                    remaining -= 1;
-                    if remaining == 0 {
-                        break 'outer;
-                    }
-                }
-            }
-            // If no new tasks were found in this round, all queues are drained
-            if task_ids.len() == before {
-                break;
-            }
-        }
+        let task_ids = self
+            .kafka
+            .batch_dequeue(task_type, count, std::time::Duration::from_millis(500))
+            .await;
 
         if task_ids.is_empty() {
             return Ok(vec![]);
@@ -435,39 +400,25 @@ impl WorkflowEngine {
     }
 
     pub async fn get_queue_sizes(&self) -> Result<std::collections::HashMap<String, i64>, EngineError> {
-        let mut conn = self.redis.random_pool().get().await.map_err(|e| EngineError::Redis(e.to_string()))?;
-
-        // Use SCAN instead of KEYS to avoid blocking Redis
-        let mut keys = Vec::new();
-        let mut cursor: u64 = 0;
-        loop {
-            let (next_cursor, batch): (u64, Vec<String>) = redis::cmd("SCAN")
-                .arg(cursor)
-                .arg("MATCH")
-                .arg("conductor:queue:*")
-                .arg("COUNT")
-                .arg(100)
-                .query_async(&mut *conn)
+        // Query all shards for SCHEDULED task counts grouped by task type
+        let futs: Vec<_> = self.shards.all_shards().iter().map(|shard| {
+            async move {
+                let rows: Vec<(String, i64)> = sqlx::query_as(
+                    "SELECT task_def_name, COUNT(*) FROM task WHERE status = 'SCHEDULED' GROUP BY task_def_name",
+                )
+                .fetch_all(shard)
                 .await
-                .map_err(|e| EngineError::Redis(e.to_string()))?;
-            keys.extend(batch);
-            cursor = next_cursor;
-            if cursor == 0 {
-                break;
+                .map_err(|e| EngineError::Database(e.to_string()))?;
+                Ok::<_, EngineError>(rows)
             }
-        }
+        }).collect();
 
-        // Filter out paused-queue marker keys
-        keys.retain(|k| !k.contains(":paused:"));
-
+        let results = join_all(futs).await;
         let mut sizes = std::collections::HashMap::new();
-        for key in keys {
-            let len: i64 = conn
-                .llen(&key)
-                .await
-                .map_err(|e| EngineError::Redis(e.to_string()))?;
-            let name = key.strip_prefix("conductor:queue:").unwrap_or(&key);
-            sizes.insert(name.to_string(), len);
+        for result in results {
+            for (name, count) in result? {
+                *sizes.entry(name).or_insert(0i64) += count;
+            }
         }
         Ok(sizes)
     }

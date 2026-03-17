@@ -1,6 +1,7 @@
 mod api;
 mod config;
 mod engine;
+mod grpc;
 mod models;
 #[cfg(feature = "seq")]
 mod seq;
@@ -77,12 +78,29 @@ async fn main() -> std::io::Result<()> {
     }
 
     let sharded_pool = engine::ShardedPool::new(shard_pools);
-    let engine = engine::WorkflowEngine::new(sharded_pool.clone(), redis_pool.clone());
+
+    let kafka = store::kafka::KafkaTaskQueue::new(&cfg.kafka_brokers)
+        .expect("Failed to create Kafka task queue");
+
+    let engine = engine::WorkflowEngine::new(sharded_pool.clone(), redis_pool.clone(), kafka);
 
     // Start background sweeper for orphaned/stale tasks
     engine::WorkflowEngine::start_background_sweeper(std::sync::Arc::new(engine.clone()));
 
     let openapi = swagger::build_openapi();
+
+    // ── gRPC server (runs on a separate port) ──────────────────────────
+    let grpc_engine = std::sync::Arc::new(engine.clone());
+    let grpc_addr: std::net::SocketAddr = format!("{}:{}", cfg.host, cfg.grpc_port)
+        .parse()
+        .expect("Invalid gRPC address");
+    tracing::info!("Starting gRPC server on {}", grpc_addr);
+    let grpc_router = grpc::grpc_router(grpc_engine);
+    tokio::spawn(async move {
+        if let Err(e) = grpc_router.serve(grpc_addr).await {
+            tracing::error!(error = %e, "gRPC server failed");
+        }
+    });
 
     tracing::info!("Starting Rust Conductor on {}:{}", cfg.host, cfg.port);
     tracing::info!(
