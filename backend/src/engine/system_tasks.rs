@@ -496,6 +496,512 @@ impl WorkflowEngine {
         })?;
         Ok(())
     }
+
+    // ── TERMINATE ────────────────────────────────────────────────────────
+
+    /// TERMINATE — immediately end the workflow with a given status.
+    /// Input parameters:
+    ///   terminationStatus: "COMPLETED" | "FAILED" (default "FAILED")
+    ///   terminationReason: optional string
+    ///   workflowOutput: optional JSON value to set as workflow output
+    pub(crate) async fn handle_terminate_task(
+        &self,
+        workflow_id: &str,
+        task_def: &WorkflowTask,
+        input: &Value,
+        seq: i32,
+    ) -> Result<(), EngineError> {
+        let task_input = self.resolve_task_input(workflow_id, task_def, input).await?;
+
+        let term_status = task_input
+            .get("terminationStatus")
+            .and_then(|v| v.as_str())
+            .unwrap_or("FAILED");
+
+        let reason = task_input
+            .get("terminationReason")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        let wf_output = task_input
+            .get("workflowOutput")
+            .cloned()
+            .unwrap_or(Value::Object(Default::default()));
+
+        let output = serde_json::json!({
+            "terminationStatus": term_status,
+            "terminationReason": &reason,
+        });
+
+        let (_task_id, _is_new) = self
+            .insert_task_record(workflow_id, task_def, &task_input, seq, "COMPLETED", &output, None)
+            .await?;
+
+        let db = self.shards.shard_for(workflow_id);
+        let now = Utc::now();
+
+        if term_status == "COMPLETED" {
+            sqlx::query(
+                "UPDATE workflow SET status = 'COMPLETED', end_time = $2, update_time = $2, output = $3, reason_for_incompletion = $4 WHERE workflow_id = $1 AND status = 'RUNNING'",
+            )
+            .bind(workflow_id)
+            .bind(now)
+            .bind(&wf_output)
+            .bind(if reason.is_empty() { None } else { Some(&reason) })
+            .execute(db)
+            .await
+            .map_err(|e| EngineError::Database(e.to_string()))?;
+
+            tracing::info!(workflow_id = %workflow_id, "TERMINATE task — workflow completed");
+        } else {
+            self.fail_workflow(workflow_id, Some(&reason), "FAILED").await?;
+            tracing::info!(workflow_id = %workflow_id, reason = %reason, "TERMINATE task — workflow failed");
+        }
+
+        Ok(())
+    }
+
+    // ── SET_VARIABLE ─────────────────────────────────────────────────────
+
+    /// SET_VARIABLE — merge input parameters into the workflow's `variables`
+    /// JSON column, then auto-complete.
+    pub(crate) async fn handle_set_variable_task(
+        &self,
+        workflow_id: &str,
+        task_def: &WorkflowTask,
+        input: &Value,
+        seq: i32,
+    ) -> Result<(), EngineError> {
+        let task_input = self.resolve_task_input(workflow_id, task_def, input).await?;
+        let db = self.shards.shard_for(workflow_id);
+
+        // Read current variables
+        let current: Value = sqlx::query_scalar(
+            "SELECT COALESCE(variables, '{}') FROM workflow WHERE workflow_id = $1",
+        )
+        .bind(workflow_id)
+        .fetch_one(db)
+        .await
+        .map_err(|e| EngineError::Database(e.to_string()))?;
+
+        // Merge
+        let mut vars = match current {
+            Value::Object(m) => m,
+            _ => serde_json::Map::new(),
+        };
+        if let Value::Object(new_vars) = &task_input {
+            for (k, v) in new_vars {
+                vars.insert(k.clone(), v.clone());
+            }
+        }
+        let merged = Value::Object(vars.clone());
+
+        // Write back
+        sqlx::query("UPDATE workflow SET variables = $2, update_time = NOW() WHERE workflow_id = $1")
+            .bind(workflow_id)
+            .bind(&merged)
+            .execute(db)
+            .await
+            .map_err(|e| EngineError::Database(e.to_string()))?;
+
+        // Auto-complete the task with the merged variables as output
+        let (_task_id, _is_new) = self
+            .insert_task_record(workflow_id, task_def, &task_input, seq, "COMPLETED", &merged, None)
+            .await?;
+
+        tracing::info!(workflow_id = %workflow_id, keys = ?vars.keys().collect::<Vec<_>>(), "SET_VARIABLE completed");
+        Ok(())
+    }
+
+    // ── HTTP ─────────────────────────────────────────────────────────────
+
+    /// HTTP — execute an HTTP request inline.
+    /// Input parameters:
+    ///   http_request: { uri, method, headers, body, connectionTimeOut, readTimeOut }
+    pub(crate) async fn handle_http_task(
+        &self,
+        workflow_id: &str,
+        task_def: &WorkflowTask,
+        input: &Value,
+        seq: i32,
+    ) -> Result<(), EngineError> {
+        let task_input = self.resolve_task_input(workflow_id, task_def, input).await?;
+
+        let (task_id, is_new) = self
+            .insert_task_record(
+                workflow_id, task_def, &task_input, seq, "IN_PROGRESS",
+                &Value::Object(Default::default()), None,
+            )
+            .await?;
+
+        if !is_new {
+            return Ok(());
+        }
+
+        let http_req = task_input
+            .get("http_request")
+            .cloned()
+            .unwrap_or_else(|| task_input.clone());
+
+        let uri = http_req
+            .get("uri")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        if uri.is_empty() {
+            self.fail_task(workflow_id, &task_id, "HTTP task missing 'uri' in http_request").await?;
+            return Ok(());
+        }
+
+        let method = http_req
+            .get("method")
+            .and_then(|v| v.as_str())
+            .unwrap_or("GET")
+            .to_uppercase();
+
+        let timeout_ms = http_req
+            .get("connectionTimeOut")
+            .or_else(|| http_req.get("readTimeOut"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(30_000);
+
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_millis(timeout_ms))
+            .build()
+            .map_err(|e| {
+                tracing::error!(workflow_id = %workflow_id, error = %e, "Failed to build HTTP client");
+                EngineError::InvalidState(format!("HTTP client build error: {e}"))
+            })?;
+
+        let mut req_builder = match method.as_str() {
+            "POST" => client.post(uri),
+            "PUT" => client.put(uri),
+            "DELETE" => client.delete(uri),
+            "PATCH" => client.patch(uri),
+            "HEAD" => client.head(uri),
+            _ => client.get(uri),
+        };
+
+        // Apply headers
+        if let Some(Value::Object(headers)) = http_req.get("headers") {
+            for (k, v) in headers {
+                let header_val = match v {
+                    Value::String(s) => s.clone(),
+                    other => other.to_string(),
+                };
+                req_builder = req_builder.header(k.as_str(), header_val);
+            }
+        }
+
+        // Apply body
+        if let Some(body) = http_req.get("body") {
+            match body {
+                Value::String(s) => { req_builder = req_builder.body(s.clone()); }
+                other => { req_builder = req_builder.json(other); }
+            }
+        }
+
+        let now = Utc::now();
+        match req_builder.send().await {
+            Ok(response) => {
+                let status_code = response.status().as_u16();
+                let resp_headers: HashMap<String, String> = response
+                    .headers()
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
+                    .collect();
+                let resp_body: Value = response.json().await.unwrap_or(Value::Null);
+
+                let output = serde_json::json!({
+                    "response": {
+                        "statusCode": status_code,
+                        "headers": resp_headers,
+                        "body": resp_body,
+                    }
+                });
+
+                let task_status = if status_code >= 200 && status_code < 400 {
+                    "COMPLETED"
+                } else {
+                    "FAILED"
+                };
+
+                let db = self.shards.shard_for(workflow_id);
+                sqlx::query(
+                    "UPDATE task SET status = $2, output_data = $3, end_time = $4, update_time = $4 WHERE task_id = $1",
+                )
+                .bind(&task_id)
+                .bind(task_status)
+                .bind(&output)
+                .bind(now)
+                .execute(db)
+                .await
+                .map_err(|e| EngineError::Database(e.to_string()))?;
+
+                if task_status == "FAILED" {
+                    tracing::warn!(workflow_id = %workflow_id, status_code = status_code, uri = %uri, "HTTP task failed with non-2xx/3xx status");
+                } else {
+                    tracing::info!(workflow_id = %workflow_id, status_code = status_code, uri = %uri, "HTTP task completed");
+                }
+            }
+            Err(e) => {
+                let reason = format!("HTTP request failed: {e}");
+                self.fail_task(workflow_id, &task_id, &reason).await?;
+                tracing::error!(workflow_id = %workflow_id, uri = %uri, error = %e, "HTTP task request failed");
+            }
+        }
+
+        Ok(())
+    }
+
+    // ── WAIT ─────────────────────────────────────────────────────────────
+
+    /// WAIT — create task in IN_PROGRESS. The task stays in-progress until
+    /// an external signal completes it (via the complete-task API) or the
+    /// sweeper times it out.
+    /// Input parameters (optional):
+    ///   duration: e.g. "10s", "5m", "1h" — auto-complete after duration (future: sweeper)
+    pub(crate) async fn handle_wait_task(
+        &self,
+        workflow_id: &str,
+        task_def: &WorkflowTask,
+        input: &Value,
+        seq: i32,
+    ) -> Result<(), EngineError> {
+        let task_input = self.resolve_task_input(workflow_id, task_def, input).await?;
+
+        let (_task_id, _is_new) = self
+            .insert_task_record(
+                workflow_id, task_def, &task_input, seq, "IN_PROGRESS",
+                &Value::Object(Default::default()), None,
+            )
+            .await?;
+
+        tracing::info!(workflow_id = %workflow_id, ref_name = %task_def.task_reference_name, "WAIT task created — awaiting external signal");
+        Ok(())
+    }
+
+    // ── DO_WHILE ─────────────────────────────────────────────────────────
+
+    /// DO_WHILE — execute loop_over tasks sequentially, re-evaluating the
+    /// loop_condition after each iteration. The loop runs at least once.
+    /// The loop_condition is evaluated as a simple truthy check on
+    /// the last task's output field specified in the condition.
+    pub(crate) async fn handle_do_while_task(
+        &self,
+        workflow_id: &str,
+        task_def: &WorkflowTask,
+        input: &Value,
+        seq: i32,
+    ) -> Result<(), EngineError> {
+        let task_input = self.resolve_task_input(workflow_id, task_def, input).await?;
+
+        if task_def.loop_over.is_empty() {
+            let output = serde_json::json!({ "iteration": 0 });
+            self.insert_task_record(workflow_id, task_def, &task_input, seq, "COMPLETED", &output, None)
+                .await?;
+            tracing::warn!(workflow_id = %workflow_id, "DO_WHILE has empty loop_over, auto-completing");
+            return Ok(());
+        }
+
+        let (task_id, is_new) = self
+            .insert_task_record(
+                workflow_id, task_def, &task_input, seq, "IN_PROGRESS",
+                &Value::Object(Default::default()), None,
+            )
+            .await?;
+
+        if !is_new {
+            return Ok(());
+        }
+
+        let max_iterations = 100;
+        let mut iteration = 0;
+
+        loop {
+            iteration += 1;
+            if iteration > max_iterations {
+                self.fail_task(workflow_id, &task_id, &format!("DO_WHILE exceeded max iterations ({})", max_iterations)).await?;
+                tracing::error!(workflow_id = %workflow_id, "DO_WHILE hit max iterations");
+                return Ok(());
+            }
+
+            // Schedule the loop body with unique ref names per iteration
+            let iter_tasks: Vec<WorkflowTask> = task_def.loop_over.iter().map(|t| {
+                let mut clone = t.clone();
+                clone.task_reference_name = format!("{}__{}", t.task_reference_name, iteration);
+                clone
+            }).collect();
+
+            let body_seq = seq + (iteration as i32 * 1000);
+            Box::pin(self.schedule_tasks(workflow_id, &iter_tasks, input, body_seq)).await?;
+
+            // Wait for all body tasks to complete
+            let db = self.shards.shard_for(workflow_id);
+            let mut all_done = false;
+            for attempt in 0..600 {
+                let pending: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM task WHERE workflow_instance_id = $1 AND reference_task_name = ANY($2) AND status NOT IN ('COMPLETED', 'SKIPPED', 'COMPLETED_WITH_ERRORS', 'FAILED', 'TIMED_OUT', 'CANCELED')",
+                )
+                .bind(workflow_id)
+                .bind(&iter_tasks.iter().map(|t| t.task_reference_name.clone()).collect::<Vec<_>>())
+                .fetch_one(db)
+                .await
+                .map_err(|e| EngineError::Database(e.to_string()))?;
+
+                if pending == 0 {
+                    all_done = true;
+                    break;
+                }
+                if attempt < 599 {
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                }
+            }
+
+            if !all_done {
+                self.fail_task(workflow_id, &task_id, "DO_WHILE body tasks timed out").await?;
+                return Ok(());
+            }
+
+            // Check if any body task failed
+            let failed: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM task WHERE workflow_instance_id = $1 AND reference_task_name = ANY($2) AND status IN ('FAILED', 'TIMED_OUT')",
+            )
+            .bind(workflow_id)
+            .bind(&iter_tasks.iter().map(|t| t.task_reference_name.clone()).collect::<Vec<_>>())
+            .fetch_one(db)
+            .await
+            .map_err(|e| EngineError::Database(e.to_string()))?;
+
+            if failed > 0 {
+                self.fail_task(workflow_id, &task_id, "DO_WHILE body task failed").await?;
+                return Ok(());
+            }
+
+            // Evaluate loop condition
+            if let Some(condition) = &task_def.loop_condition {
+                // Simple condition: if it references a variable that's falsy, stop
+                // For now: "false" literal or empty string means stop
+                let last_ref = &iter_tasks.last().unwrap().task_reference_name;
+                let last_output: Value = sqlx::query_scalar(
+                    "SELECT COALESCE(output_data, '{}') FROM task WHERE workflow_instance_id = $1 AND reference_task_name = $2 LIMIT 1",
+                )
+                .bind(workflow_id)
+                .bind(last_ref)
+                .fetch_optional(db)
+                .await
+                .map_err(|e| EngineError::Database(e.to_string()))?
+                .unwrap_or(Value::Object(Default::default()));
+
+                let should_continue = evaluate_loop_condition(condition, &last_output, iteration);
+                if !should_continue {
+                    break;
+                }
+            } else {
+                // No condition = run once
+                break;
+            }
+        }
+
+        // Complete the DO_WHILE task
+        let output = serde_json::json!({ "iteration": iteration });
+        let now = Utc::now();
+        let db = self.shards.shard_for(workflow_id);
+        sqlx::query(
+            "UPDATE task SET status = 'COMPLETED', output_data = $2, end_time = $3, update_time = $3 WHERE task_id = $1",
+        )
+        .bind(&task_id)
+        .bind(&output)
+        .bind(now)
+        .execute(db)
+        .await
+        .map_err(|e| EngineError::Database(e.to_string()))?;
+
+        tracing::info!(workflow_id = %workflow_id, iterations = iteration, "DO_WHILE completed");
+        Ok(())
+    }
+
+    // ── EVENT ────────────────────────────────────────────────────────────
+
+    /// EVENT — publish an event to the configured sink, then auto-complete.
+    /// Input parameters:
+    ///   The task's `sink` field specifies the Kafka topic.
+    ///   All input_parameters become the event payload.
+    pub(crate) async fn handle_event_task(
+        &self,
+        workflow_id: &str,
+        task_def: &WorkflowTask,
+        input: &Value,
+        seq: i32,
+    ) -> Result<(), EngineError> {
+        let task_input = self.resolve_task_input(workflow_id, task_def, input).await?;
+
+        let sink = task_def.sink.as_deref().unwrap_or("conductor_events");
+
+        let event_payload = serde_json::json!({
+            "workflowId": workflow_id,
+            "taskRefName": &task_def.task_reference_name,
+            "sink": sink,
+            "payload": &task_input,
+        });
+
+        // Publish to Kafka
+        let payload_str = serde_json::to_string(&event_payload)
+            .unwrap_or_else(|_| "{}".to_string());
+
+        match self.kafka.produce(sink, &payload_str).await {
+            Ok(()) => {
+                let output = serde_json::json!({ "event": { "sink": sink, "published": true } });
+                let (_task_id, _is_new) = self
+                    .insert_task_record(workflow_id, task_def, &task_input, seq, "COMPLETED", &output, None)
+                    .await?;
+                tracing::info!(workflow_id = %workflow_id, sink = %sink, "EVENT task published and completed");
+            }
+            Err(e) => {
+                let output = serde_json::json!({ "event": { "sink": sink, "published": false, "error": e } });
+                let (task_id, _) = self
+                    .insert_task_record(workflow_id, task_def, &task_input, seq, "FAILED", &output, None)
+                    .await?;
+                tracing::error!(workflow_id = %workflow_id, sink = %sink, error = %e, "EVENT task Kafka publish failed");
+                let _ = self.fail_task(workflow_id, &task_id, &format!("Event publish failed: {e}")).await;
+            }
+        }
+
+        Ok(())
+    }
+
+    // ── Shared helper ────────────────────────────────────────────────────
+
+    /// Resolve task input parameters using template expressions.
+    async fn resolve_task_input(
+        &self,
+        workflow_id: &str,
+        task_def: &WorkflowTask,
+        input: &Value,
+    ) -> Result<Value, EngineError> {
+        if task_def.input_parameters.is_empty() {
+            return Ok(input.clone());
+        }
+        let raw = serde_json::to_value(&task_def.input_parameters)
+            .unwrap_or_else(|_| Value::Object(Default::default()));
+        let raw_str = raw.to_string();
+        if !raw_str.contains("${") {
+            return Ok(raw);
+        }
+        let db = self.shards.shard_for(workflow_id);
+        let task_output_rows: Vec<(String, Value)> = sqlx::query_as(
+            "SELECT reference_task_name, output_data FROM task \
+             WHERE workflow_instance_id = $1 \
+             AND status IN ('COMPLETED','SKIPPED','COMPLETED_WITH_ERRORS')",
+        )
+        .bind(workflow_id)
+        .fetch_all(db)
+        .await
+        .map_err(|e| EngineError::Database(e.to_string()))?;
+        let task_outputs: HashMap<String, Value> = task_output_rows.into_iter().collect();
+        Ok(resolve_value(&raw, input, &task_outputs, workflow_id))
+    }
 }
 
 // ── Template expression resolution ──────────────────────────────────────────
@@ -626,4 +1132,43 @@ fn navigate_json(val: &Value, path: &[&str]) -> Option<Value> {
         current = current.get(segment)?;
     }
     Some(current.clone())
+}
+
+/// Evaluate a DO_WHILE loop condition. Supports:
+///   - `"iteration < N"` — continue while iteration count is below N
+///   - `"true"` / `"false"` — literal
+///   - Otherwise: check if the last task output's `result` field is truthy
+fn evaluate_loop_condition(condition: &str, last_output: &Value, iteration: usize) -> bool {
+    let trimmed = condition.trim();
+
+    if trimmed == "false" || trimmed.is_empty() {
+        return false;
+    }
+    if trimmed == "true" {
+        return true;
+    }
+
+    // Simple "iteration < N" pattern
+    if let Some(rest) = trimmed.strip_prefix("iteration") {
+        let rest = rest.trim();
+        if let Some(n_str) = rest.strip_prefix('<') {
+            if let Ok(n) = n_str.trim().parse::<usize>() {
+                return iteration < n;
+            }
+        }
+        if let Some(n_str) = rest.strip_prefix("<=") {
+            if let Ok(n) = n_str.trim().parse::<usize>() {
+                return iteration <= n;
+            }
+        }
+    }
+
+    // Check last task output for a truthy "result" field
+    match last_output.get("shouldContinue").or_else(|| last_output.get("result")) {
+        Some(Value::Bool(b)) => *b,
+        Some(Value::String(s)) => s != "false" && !s.is_empty(),
+        Some(Value::Number(n)) => n.as_f64().unwrap_or(0.0) != 0.0,
+        Some(Value::Null) => false,
+        _ => false,
+    }
 }

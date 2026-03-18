@@ -114,7 +114,7 @@ impl WorkflowEngine {
         matches!(
             task_type,
             "FORK" | "FORK_JOIN" | "JOIN" | "DECISION" | "SWITCH" | "SUB_WORKFLOW"
-                | "DO_WHILE" | "TERMINATE" | "SET_VARIABLE" | "WAIT"
+                | "DO_WHILE" | "TERMINATE" | "SET_VARIABLE" | "WAIT" | "HTTP" | "EVENT"
         )
     }
 }

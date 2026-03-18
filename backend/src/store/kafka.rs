@@ -127,6 +127,23 @@ impl KafkaTaskQueue {
         Ok(())
     }
 
+    /// Produce an arbitrary message to a given Kafka topic.
+    pub async fn produce(&self, topic: &str, payload: &str) -> Result<(), String> {
+        self.producer
+            .send(
+                FutureRecord::to(topic)
+                    .key(topic)
+                    .payload(payload),
+                Duration::from_secs(5),
+            )
+            .await
+            .map_err(|(e, _)| {
+                tracing::error!(topic = %topic, error = %e, "Kafka produce failed");
+                e.to_string()
+            })?;
+        Ok(())
+    }
+
     /// Dequeue a single task_id from the Kafka topic for the given task type.
     /// Returns `None` if no message is available within the timeout.
     pub async fn dequeue(&self, task_type: &str) -> Option<String> {

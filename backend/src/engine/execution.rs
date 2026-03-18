@@ -86,9 +86,33 @@ impl WorkflowEngine {
                 self.handle_sub_workflow_task(workflow_id, task_def, input, start_seq)
                     .await?;
             }
+            "TERMINATE" => {
+                self.handle_terminate_task(workflow_id, task_def, input, start_seq)
+                    .await?;
+            }
+            "SET_VARIABLE" => {
+                self.handle_set_variable_task(workflow_id, task_def, input, start_seq)
+                    .await?;
+            }
+            "HTTP" => {
+                self.handle_http_task(workflow_id, task_def, input, start_seq)
+                    .await?;
+            }
+            "WAIT" => {
+                self.handle_wait_task(workflow_id, task_def, input, start_seq)
+                    .await?;
+            }
+            "DO_WHILE" => {
+                self.handle_do_while_task(workflow_id, task_def, input, start_seq)
+                    .await?;
+            }
+            "EVENT" => {
+                self.handle_event_task(workflow_id, task_def, input, start_seq)
+                    .await?;
+            }
             _ => {
                 if task_type != "SIMPLE" {
-                    tracing::error!(
+                    tracing::warn!(
                         workflow_id = %workflow_id,
                         task_type = %task_type,
                         ref_name = %task_def.task_reference_name,

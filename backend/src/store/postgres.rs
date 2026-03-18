@@ -27,10 +27,33 @@ pub async fn run_migrations(pool: &DbPool) {
         .expect("Failed to start migration transaction");
 
     // Lock id 819_2023 is arbitrary but must be the same across all callers.
-    sqlx::query("SELECT pg_advisory_xact_lock(8192023)")
-        .execute(&mut *tx)
-        .await
-        .expect("Failed to acquire migration advisory lock");
+    // Use try-lock to avoid blocking forever if a previous migration was killed.
+    let max_attempts = 30;
+    for attempt in 1..=max_attempts {
+        let acquired: (bool,) =
+            sqlx::query_as("SELECT pg_try_advisory_xact_lock(8192023)")
+                .fetch_one(&mut *tx)
+                .await
+                .expect("Failed to try migration advisory lock");
+        if acquired.0 {
+            break;
+        }
+        if attempt == max_attempts {
+            panic!(
+                "Could not acquire migration advisory lock after {max_attempts} attempts. \
+                 Another migration may be running — check pg_stat_activity for \
+                 lingering connections holding advisory lock 8192023."
+            );
+        }
+        tracing::warn!(attempt, "Migration lock held by another process, retrying in 1s…");
+        // Drop the transaction so we don't hold a connection while waiting
+        drop(tx);
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        tx = pool
+            .begin()
+            .await
+            .expect("Failed to restart migration transaction");
+    }
 
     // Each statement must be executed separately — PG doesn't allow multiple
     // commands in a single prepared statement.

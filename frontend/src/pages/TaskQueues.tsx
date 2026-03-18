@@ -1,56 +1,94 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { taskApi } from "@/api/conductor";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Layers } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Layers, Search, Inbox } from "lucide-react";
 
 export default function TaskQueues() {
+  const [filter, setFilter] = useState("");
+
   const { data: sizes, isLoading } = useQuery({
     queryKey: ["queue-sizes"],
     queryFn: taskApi.queueSizes,
     refetchInterval: 5000,
   });
 
-  const entries = Object.entries(sizes ?? {}).sort((a, b) => b[1] - a[1]);
-  const total = entries.reduce((sum, [, v]) => sum + v, 0);
+  const allEntries = Object.entries(sizes ?? {}).sort((a, b) => b[1] - a[1]);
+  const total = allEntries.reduce((sum, [, v]) => sum + v, 0);
+  const maxCount = allEntries.length > 0 ? allEntries[0][1] : 1;
+
+  const entries = filter
+    ? allEntries.filter(([name]) => name.toLowerCase().includes(filter.toLowerCase()))
+    : allEntries;
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold tracking-tight">Task Queues</h2>
-        <Badge variant="secondary" className="gap-1">
-          <Layers className="h-3 w-3" />
-          {total} total queued
-        </Badge>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            Live (5s)
+          </div>
+          <Badge variant="secondary" className="gap-1">
+            <Layers className="h-3 w-3" />
+            {total} total queued
+          </Badge>
+        </div>
+      </div>
+
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Filter queues…"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          className="pl-9 max-w-sm"
+        />
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm font-medium">Active Queues</CardTitle>
+          <CardTitle className="text-sm font-medium">
+            Active Queues {filter && <span className="text-muted-foreground font-normal">({entries.length} of {allEntries.length})</span>}
+          </CardTitle>
         </CardHeader>
         <CardContent>
           {isLoading ? (
             <p className="text-muted-foreground text-sm">Loading...</p>
           ) : entries.length === 0 ? (
-            <p className="text-muted-foreground text-sm">No tasks in queue</p>
+            <div className="py-8 text-center">
+              <Inbox className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+              <p className="text-muted-foreground text-sm">
+                {filter ? "No queues match your filter" : "No tasks in queue"}
+              </p>
+            </div>
           ) : (
-            <div className="space-y-3">
-              {entries.map(([name, count]) => (
-                <div key={name} className="flex items-center justify-between rounded-lg border p-3">
-                  <div>
-                    <span className="font-medium text-sm">{name}</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-32 bg-muted rounded-full h-2">
+            <div className="space-y-2">
+              {entries.map(([name, count]) => {
+                const pct = Math.max((count / maxCount) * 100, 2);
+                return (
+                  <div key={name} className="group rounded-lg border p-3 hover:bg-muted/30 transition-colors">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="font-medium text-sm">{name}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">
+                          {total > 0 ? `${((count / total) * 100).toFixed(0)}%` : ""}
+                        </span>
+                        <Badge variant="secondary" className="font-mono">{count}</Badge>
+                      </div>
+                    </div>
+                    <div className="w-full bg-muted rounded-full h-2">
                       <div
-                        className="bg-chart-1 h-2 rounded-full transition-all"
-                        style={{ width: `${Math.min(100, (count / Math.max(total, 1)) * 100)}%` }}
+                        className="bg-chart-1 h-2 rounded-full transition-all duration-500"
+                        style={{ width: `${pct}%` }}
                       />
                     </div>
-                    <Badge variant="secondary">{count}</Badge>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </CardContent>

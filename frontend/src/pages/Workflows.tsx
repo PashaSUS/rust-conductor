@@ -2,14 +2,18 @@ import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router";
 import { toast } from "sonner";
-import { workflowApi, metadataApi, formatTs, type SearchParams } from "@/api/conductor";
+import { workflowApi, metadataApi, type SearchParams } from "@/api/conductor";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { SearchableSelect } from "@/components/SearchableSelect";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Search, XCircle, Pause, Play, RotateCcw, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, XCircle, Pause, Play, RotateCcw, ChevronLeft, ChevronRight, Plus, RefreshCw } from "lucide-react";
 import { CopyButton } from "@/components/CopyButton";
+import { StartWorkflowDialog } from "@/components/StartWorkflowDialog";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { RelativeTime } from "@/components/RelativeTime";
 
 const PAGE_SIZE = 25;
 
@@ -52,6 +56,9 @@ export default function Workflows() {
   const { params, setParams } = useFilterParams();
   const [search, setSearch] = useState(params.freeText ?? "");
   const [workflowName, setWorkflowName] = useState(params.workflowType ?? "");
+  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [startOpen, setStartOpen] = useState(false);
+  const [terminateTarget, setTerminateTarget] = useState<string | null>(null);
 
   const { data: workflowDefs } = useQuery({
     queryKey: ["workflow-defs-list"],
@@ -61,6 +68,7 @@ export default function Workflows() {
   const { data, isLoading } = useQuery({
     queryKey: ["workflow-search", params],
     queryFn: () => workflowApi.search(params),
+    refetchInterval: autoRefresh ? 5000 : false,
   });
 
   const terminateMut = useMutation({
@@ -112,7 +120,24 @@ export default function Workflows() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-2xl font-bold tracking-tight">Workflow Executions</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold tracking-tight">Workflow Executions</h2>
+        <div className="flex items-center gap-2">
+          <Button
+            variant={autoRefresh ? "default" : "outline"}
+            size="sm"
+            onClick={() => setAutoRefresh(!autoRefresh)}
+            title={autoRefresh ? "Auto-refresh ON (5s)" : "Auto-refresh OFF"}
+          >
+            <RefreshCw className={`h-3 w-3 mr-1 ${autoRefresh ? "animate-spin" : ""}`} />
+            {autoRefresh ? "Live" : "Auto-refresh"}
+          </Button>
+          <Button size="sm" onClick={() => setStartOpen(true)}>
+            <Plus className="h-4 w-4 mr-1" />
+            Start Workflow
+          </Button>
+        </div>
+      </div>
 
       <Card>
         <CardHeader className="pb-3">
@@ -120,19 +145,17 @@ export default function Workflows() {
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex gap-2">
-            <select
+            <SearchableSelect
+              options={uniqueNames.map((n) => ({ label: n, value: n }))}
               value={workflowName}
-              onChange={(e) => {
-                setWorkflowName(e.target.value);
-                setParams((p) => ({ ...p, workflowType: e.target.value || undefined, start: 0 }));
+              onChange={(v) => {
+                setWorkflowName(v);
+                setParams((p) => ({ ...p, workflowType: v || undefined, start: 0 }));
               }}
-              className="h-9 rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring"
-            >
-              <option value="">All Workflow Types</option>
-              {uniqueNames.map((n) => (
-                <option key={n} value={n}>{n}</option>
-              ))}
-            </select>
+              placeholder="All Workflow Types"
+              searchPlaceholder="Search workflows..."
+              className="w-55"
+            />
             <Input
               placeholder="Search by name, ID, or correlation ID..."
               value={search}
@@ -200,8 +223,8 @@ export default function Workflows() {
                       <TableCell>
                         <StatusBadge status={wf.status} />
                       </TableCell>
-                      <TableCell className="text-xs">{formatTs(wf.startTime)}</TableCell>
-                      <TableCell className="text-xs">{formatTs(wf.endTime)}</TableCell>
+                      <TableCell className="text-xs"><RelativeTime value={wf.startTime} /></TableCell>
+                      <TableCell className="text-xs"><RelativeTime value={wf.endTime} /></TableCell>
                       <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="flex gap-1 justify-end">
                           {wf.status === "RUNNING" && (
@@ -209,7 +232,7 @@ export default function Workflows() {
                               <Button variant="ghost" size="icon" onClick={() => pauseMut.mutate(wf.workflowId)} title="Pause">
                                 <Pause className="h-3 w-3" />
                               </Button>
-                              <Button variant="ghost" size="icon" onClick={() => terminateMut.mutate(wf.workflowId)} title="Terminate">
+                              <Button variant="ghost" size="icon" onClick={() => setTerminateTarget(wf.workflowId)} title="Terminate">
                                 <XCircle className="h-3 w-3" />
                               </Button>
                             </>
@@ -261,6 +284,27 @@ export default function Workflows() {
           )}
         </CardContent>
       </Card>
+
+      {/* Start workflow dialog */}
+      <StartWorkflowDialog
+        open={startOpen}
+        onOpenChange={setStartOpen}
+      />
+
+      {/* Terminate confirmation */}
+      <ConfirmDialog
+        open={!!terminateTarget}
+        onOpenChange={(open) => { if (!open) setTerminateTarget(null); }}
+        title="Terminate Workflow"
+        description="Are you sure you want to terminate this workflow execution? This will stop all running tasks."
+        confirmLabel="Terminate"
+        variant="destructive"
+        onConfirm={async () => {
+          if (terminateTarget) {
+            await terminateMut.mutateAsync(terminateTarget);
+          }
+        }}
+      />
     </div>
   );
 }

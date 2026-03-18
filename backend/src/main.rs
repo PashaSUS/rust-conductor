@@ -44,16 +44,6 @@ async fn main() -> std::io::Result<()> {
     }
 
     let cfg = config::AppConfig::from_env();
-    // Initialize sharded Redis pool from comma-separated URLs
-    let redis_urls: Vec<String> = cfg
-        .redis_urls
-        .split(',')
-        .map(|s| s.trim().to_string())
-        .collect();
-
-    let redis_pool = store::redis::ShardedRedis::new_async(&redis_urls)
-        .await
-        .expect("Failed to create sharded Redis pool");
 
     let skip_migrations = std::env::var("SKIP_MIGRATIONS").unwrap_or_default() == "true";
     let migrate_only = std::env::var("MIGRATE_ONLY").unwrap_or_default() == "true";
@@ -76,6 +66,17 @@ async fn main() -> std::io::Result<()> {
         tracing::info!("Migrations complete — exiting (MIGRATE_ONLY=true)");
         return Ok(());
     }
+
+    // Initialize sharded Redis pool from comma-separated URLs
+    let redis_urls: Vec<String> = cfg
+        .redis_urls
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .collect();
+
+    let redis_pool = store::redis::ShardedRedis::new_async(&redis_urls)
+        .await
+        .expect("Failed to create sharded Redis pool");
 
     let sharded_pool = engine::ShardedPool::new(shard_pools);
 

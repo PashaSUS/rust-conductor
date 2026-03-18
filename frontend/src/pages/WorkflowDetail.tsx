@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -9,8 +9,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Pause, Play, XCircle, RotateCcw, RefreshCcw, ChevronDown, ChevronRight, ExternalLink, X } from "lucide-react";
+import { Pause, Play, XCircle, RotateCcw, RefreshCcw, ChevronDown, ChevronRight, ExternalLink, X, Clock } from "lucide-react";
 import { CopyButton } from "@/components/CopyButton";
+import { ExecutionTimeline } from "@/components/ExecutionTimeline";
+import { JsonView } from "@/components/JsonView";
 
 export default function WorkflowDetail() {
   const { id } = useParams<{ id: string }>();
@@ -32,6 +34,10 @@ export default function WorkflowDetail() {
     queryKey: ["workflow", id],
     queryFn: () => workflowApi.get(id!),
     enabled: !!id,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === "RUNNING" || status === "PAUSED" ? 3000 : false;
+    },
   });
 
   const { data: wfDef } = useQuery({
@@ -60,6 +66,7 @@ export default function WorkflowDetail() {
         </div>
         <div className="flex items-center gap-2">
           <StatusBadge status={wf.status} />
+          <DurationBadge startTime={wf.startTime} endTime={wf.endTime} status={wf.status} />
           <div className="flex gap-1 ml-2">
             {wf.status === "RUNNING" && (
               <>
@@ -83,11 +90,24 @@ export default function WorkflowDetail() {
       <Tabs defaultValue="tasks">
         <TabsList>
           <TabsTrigger value="tasks">Tasks ({wf.tasks.length})</TabsTrigger>
+          <TabsTrigger value="timeline">Timeline</TabsTrigger>
           <TabsTrigger value="diagram">Diagram</TabsTrigger>
           <TabsTrigger value="input">Input</TabsTrigger>
           <TabsTrigger value="output">Output</TabsTrigger>
           <TabsTrigger value="info">Info</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="timeline">
+          <Card>
+            <CardContent className="pt-6">
+              <ExecutionTimeline
+                tasks={wf.tasks}
+                workflowStartTime={wf.startTime}
+                workflowEndTime={wf.endTime}
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         <TabsContent value="tasks">
           <Card>
@@ -131,15 +151,11 @@ export default function WorkflowDetail() {
                             <div className="grid grid-cols-2 gap-4">
                               <div>
                                 <p className="text-xs font-semibold mb-1 text-muted-foreground">Input</p>
-                                <pre className="text-xs rounded-lg bg-muted p-3 overflow-auto max-h-64">
-                                  {JSON.stringify(t.inputData, null, 2)}
-                                </pre>
+                                <JsonView data={t.inputData} maxHeight="16rem" />
                               </div>
                               <div>
                                 <p className="text-xs font-semibold mb-1 text-muted-foreground">Output</p>
-                                <pre className="text-xs rounded-lg bg-muted p-3 overflow-auto max-h-64">
-                                  {JSON.stringify(t.outputData, null, 2)}
-                                </pre>
+                                <JsonView data={t.outputData} maxHeight="16rem" />
                               </div>
                             </div>
                             {t.reasonForIncompletion && (
@@ -229,15 +245,11 @@ export default function WorkflowDetail() {
                       )}
                       <div>
                         <p className="text-muted-foreground font-semibold mb-1">Input</p>
-                        <pre className="rounded-lg bg-muted p-2 overflow-auto max-h-40 text-[10px]">
-                          {JSON.stringify(selectedDiagramTask.inputData, null, 2)}
-                        </pre>
+                        <JsonView data={selectedDiagramTask.inputData} maxHeight="10rem" />
                       </div>
                       <div>
                         <p className="text-muted-foreground font-semibold mb-1">Output</p>
-                        <pre className="rounded-lg bg-muted p-2 overflow-auto max-h-40 text-[10px]">
-                          {JSON.stringify(selectedDiagramTask.outputData, null, 2)}
-                        </pre>
+                        <JsonView data={selectedDiagramTask.outputData} maxHeight="10rem" />
                       </div>
                       {selectedDiagramTask.taskType === "SUB_WORKFLOW" && selectedDiagramTask.subWorkflowId && (
                         <Button
@@ -276,9 +288,7 @@ export default function WorkflowDetail() {
         <TabsContent value="input">
           <Card>
             <CardContent className="pt-6">
-              <pre className="text-xs rounded-lg bg-muted p-4 overflow-auto max-h-96">
-                {JSON.stringify(wf.input, null, 2)}
-              </pre>
+              <JsonView data={wf.input} maxHeight="24rem" />
             </CardContent>
           </Card>
         </TabsContent>
@@ -286,9 +296,7 @@ export default function WorkflowDetail() {
         <TabsContent value="output">
           <Card>
             <CardContent className="pt-6">
-              <pre className="text-xs rounded-lg bg-muted p-4 overflow-auto max-h-96">
-                {JSON.stringify(wf.output, null, 2)}
-              </pre>
+              <JsonView data={wf.output} maxHeight="24rem" />
             </CardContent>
           </Card>
         </TabsContent>
@@ -329,4 +337,29 @@ function StatusBadge({ status }: { status: string }) {
 function TaskStatusBadge({ status }: { status: string }) {
   const variant = status === "COMPLETED" ? "success" : status === "IN_PROGRESS" ? "default" : status === "FAILED" ? "destructive" : status === "TIMED_OUT" ? "destructive" : status === "SCHEDULED" ? "warning" : "secondary";
   return <Badge variant={variant as "default"}>{status}</Badge>;
+}
+
+function DurationBadge({ startTime, endTime, status }: { startTime: number; endTime?: number; status: string }) {
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    if (status !== "RUNNING" && status !== "PAUSED") return;
+    const interval = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(interval);
+  }, [status]);
+
+  const end = endTime ?? Date.now();
+  const ms = Math.max(end - startTime, 0);
+  const secs = Math.floor(ms / 1000) % 60;
+  const mins = Math.floor(ms / 60000) % 60;
+  const hrs = Math.floor(ms / 3600000);
+
+  const formatted = hrs > 0 ? `${hrs}h ${mins}m ${secs}s` : mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+
+  return (
+    <span className="text-xs text-muted-foreground flex items-center gap-1">
+      <Clock className="h-3 w-3" />
+      {formatted}
+    </span>
+  );
 }
