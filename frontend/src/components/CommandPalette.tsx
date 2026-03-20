@@ -16,6 +16,7 @@ import {
   Layers,
   Search,
 } from "lucide-react";
+import { useThemeText } from "@/components/ThemeContext";
 
 interface PaletteItem {
   id: string;
@@ -31,6 +32,7 @@ export function CommandPalette() {
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const navigate = useNavigate();
+  const t = useThemeText();
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -85,11 +87,11 @@ export function CommandPalette() {
 
   // Pages
   const pages: PaletteItem[] = [
-    { id: "p-dash", label: "Dashboard", icon: LayoutDashboard, action: () => go("/"), category: "Pages" },
-    { id: "p-exec", label: "Executions", icon: Play, action: () => go("/executions"), category: "Pages" },
-    { id: "p-wfdef", label: "Workflow Definitions", icon: FileCode2, action: () => go("/definitions"), category: "Pages" },
-    { id: "p-tdef", label: "Task Definitions", icon: ListChecks, action: () => go("/taskdefs"), category: "Pages" },
-    { id: "p-queues", label: "Task Queues", icon: Layers, action: () => go("/queues"), category: "Pages" },
+    { id: "p-dash", label: t.dashboard, icon: LayoutDashboard, action: () => go("/"), category: t.pages },
+    { id: "p-exec", label: t.executions, icon: Play, action: () => go("/executions"), category: t.pages },
+    { id: "p-wfdef", label: t.workflowDefs, icon: FileCode2, action: () => go("/definitions"), category: t.pages },
+    { id: "p-tdef", label: t.taskDefs, icon: ListChecks, action: () => go("/taskdefs"), category: t.pages },
+    { id: "p-queues", label: t.taskQueues, icon: Layers, action: () => go("/queues"), category: t.pages },
   ];
   items.push(...pages);
 
@@ -99,10 +101,10 @@ export function CommandPalette() {
       items.push({
         id: `wdef-${def.name}-${def.version}`,
         label: def.name,
-        sublabel: `v${def.version} · Workflow Definition`,
+        sublabel: `v${def.version} · ${t.workflowDefs}`,
         icon: FileCode2,
         action: () => go("/definitions"),
-        category: "Workflow Definitions",
+        category: t.workflowDefinitions,
       });
     }
   }
@@ -113,10 +115,10 @@ export function CommandPalette() {
       items.push({
         id: `tdef-${def.name}`,
         label: def.name,
-        sublabel: "Task Definition",
+        sublabel: t.taskDefs,
         icon: ListChecks,
         action: () => go("/taskdefs"),
-        category: "Task Definitions",
+        category: t.taskDefinitions,
       });
     }
   }
@@ -130,7 +132,7 @@ export function CommandPalette() {
         sublabel: `${exec.status} · ${exec.workflowId.slice(0, 8)}…`,
         icon: Play,
         action: () => go(`/executions/${exec.workflowId}`),
-        category: "Recent Executions",
+        category: t.recentExecutions,
       });
     }
   }
@@ -187,7 +189,7 @@ export function CommandPalette() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="p-0 gap-0 max-w-lg [&>button]:hidden overflow-hidden">
-        <DialogTitle className="sr-only">Command Palette</DialogTitle>
+        <DialogTitle className="sr-only">{t.commandPalette}</DialogTitle>
         <div className="flex items-center border-b px-3">
           <Search className="h-4 w-4 text-muted-foreground shrink-0" />
           <Input
@@ -195,7 +197,7 @@ export function CommandPalette() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Search workflows, tasks, pages…"
+            placeholder={t.searchAll}
             className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0 h-12 text-sm"
           />
           <kbd className="pointer-events-none hidden sm:inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
@@ -205,7 +207,7 @@ export function CommandPalette() {
         <div ref={listRef} className="max-h-80 overflow-y-auto p-2">
           {grouped.length === 0 && (
             <p className="text-center text-sm text-muted-foreground py-6">
-              No results found.
+              {t.noResults}
             </p>
           )}
           {grouped.map((group) => (

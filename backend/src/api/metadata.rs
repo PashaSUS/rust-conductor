@@ -1,7 +1,7 @@
 use actix_web::{web, HttpResponse};
 
 use crate::engine::WorkflowEngine;
-use crate::models::{TaskDef, WorkflowDef};
+use crate::models::{BulkResponse, TaskDef, WorkflowDef};
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(
@@ -17,6 +17,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             )
             // Task definitions
             .route("/taskdefs", web::post().to(register_task_defs))
+            .route("/taskdefs", web::put().to(update_task_def))
             .route("/taskdefs", web::get().to(list_task_defs))
             .route("/taskdefs/{taskType}", web::get().to(get_task_def))
             .route("/taskdefs/{taskType}", web::delete().to(delete_task_def)),
@@ -27,18 +28,30 @@ async fn register_workflow_def(
     engine: web::Data<WorkflowEngine>,
     body: web::Json<WorkflowDef>,
 ) -> Result<HttpResponse, crate::engine::EngineError> {
-    engine.register_workflow_def(&body).await?;
-    Ok(HttpResponse::Ok().finish())
+    let def = engine.register_workflow_def(&body).await?;
+    Ok(HttpResponse::Ok().json(def))
 }
 
 async fn update_workflow_defs(
     engine: web::Data<WorkflowEngine>,
     body: web::Json<Vec<WorkflowDef>>,
 ) -> Result<HttpResponse, crate::engine::EngineError> {
+    let mut response = BulkResponse::default();
     for def in body.iter() {
-        engine.register_workflow_def(def).await?;
+        match engine.register_workflow_def(def).await {
+            Ok(_) => {
+                response
+                    .bulk_successful_results
+                    .push(format!("{}:{}", def.name, def.version));
+            }
+            Err(e) => {
+                response
+                    .bulk_error_results
+                    .insert(format!("{}:{}", def.name, def.version), e.to_string());
+            }
+        }
     }
-    Ok(HttpResponse::Ok().finish())
+    Ok(HttpResponse::Ok().json(response))
 }
 
 async fn list_workflow_defs(
@@ -71,10 +84,19 @@ async fn register_task_defs(
     engine: web::Data<WorkflowEngine>,
     body: web::Json<Vec<TaskDef>>,
 ) -> Result<HttpResponse, crate::engine::EngineError> {
+    let mut result = Vec::new();
     for def in body.iter() {
-        engine.register_task_def(def).await?;
+        result.push(engine.register_task_def(def).await?);
     }
-    Ok(HttpResponse::Ok().finish())
+    Ok(HttpResponse::Ok().json(result))
+}
+
+async fn update_task_def(
+    engine: web::Data<WorkflowEngine>,
+    body: web::Json<TaskDef>,
+) -> Result<HttpResponse, crate::engine::EngineError> {
+    let def = engine.register_task_def(&body).await?;
+    Ok(HttpResponse::Ok().json(def))
 }
 
 async fn list_task_defs(

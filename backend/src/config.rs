@@ -3,9 +3,13 @@ pub struct AppConfig {
     pub port: u16,
     pub grpc_port: u16,
     pub redis_urls: String,
+    #[cfg(feature = "kafka")]
     pub kafka_brokers: String,
+    pub cors_origin: Option<String>,
     /// Resolved list of shard database URLs (one per shard).
     pub shard_database_urls: Vec<String>,
+    /// Whether external payload storage (S3/MinIO) is configured.
+    pub external_storage_enabled: bool,
 }
 
 impl AppConfig {
@@ -43,16 +47,19 @@ impl AppConfig {
             port: std::env::var("PORT")
                 .ok()
                 .and_then(|p| p.parse().ok())
-                .unwrap_or(8080),
+                .unwrap_or(8090),
             grpc_port: std::env::var("GRPC_PORT")
                 .ok()
                 .and_then(|p| p.parse().ok())
-                .unwrap_or(50051),
+                .unwrap_or(50055),
             redis_urls: std::env::var("REDIS_URLS")
                 .unwrap_or_else(|_| "redis://localhost:6379".into()),
+            #[cfg(feature = "kafka")]
             kafka_brokers: std::env::var("KAFKA_BROKERS")
                 .unwrap_or_else(|_| "localhost:9092".into()),
+            cors_origin: std::env::var("CORS_ORIGIN").ok(),
             shard_database_urls,
+            external_storage_enabled: std::env::var("S3_ENDPOINT").is_ok(),
         }
     }
 }

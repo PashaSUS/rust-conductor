@@ -62,7 +62,7 @@ pub struct SearchResult<T> {
     pub results: Vec<T>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BulkResponse {
     #[serde(default)]

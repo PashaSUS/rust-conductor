@@ -23,6 +23,7 @@ import {
   ArrowUp,
   ArrowDown,
 } from "lucide-react";
+import { useThemeText } from "@/components/ThemeContext";
 
 interface TaskCardProps {
   task: TaskFormState;
@@ -149,6 +150,7 @@ function TaskCardHeader({
   onDuplicate: () => void;
   onRemove: () => void;
 }) {
+  const t = useThemeText();
   return (
     <div
       className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-muted/50 transition-colors"
@@ -160,7 +162,7 @@ function TaskCardHeader({
       </Badge>
       {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
       <span className="font-medium text-sm flex-1 truncate">
-        {task.taskReferenceName || "(unnamed)"}
+        {task.taskReferenceName || t.unnamed}
       </span>
       {task.name && (
         <span className="text-xs text-muted-foreground truncate max-w-32">
@@ -168,18 +170,18 @@ function TaskCardHeader({
         </span>
       )}
       <Badge variant="outline" className="text-[10px]">{task.type}</Badge>
-      {task.optional && <Badge className="text-[10px] bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">Optional</Badge>}
+      {task.optional && <Badge className="text-[10px] bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">{t.optional}</Badge>}
       <div className="flex gap-0.5" onClick={(e) => e.stopPropagation()}>
-        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onMoveUp} disabled={index === 0} title="Move up">
+        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onMoveUp} disabled={index === 0} title={t.moveUp}>
           <ArrowUp className="h-3 w-3" />
         </Button>
-        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onMoveDown} disabled={index === total - 1} title="Move down">
+        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onMoveDown} disabled={index === total - 1} title={t.moveDown}>
           <ArrowDown className="h-3 w-3" />
         </Button>
-        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onDuplicate} title="Duplicate">
+        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onDuplicate} title={t.duplicate}>
           <Copy className="h-3 w-3" />
         </Button>
-        <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={onRemove} title="Remove">
+        <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={onRemove} title={t.remove}>
           <Trash2 className="h-3 w-3" />
         </Button>
       </div>
@@ -198,10 +200,11 @@ function TaskCoreFields({
   registeredTasks: TaskDef[];
   onSelectRegisteredTask: (name: string) => void;
 }) {
+  const t = useThemeText();
   return (
     <div className="grid grid-cols-3 gap-4">
       <div className="space-y-2">
-        <Label>Task Type</Label>
+        <Label>{t.taskType}</Label>
         <Select value={task.type} onValueChange={(v) => onUpdate({ type: v })}>
           <SelectTrigger>
             <SelectValue />
@@ -219,7 +222,7 @@ function TaskCoreFields({
         </Select>
       </div>
       <div className="space-y-2">
-        <Label>Reference Name *</Label>
+        <Label>{t.referenceNameRequired}</Label>
         <Input
           value={task.taskReferenceName}
           onChange={(e) => onUpdate({ taskReferenceName: e.target.value })}
@@ -227,11 +230,11 @@ function TaskCoreFields({
         />
       </div>
       <div className="space-y-2">
-        <Label>Task Name</Label>
+        <Label>{t.taskName}</Label>
         {task.type === "SIMPLE" && registeredTasks.length > 0 ? (
           <Select value={task.name} onValueChange={onSelectRegisteredTask}>
             <SelectTrigger className="text-left">
-              <SelectValue placeholder="Select a registered task..." />
+              <SelectValue placeholder={t.selectRegisteredTask} />
             </SelectTrigger>
             <SelectContent>
               {registeredTasks.map((d) => (
@@ -265,19 +268,20 @@ function TaskMetaFields({
   task: TaskFormState;
   onUpdate: (u: Partial<TaskFormState>) => void;
 }) {
+  const t = useThemeText();
   return (
     <div className="grid grid-cols-2 gap-4">
       <div className="space-y-2">
-        <Label>Description</Label>
+        <Label>{t.description}</Label>
         <Input
           value={task.description}
           onChange={(e) => onUpdate({ description: e.target.value })}
-          placeholder="Optional description"
+          placeholder={t.optional}
         />
       </div>
       <div className="flex gap-4">
         <div className="space-y-2 flex-1">
-          <Label>Start Delay (s)</Label>
+          <Label>{t.startDelay}</Label>
           <Input
             type="number"
             min={0}
@@ -293,7 +297,7 @@ function TaskMetaFields({
               onChange={(e) => onUpdate({ optional: e.target.checked })}
               className="rounded"
             />
-            Optional
+            {t.optional}
           </label>
         </div>
       </div>

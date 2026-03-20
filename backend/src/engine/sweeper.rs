@@ -34,7 +34,7 @@ impl WorkflowEngine {
                 for orphan in &orphans {
                     // Enqueue first — only bump scheduled_time on success
                     self.set_task_routing(&orphan.task_id, &orphan.workflow_instance_id).await?;
-                    match self.kafka.enqueue(&orphan.task_def_name, &orphan.task_id).await {
+                    match self.queue.enqueue(&orphan.task_def_name, &orphan.task_id).await {
                         Ok(_) => {
                             // Bump scheduled_time so this orphan isn't re-queued next cycle
                             let _ = sqlx::query(

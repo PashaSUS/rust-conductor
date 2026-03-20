@@ -27,7 +27,7 @@ impl WorkflowEngine {
     }
 
     pub async fn poll_task(&self, task_type: &str, worker_id: Option<&str>) -> Result<Option<PollTask>, EngineError> {
-        let task_id = match self.kafka.dequeue(task_type).await {
+        let task_id = match self.queue.dequeue(task_type).await {
             Some(id) => id,
             None => return Ok(None),
         };
@@ -84,7 +84,7 @@ impl WorkflowEngine {
             Err(e) => {
                 // DB lookup failed after dequeue — re-enqueue the task via Kafka so it is not lost
                 tracing::warn!(task_id = %task_id, error = %e, "Re-enqueuing task after poll DB failure");
-                let _ = self.kafka.enqueue(task_type, &task_id).await;
+                let _ = self.queue.enqueue(task_type, &task_id).await;
                 Err(e)
             }
         }
@@ -184,7 +184,7 @@ impl WorkflowEngine {
         }
 
         let task_ids = self
-            .kafka
+            .queue
             .batch_dequeue(task_type, count, std::time::Duration::from_millis(500))
             .await;
 
@@ -237,7 +237,7 @@ impl WorkflowEngine {
             if let Err(e) = result {
                 // Re-enqueue on failure so the task is not lost from Kafka
                 tracing::warn!(task_id = %task_id, error = %e, "Re-enqueuing task after batch poll DB failure");
-                let _ = self.kafka.enqueue(task_type, task_id).await;
+                let _ = self.queue.enqueue(task_type, task_id).await;
             }
         }
         Ok(tasks)
@@ -431,5 +431,190 @@ impl WorkflowEngine {
             }
         }
         Ok(sizes)
+    }
+
+    // ── Update task by reference name ──
+
+    pub async fn update_task_by_ref_name(
+        &self,
+        workflow_id: &str,
+        task_ref_name: &str,
+        status: &str,
+        output: &Value,
+    ) -> Result<String, EngineError> {
+        let db = self.shards.shard_for(workflow_id);
+        let now = Utc::now();
+
+        let task_id: Option<String> = sqlx::query_scalar(
+            "SELECT task_id FROM task WHERE workflow_instance_id = $1 AND reference_task_name = $2 ORDER BY seq DESC LIMIT 1",
+        )
+        .bind(workflow_id)
+        .bind(task_ref_name)
+        .fetch_optional(db)
+        .await
+        .map_err(|e| EngineError::Database(e.to_string()))?;
+
+        let task_id = task_id.ok_or_else(|| {
+            EngineError::NotFound(format!(
+                "Task with ref name {task_ref_name} not found in workflow {workflow_id}"
+            ))
+        })?;
+
+        let parsed_status: TaskStatus = serde_json::from_value(Value::String(status.to_string()))
+            .map_err(|_| EngineError::InvalidState(format!("Invalid task status: {status}")))?;
+
+        let is_terminal = super::is_task_terminal(&parsed_status);
+
+        sqlx::query(
+            "UPDATE task SET status = $2, output_data = $3, update_time = $4, end_time = CASE WHEN $5 THEN $4 ELSE end_time END WHERE task_id = $1",
+        )
+        .bind(&task_id)
+        .bind(status)
+        .bind(output)
+        .bind(now)
+        .bind(is_terminal)
+        .execute(db)
+        .await
+        .map_err(|e| EngineError::Database(e.to_string()))?;
+
+        if is_terminal {
+            let _ = self.delete_task_routing(&task_id).await;
+        }
+
+        if parsed_status == TaskStatus::Completed || parsed_status == TaskStatus::CompletedWithErrors {
+            self.advance_workflow(workflow_id).await?;
+        } else if super::is_task_failed(&parsed_status) {
+            let wf_status = if parsed_status == TaskStatus::TimedOut { "TIMED_OUT" } else { "FAILED" };
+            self.fail_workflow(workflow_id, None, wf_status).await?;
+        }
+
+        Ok(task_id)
+    }
+
+    // ── In-progress tasks ──
+
+    pub async fn get_in_progress_tasks(&self, task_type: &str) -> Result<Vec<TaskResult>, EngineError> {
+        let futs: Vec<_> = self.shards.all_shards().iter().map(|shard| {
+            async move {
+                sqlx::query_as::<_, TaskRow>(
+                    "SELECT * FROM task WHERE task_def_name = $1 AND status = 'IN_PROGRESS' ORDER BY start_time DESC",
+                )
+                .bind(task_type)
+                .fetch_all(shard)
+                .await
+                .map_err(|e| EngineError::Database(e.to_string()))
+            }
+        }).collect();
+
+        let results = join_all(futs).await;
+        let mut all_tasks = Vec::new();
+        for result in results {
+            all_tasks.extend(result?.into_iter().map(|r| r.into()));
+        }
+        Ok(all_tasks)
+    }
+
+    pub async fn get_in_progress_task_for_workflow(
+        &self,
+        workflow_id: &str,
+        task_ref_name: &str,
+    ) -> Result<Option<TaskResult>, EngineError> {
+        let db = self.shards.shard_for(workflow_id);
+        let row = sqlx::query_as::<_, TaskRow>(
+            "SELECT * FROM task WHERE workflow_instance_id = $1 AND reference_task_name = $2 AND status = 'IN_PROGRESS' LIMIT 1",
+        )
+        .bind(workflow_id)
+        .bind(task_ref_name)
+        .fetch_optional(db)
+        .await
+        .map_err(|e| EngineError::Database(e.to_string()))?;
+
+        Ok(row.map(|r| r.into()))
+    }
+
+    // ── Queue details ──
+
+    pub async fn get_all_queue_details(&self) -> Result<std::collections::HashMap<String, i64>, EngineError> {
+        self.get_queue_sizes().await
+    }
+
+    pub async fn get_all_queue_details_verbose(&self) -> Result<std::collections::HashMap<String, std::collections::HashMap<String, i64>>, EngineError> {
+        let futs: Vec<_> = self.shards.all_shards().iter().map(|shard| {
+            async move {
+                let rows: Vec<(String, String, i64)> = sqlx::query_as(
+                    "SELECT task_def_name, status, COUNT(*) FROM task WHERE status IN ('SCHEDULED', 'IN_PROGRESS') GROUP BY task_def_name, status",
+                )
+                .fetch_all(shard)
+                .await
+                .map_err(|e| EngineError::Database(e.to_string()))?;
+                Ok::<_, EngineError>(rows)
+            }
+        }).collect();
+
+        let results = join_all(futs).await;
+        let mut details: std::collections::HashMap<String, std::collections::HashMap<String, i64>> = std::collections::HashMap::new();
+        for result in results {
+            for (name, status, count) in result? {
+                *details.entry(name).or_default().entry(status).or_insert(0) += count;
+            }
+        }
+        Ok(details)
+    }
+
+    pub async fn get_poll_data(&self, task_type: &str) -> Result<Vec<PollData>, EngineError> {
+        let futs: Vec<_> = self.shards.all_shards().iter().map(|shard| {
+            async move {
+                let rows: Vec<(Option<String>, Option<i64>)> = sqlx::query_as(
+                    "SELECT worker_id, MAX(EXTRACT(EPOCH FROM update_time)::bigint * 1000) FROM task WHERE task_def_name = $1 AND status = 'IN_PROGRESS' GROUP BY worker_id",
+                )
+                .bind(task_type)
+                .fetch_all(shard)
+                .await
+                .map_err(|e| EngineError::Database(e.to_string()))?;
+                Ok::<_, EngineError>(rows)
+            }
+        }).collect();
+
+        let results = join_all(futs).await;
+        let mut poll_data = Vec::new();
+        for result in results {
+            for (worker_id, last_poll) in result? {
+                poll_data.push(PollData {
+                    queue_name: Some(task_type.to_string()),
+                    domain: None,
+                    worker_id,
+                    last_poll_time: last_poll,
+                });
+            }
+        }
+        Ok(poll_data)
+    }
+
+    pub async fn get_all_poll_data(&self) -> Result<Vec<PollData>, EngineError> {
+        let futs: Vec<_> = self.shards.all_shards().iter().map(|shard| {
+            async move {
+                let rows: Vec<(String, Option<String>, Option<i64>)> = sqlx::query_as(
+                    "SELECT task_def_name, worker_id, MAX(EXTRACT(EPOCH FROM update_time)::bigint * 1000) FROM task WHERE status = 'IN_PROGRESS' GROUP BY task_def_name, worker_id",
+                )
+                .fetch_all(shard)
+                .await
+                .map_err(|e| EngineError::Database(e.to_string()))?;
+                Ok::<_, EngineError>(rows)
+            }
+        }).collect();
+
+        let results = join_all(futs).await;
+        let mut poll_data = Vec::new();
+        for result in results {
+            for (queue_name, worker_id, last_poll) in result? {
+                poll_data.push(PollData {
+                    queue_name: Some(queue_name),
+                    domain: None,
+                    worker_id,
+                    last_poll_time: last_poll,
+                });
+            }
+        }
+        Ok(poll_data)
     }
 }

@@ -12,6 +12,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import type { WorkflowTask, TaskResult } from "@/api/conductor";
+import { useThemeText, type ThemeText } from "@/components/ThemeContext";
 
 // ── Status colors ──
 
@@ -30,25 +31,26 @@ const DEFAULT_COLOR = { bg: "#f9fafb", border: "#d1d5db", text: "#374151" };
 
 // ── Task type icons ──
 
-function taskTypeLabel(type?: string): string {
+function taskTypeLabel(type: string | undefined, t: ThemeText): string {
   switch (type?.toUpperCase()) {
-    case "FORK_JOIN": return "⑂ Fork";
-    case "JOIN":      return "⊕ Join";
+    case "FORK_JOIN": return t.diagramFork;
+    case "JOIN":      return t.diagramJoin;
     case "DECISION":
-    case "SWITCH":    return "◇ Switch";
-    case "SUB_WORKFLOW": return "↳ SubWF";
-    case "DO_WHILE":  return "↻ Loop";
-    case "EVENT":     return "⚡ Event";
-    case "HTTP":      return "🌐 HTTP";
-    case "WAIT":      return "⏳ Wait";
-    case "TERMINATE": return "⏹ End";
-    default:          return "▪ Task";
+    case "SWITCH":    return t.diagramSwitch;
+    case "SUB_WORKFLOW": return t.diagramSubWf;
+    case "DO_WHILE":  return t.diagramLoop;
+    case "EVENT":     return t.diagramEvent;
+    case "HTTP":      return t.diagramHttp;
+    case "WAIT":      return t.diagramWait;
+    case "TERMINATE": return t.diagramEnd;
+    default:          return t.diagramTask;
   }
 }
 
 // ── Custom node ──
 
 function TaskNode({ data }: { data: { label: string; taskType: string; status?: string; refName: string } }) {
+  const t = useThemeText();
   const colors = data.status ? (STATUS_COLORS[data.status] ?? DEFAULT_COLOR) : DEFAULT_COLOR;
 
   return (
@@ -66,7 +68,7 @@ function TaskNode({ data }: { data: { label: string; taskType: string; status?: 
     >
       <Handle type="target" position={Position.Top} style={{ background: colors.border }} />
       <div style={{ fontSize: 10, color: "#6b7280", marginBottom: 2 }}>
-        {taskTypeLabel(data.taskType)}
+        {taskTypeLabel(data.taskType, t)}
       </div>
       <div style={{ fontSize: 13, fontWeight: 600, color: colors.text }}>
         {data.label}
@@ -110,6 +112,7 @@ interface LayoutResult {
 function buildGraph(
   definitionTasks: WorkflowTask[],
   runtimeTasks: TaskResult[],
+  t: ThemeText,
 ): LayoutResult {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
@@ -129,7 +132,7 @@ function buildGraph(
     id: startId,
     type: "task",
     position: { x: 0, y: 0 },
-    data: { label: "Start", taskType: "START", refName: "", status: undefined },
+    data: { label: t.diagramStart, taskType: "START", refName: "", status: undefined },
   });
 
   // Recursively lay out tasks, returning the IDs of terminal nodes
@@ -307,7 +310,7 @@ function buildGraph(
     id: endId,
     type: "task",
     position: { x: 0, y: maxY },
-    data: { label: "End", taskType: "END", refName: "", status: undefined },
+    data: { label: t.diagramEnd, taskType: "END", refName: "", status: undefined },
   });
 
   // ── Centre Start & End on the midpoint of all other nodes ──
@@ -343,9 +346,10 @@ interface WorkflowDiagramProps {
 }
 
 export default function WorkflowDiagram({ definitionTasks, runtimeTasks, onTaskClick }: WorkflowDiagramProps) {
+  const t = useThemeText();
   const { nodes, edges } = useMemo(
-    () => buildGraph(definitionTasks, runtimeTasks),
-    [definitionTasks, runtimeTasks],
+    () => buildGraph(definitionTasks, runtimeTasks, t),
+    [definitionTasks, runtimeTasks, t],
   );
 
   const onInit = useCallback((instance: { fitView: () => void }) => {

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { ChevronDown, X, Search } from "lucide-react";
+import { useThemeText } from "@/components/ThemeContext";
 
 interface SearchableSelectProps {
   options: { label: string; value: string }[];
@@ -19,6 +20,7 @@ export function SearchableSelect({
   searchPlaceholder = "Search...",
   className,
 }: SearchableSelectProps) {
+  const t = useThemeText();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
@@ -85,7 +87,7 @@ export function SearchableSelect({
           </div>
           <div className="max-h-60 overflow-y-auto p-1">
             {filtered.length === 0 ? (
-              <p className="py-4 text-center text-sm text-muted-foreground">No results</p>
+              <p className="py-4 text-center text-sm text-muted-foreground">{t.noResults}</p>
             ) : (
               filtered.map((o) => (
                 <button

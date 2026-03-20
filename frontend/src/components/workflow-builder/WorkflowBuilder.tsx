@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Plus, Code2, Wand2 } from "lucide-react";
+import { useThemeText } from "@/components/ThemeContext";
 
 import {
   type TaskFormState,
@@ -26,8 +27,10 @@ export default function WorkflowBuilder({
   initialDef,
   onSubmit,
   isPending,
-  submitLabel = "Create Workflow",
+  submitLabel,
 }: WorkflowBuilderProps) {
+  const t = useThemeText();
+  const resolvedLabel = submitLabel ?? t.createWorkflow;
   const [mode, setMode] = useState<"visual" | "json">("visual");
 
   const { data: registeredTasks } = useQuery({
@@ -134,7 +137,7 @@ export default function WorkflowBuilder({
       setJsonError("");
       onSubmit(def);
     } catch (e) {
-      setJsonError(e instanceof Error ? e.message : "Invalid JSON");
+      setJsonError(e instanceof Error ? e.message : t.toastInvalidJson);
     }
   };
 
@@ -158,7 +161,7 @@ export default function WorkflowBuilder({
       setJsonError("");
       setMode("visual");
     } catch (e) {
-      setJsonError(e instanceof Error ? e.message : "Invalid JSON");
+      setJsonError(e instanceof Error ? e.message : t.toastInvalidJson);
     }
   };
 
@@ -172,7 +175,7 @@ export default function WorkflowBuilder({
           onClick={() => (mode === "json" ? syncToVisual() : setMode("visual"))}
         >
           <Wand2 className="h-3 w-3 mr-1" />
-          Visual Builder
+          {t.visualBuilder}
         </Button>
         <Button
           variant={mode === "json" ? "default" : "outline"}
@@ -180,7 +183,7 @@ export default function WorkflowBuilder({
           onClick={() => (mode === "visual" ? syncToJson() : setMode("json"))}
         >
           <Code2 className="h-3 w-3 mr-1" />
-          JSON Editor
+          {t.jsonEditor}
         </Button>
       </div>
 
@@ -198,7 +201,7 @@ export default function WorkflowBuilder({
           />
           {jsonError && <p className="text-sm text-destructive">{jsonError}</p>}
           <Button onClick={handleJsonSubmit} disabled={isPending}>
-            {isPending ? "Saving..." : submitLabel}
+            {isPending ? t.saving : resolvedLabel}
           </Button>
         </div>
       ) : (
@@ -220,19 +223,19 @@ export default function WorkflowBuilder({
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-medium">
-                  Tasks ({tasks.length})
+                  {t.tasksTab} ({tasks.length})
                 </CardTitle>
                 <Button size="sm" onClick={addTask}>
                   <Plus className="h-3 w-3 mr-1" />
-                  Add Task
+                  {t.addTask}
                 </Button>
               </div>
             </CardHeader>
             <CardContent>
               {tasks.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
-                  <p className="text-sm">No tasks yet. Click "Add Task" to get started.</p>
-                  <p className="text-xs mt-1">Tasks are executed sequentially in the order listed.</p>
+                  <p className="text-sm">{t.noTasksYet}</p>
+                  <p className="text-xs mt-1">{t.tasksSequentialHint}</p>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -264,25 +267,25 @@ export default function WorkflowBuilder({
           <div className="flex items-center justify-between">
             <div className="text-sm text-muted-foreground">
               {!name.trim() && (
-                <span className="text-destructive">Workflow name is required. </span>
+                <span className="text-destructive">{t.workflowNameRequired} </span>
               )}
               {tasks.length === 0 && (
-                <span className="text-destructive">Add at least one task. </span>
+                <span className="text-destructive">{t.addAtLeastOneTask} </span>
               )}
               {tasks.some((t) => !t.taskReferenceName.trim()) && (
-                <span className="text-destructive">All tasks need a reference name. </span>
+                <span className="text-destructive">{t.allTasksNeedRefName} </span>
               )}
             </div>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={syncToJson}>
                 <Code2 className="h-3 w-3 mr-1" />
-                Preview JSON
+                {t.previewJson}
               </Button>
               <Button
                 onClick={handleVisualSubmit}
                 disabled={isPending || !name.trim() || tasks.length === 0}
               >
-                {isPending ? "Saving..." : submitLabel}
+                {isPending ? t.saving : resolvedLabel}
               </Button>
             </div>
           </div>

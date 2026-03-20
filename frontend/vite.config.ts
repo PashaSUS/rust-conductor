@@ -5,14 +5,14 @@ import path from "path";
 
 export default defineConfig({
   server: {
-    port: 3000,
+    port: 3170,
     proxy: {
       "/api": {
-        target: "http://localhost:8080",
+        target: "http://localhost:8090",
         changeOrigin: true,
       },
       "/health": {
-        target: "http://localhost:8080",
+        target: "http://localhost:8090",
         changeOrigin: true,
       },
     },

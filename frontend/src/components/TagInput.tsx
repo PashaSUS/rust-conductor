@@ -1,6 +1,7 @@
 import { useState, useRef, type KeyboardEvent } from "react";
 import { X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { useThemeText } from "@/components/ThemeContext";
 
 interface TagInputProps {
   tags: string[];
@@ -9,7 +10,9 @@ interface TagInputProps {
   id?: string;
 }
 
-export function TagInput({ tags, onChange, placeholder = "Type and press Enter", id }: TagInputProps) {
+export function TagInput({ tags, onChange, placeholder, id }: TagInputProps) {
+  const t = useThemeText();
+  const resolvedPlaceholder = placeholder ?? t.typeAndPressEnter;
   const [input, setInput] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -58,7 +61,7 @@ export function TagInput({ tags, onChange, placeholder = "Type and press Enter",
         onChange={(e) => setInput(e.target.value)}
         onKeyDown={handleKeyDown}
         onBlur={() => { if (input.trim()) addTag(input); }}
-        placeholder={tags.length === 0 ? placeholder : ""}
+        placeholder={tags.length === 0 ? resolvedPlaceholder : ""}
         className="flex-1 min-w-20 bg-transparent outline-none placeholder:text-muted-foreground text-sm"
       />
     </div>

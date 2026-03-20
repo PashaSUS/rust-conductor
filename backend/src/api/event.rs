@@ -18,16 +18,16 @@ async fn register_event_handler(
     engine: web::Data<WorkflowEngine>,
     body: web::Json<EventHandler>,
 ) -> Result<HttpResponse, crate::engine::EngineError> {
-    engine.register_event_handler(&body).await?;
-    Ok(HttpResponse::Ok().finish())
+    let handler = engine.register_event_handler(&body).await?;
+    Ok(HttpResponse::Ok().json(handler))
 }
 
 async fn update_event_handler(
     engine: web::Data<WorkflowEngine>,
     body: web::Json<EventHandler>,
 ) -> Result<HttpResponse, crate::engine::EngineError> {
-    engine.register_event_handler(&body).await?;
-    Ok(HttpResponse::Ok().finish())
+    let handler = engine.register_event_handler(&body).await?;
+    Ok(HttpResponse::Ok().json(handler))
 }
 
 async fn get_event_handlers(

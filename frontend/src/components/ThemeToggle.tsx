@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { Moon, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useThemeText } from "@/components/ThemeContext";
 
 type Theme = "light" | "dark" | "system";
 
@@ -49,6 +50,7 @@ export function ThemeToggle() {
   const resolved = theme === "system" ? getSystemTheme() : theme;
   const Icon = resolved === "dark" ? Moon : Sun;
 
+  const t = useThemeText();
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -58,7 +60,7 @@ export function ThemeToggle() {
       </TooltipTrigger>
       <TooltipContent side="right">
         <p className="text-xs">
-          Theme: {resolved}
+          {t.themeLabel}: {resolved}
         </p>
       </TooltipContent>
     </Tooltip>

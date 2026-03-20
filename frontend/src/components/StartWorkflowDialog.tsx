@@ -22,7 +22,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/SearchableSelect";
 import { Code, FormInput } from "lucide-react";
+import { useThemeText } from "@/components/ThemeContext";
 
 /** Try to parse a string value into a typed value (number, boolean, object/array, or string) */
 function parseFieldValue(raw: string): unknown {
@@ -68,6 +70,7 @@ export function StartWorkflowDialog({
   preselectedDef,
 }: StartWorkflowDialogProps) {
   const navigate = useNavigate();
+  const t = useThemeText();
 
   const { data: defs, isLoading: defsLoading } = useQuery({
     queryKey: ["workflow-defs"],
@@ -195,7 +198,7 @@ export function StartWorkflowDialog({
       });
     },
     onSuccess: (workflowId) => {
-      toast.success("Workflow started successfully");
+      toast.success(t.toastWorkflowStarted);
       handleOpenChange(false);
       navigate(`/executions/${workflowId}`);
     },
@@ -206,7 +209,7 @@ export function StartWorkflowDialog({
     try {
       getInputObject();
     } catch {
-      toast.error("Invalid JSON input");
+      toast.error(t.toastInvalidJson);
       return;
     }
     startMut.mutate();
@@ -218,22 +221,23 @@ export function StartWorkflowDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Start Workflow Execution</DialogTitle>
+          <DialogTitle>{t.startWorkflowTitle}</DialogTitle>
           <DialogDescription>
-            Select a workflow definition and provide input to start a new execution.
+            {t.startWorkflowDesc}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Workflow *</Label>
+              <Label>{t.workflowLabel}</Label>
               {preselectedDef ? (
                 <Input value={preselectedDef.name} disabled />
               ) : (
-                <Select
+                <SearchableSelect
+                  options={uniqueNames.map((name) => ({ label: name, value: name }))}
                   value={selectedName}
-                  onValueChange={(v) => {
+                  onChange={(v) => {
                     setSelectedName(v);
                     const versions = defs
                       ?.filter((d) => d.name === v)
@@ -241,34 +245,19 @@ export function StartWorkflowDialog({
                       .sort((a, b) => b - a);
                     setSelectedVersion(versions?.[0]?.toString() ?? "");
                   }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select workflow..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {defsLoading ? (
-                      <div className="py-6 text-center text-sm text-muted-foreground">Loading workflows…</div>
-                    ) : uniqueNames.length === 0 ? (
-                      <div className="py-6 text-center text-sm text-muted-foreground">No workflow definitions found.{" "}Create one first.</div>
-                    ) : (
-                      uniqueNames.map((name) => (
-                        <SelectItem key={name} value={name}>
-                          {name}
-                        </SelectItem>
-                      ))
-                    )}
-                  </SelectContent>
-                </Select>
+                  placeholder={t.selectWorkflow}
+                  searchPlaceholder={t.searchWorkflows ?? "Search workflows..."}
+                />
               )}
             </div>
             <div className="space-y-2">
-              <Label>Version</Label>
+              <Label>{t.versionLabel}</Label>
               {preselectedDef ? (
                 <Input value={`v${preselectedDef.version}`} disabled />
               ) : (
                 <Select value={selectedVersion} onValueChange={setSelectedVersion} disabled={!selectedName}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Version" />
+                    <SelectValue placeholder={t.versionOptional} />
                   </SelectTrigger>
                   <SelectContent>
                     {versionsForName.map((v) => (
@@ -291,7 +280,7 @@ export function StartWorkflowDialog({
           {/* Input section with mode toggle */}
           <div className={cn("space-y-2", !selectedName && "opacity-50")}>
             <div className="flex items-center justify-between">
-              <Label>Input</Label>
+              <Label>{t.inputLabel}</Label>
               {hasParams && selectedName && (
                 <Button
                   type="button"
@@ -301,9 +290,9 @@ export function StartWorkflowDialog({
                   onClick={toggleMode}
                 >
                   {inputMode === "fields" ? (
-                    <><Code className="h-3 w-3" /> JSON</>
+                    <><Code className="h-3 w-3" /> {t.json}</>
                   ) : (
-                    <><FormInput className="h-3 w-3" /> Fields</>
+                    <><FormInput className="h-3 w-3" /> {t.fields}</>
                   )}
                 </Button>
               )}
@@ -321,7 +310,7 @@ export function StartWorkflowDialog({
                         onChange={(e) =>
                           setFieldValues((prev) => ({ ...prev, [p]: e.target.value }))
                         }
-                        placeholder={`Value for ${p}`}
+                        placeholder={`${t.valueFor} ${p}`}
                         className="font-mono text-xs"
                         disabled={!selectedName}
                       />
@@ -329,7 +318,7 @@ export function StartWorkflowDialog({
                   );
                 })}
                 <p className="text-[10px] text-muted-foreground">
-                  Values are auto-parsed: numbers, booleans (true/false), JSON objects/arrays, or strings.
+                  {t.autoParseHint}
                 </p>
               </div>
             ) : (
@@ -345,7 +334,7 @@ export function StartWorkflowDialog({
           </div>
 
           <div className="space-y-2">
-            <Label>Correlation ID (optional)</Label>
+            <Label>{t.correlationId}</Label>
             <Input
               value={correlationId}
               onChange={(e) => setCorrelationId(e.target.value)}
@@ -356,13 +345,13 @@ export function StartWorkflowDialog({
 
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => handleOpenChange(false)}>
-              Cancel
+              {t.cancel}
             </Button>
             <Button
               onClick={handleStart}
               disabled={!selectedName || startMut.isPending}
             >
-              {startMut.isPending ? "Starting..." : "Start Workflow"}
+              {startMut.isPending ? t.startingWorkflow : t.startWorkflow}
             </Button>
           </div>
         </div>

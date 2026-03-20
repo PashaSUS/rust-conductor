@@ -1,17 +1,21 @@
+import { useMemo } from "react";
 import { useLocation, Link } from "react-router";
 import { ChevronRight, Home } from "lucide-react";
-
-const ROUTE_LABELS: Record<string, string> = {
-  "": "Dashboard",
-  executions: "Executions",
-  definitions: "Workflow Definitions",
-  taskdefs: "Task Definitions",
-  queues: "Task Queues",
-};
+import { useThemeText } from "@/components/ThemeContext";
 
 export function Breadcrumbs() {
   const location = useLocation();
+  const t = useThemeText();
   const segments = location.pathname.split("/").filter(Boolean);
+
+  const routeLabels = useMemo<Record<string, string>>(() => ({
+    "": t.breadcrumbDashboard,
+    executions: t.breadcrumbExecutions,
+    definitions: t.breadcrumbDefinitions,
+    taskdefs: t.breadcrumbTaskDefs,
+    queues: t.breadcrumbQueues,
+    about: t.breadcrumbAbout,
+  }), [t]);
 
   if (segments.length === 0) return null;
 
@@ -21,8 +25,8 @@ export function Breadcrumbs() {
     const seg = segments[i];
     const path = "/" + segments.slice(0, i + 1).join("/");
 
-    if (ROUTE_LABELS[seg]) {
-      crumbs.push({ label: ROUTE_LABELS[seg], path });
+    if (routeLabels[seg]) {
+      crumbs.push({ label: routeLabels[seg], path });
     } else if (i > 0 && segments[i - 1] === "executions") {
       // Workflow ID — truncate for display
       crumbs.push({ label: seg.length > 12 ? seg.slice(0, 8) + "…" : seg, path });

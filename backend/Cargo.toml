@@ -36,12 +36,30 @@ prost-types = "0.13"
 tokio-stream = "0.1"
 tower = { version = "0.5", features = ["limit"] }
 
-# Kafka
-rdkafka = { version = "0.36", features = ["tokio", "cmake-build"] }
+# Kafka (optional — only needed for PROD; DEV uses Redis Streams)
+rdkafka = { version = "0.36", features = ["tokio", "cmake-build"], optional = true }
+
+# S3-compatible object storage (MinIO, AWS S3, etc.)
+rust-s3 = { version = "0.35", optional = true, default-features = false, features = ["tokio-rustls-tls"] }
+
+[dev-dependencies]
+tokio-test = "0.4"
+proptest = "1"
+serde_test = "1"
+criterion = { version = "0.5", features = ["html_reports", "async_tokio"] }
+testcontainers = "0.23"
+testcontainers-modules = { version = "0.11", features = ["postgres", "redis", "kafka"] }
+arbitrary = { version = "1", features = ["derive"] }
 
 [build-dependencies]
 tonic-build = "0.12"
 
+[[bench]]
+name = "workflow_bench"
+harness = false
+
 [features]
-default = ["seq"]
+default = ["seq", "kafka"]
 seq = []
+kafka = ["rdkafka"]
+external-storage = ["rust-s3"]

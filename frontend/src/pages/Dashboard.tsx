@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { workflowApi, taskApi, healthApi, metadataApi } from "@/api/conductor";
+import { useThemeText } from "@/components/ThemeContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,7 @@ import { RelativeTime } from "@/components/RelativeTime";
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const t = useThemeText();
   const [startOpen, setStartOpen] = useState(false);
 
   const healthQ = useQuery({ queryKey: ["health"], queryFn: healthApi.check });
@@ -44,61 +46,61 @@ export default function Dashboard() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Dashboard</h2>
-          <p className="text-muted-foreground">Rust Conductor orchestration overview</p>
+          <h2 className="text-2xl font-bold tracking-tight">{t.dashboardTitle}</h2>
+          <p className="text-muted-foreground">{t.dashboardSubtitle}</p>
         </div>
         <div className="flex items-center gap-2">
           <Button size="sm" onClick={() => setStartOpen(true)}>
             <Plus className="h-4 w-4 mr-1" />
-            Start Workflow
+            {t.startWorkflow}
           </Button>
           <Badge variant={healthQ.data ? "success" : "destructive"} className="gap-1">
             <Server className="h-3 w-3" />
-            {healthQ.data ? "Healthy" : "Offline"}
+            {healthQ.data ? t.healthy : t.offline}
           </Badge>
         </div>
       </div>
 
       {/* Stats cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <StatCard icon={Activity} label="Running" value={running} color="text-blue-500" barColor="bg-blue-500" />
-        <StatCard icon={CheckCircle2} label="Completed" value={completed} color="text-emerald-500" barColor="bg-emerald-500" />
-        <StatCard icon={XCircle} label="Failed" value={failed} color="text-red-500" barColor="bg-red-500" />
-        <StatCard icon={Clock} label="Queued Tasks" value={queueTotal} color="text-amber-500" barColor="bg-amber-500" />
+        <StatCard icon={Activity} label={t.running} value={running} color="text-blue-500" barColor="bg-blue-500" />
+        <StatCard icon={CheckCircle2} label={t.completed} value={completed} color="text-emerald-500" barColor="bg-emerald-500" />
+        <StatCard icon={XCircle} label={t.failed} value={failed} color="text-red-500" barColor="bg-red-500" />
+        <StatCard icon={Clock} label={t.queuedTasks} value={queueTotal} color="text-amber-500" barColor="bg-amber-500" />
       </div>
 
       {/* Status distribution bar */}
       {(running + completed + failed) > 0 && (
         <Card>
           <CardContent className="pt-6">
-            <p className="text-xs font-medium text-muted-foreground mb-2">Workflow Status Distribution</p>
+            <p className="text-xs font-medium text-muted-foreground mb-2">{t.statusDistribution}</p>
             <div className="flex h-3 rounded-full overflow-hidden bg-muted">
               {running > 0 && (
                 <div
                   className="bg-blue-500 transition-all duration-500"
                   style={{ width: `${(running / (running + completed + failed)) * 100}%` }}
-                  title={`Running: ${running}`}
+                  title={`${t.running}: ${running}`}
                 />
               )}
               {completed > 0 && (
                 <div
                   className="bg-emerald-500 transition-all duration-500"
                   style={{ width: `${(completed / (running + completed + failed)) * 100}%` }}
-                  title={`Completed: ${completed}`}
+                  title={`${t.completed}: ${completed}`}
                 />
               )}
               {failed > 0 && (
                 <div
                   className="bg-red-500 transition-all duration-500"
                   style={{ width: `${(failed / (running + completed + failed)) * 100}%` }}
-                  title={`Failed: ${failed}`}
+                  title={`${t.failed}: ${failed}`}
                 />
               )}
             </div>
             <div className="flex gap-4 mt-2 text-[10px] text-muted-foreground">
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500 inline-block" /> Running ({running})</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> Completed ({completed})</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> Failed ({failed})</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500 inline-block" /> {t.running} ({running})</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> {t.completed} ({completed})</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> {t.failed} ({failed})</span>
             </div>
           </CardContent>
         </Card>
@@ -108,23 +110,23 @@ export default function Dashboard() {
         <Card className="cursor-pointer hover:bg-muted/30 transition-colors" onClick={() => navigate("/definitions")}>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <FileCode2 className="h-4 w-4" /> Workflow Definitions
+              <FileCode2 className="h-4 w-4" /> {t.workflowDefinitions}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">{wfDefsQ.data?.length ?? 0}</div>
-            <p className="text-xs text-muted-foreground mt-1">registered definitions</p>
+            <p className="text-xs text-muted-foreground mt-1">{t.registeredDefinitions}</p>
           </CardContent>
         </Card>
         <Card className="cursor-pointer hover:bg-muted/30 transition-colors" onClick={() => navigate("/taskdefs")}>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <ListChecks className="h-4 w-4" /> Task Definitions
+              <ListChecks className="h-4 w-4" /> {t.taskDefinitions}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">{taskDefsQ.data?.length ?? 0}</div>
-            <p className="text-xs text-muted-foreground mt-1">registered task types</p>
+            <p className="text-xs text-muted-foreground mt-1">{t.registeredTaskTypes}</p>
           </CardContent>
         </Card>
       </div>
@@ -133,9 +135,9 @@ export default function Dashboard() {
       {recent.length > 0 && (
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-sm font-medium">Recent Executions</CardTitle>
+            <CardTitle className="text-sm font-medium">{t.recentExecutions}</CardTitle>
             <Button variant="ghost" size="sm" onClick={() => navigate("/executions")} className="text-xs">
-              View All <ArrowRight className="h-3 w-3 ml-1" />
+              {t.viewAll} <ArrowRight className="h-3 w-3 ml-1" />
             </Button>
           </CardHeader>
           <CardContent>
@@ -168,11 +170,11 @@ export default function Dashboard() {
         <Card>
           <CardContent className="py-8 text-center">
             <p className="text-muted-foreground text-sm mb-3">
-              No recent executions. Start your first workflow!
+              {t.noRecentExecutions}
             </p>
             <Button onClick={() => setStartOpen(true)}>
               <Plus className="h-4 w-4 mr-1" />
-              Start Workflow
+              {t.startWorkflow}
             </Button>
           </CardContent>
         </Card>

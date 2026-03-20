@@ -1,0 +1,43 @@
+[package]
+name = "rust-conductor-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+serde_json = "1"
+
+[dependencies.rust-conductor]
+path = ".."
+
+# Fuzz target: WorkflowDef JSON deserialization
+[[bin]]
+name = "fuzz_workflow_def"
+path = "fuzz_targets/fuzz_workflow_def.rs"
+test = false
+doc = false
+
+# Fuzz target: TaskDef JSON deserialization
+[[bin]]
+name = "fuzz_task_def"
+path = "fuzz_targets/fuzz_task_def.rs"
+test = false
+doc = false
+
+# Fuzz target: StartWorkflowRequest JSON deserialization
+[[bin]]
+name = "fuzz_start_request"
+path = "fuzz_targets/fuzz_start_request.rs"
+test = false
+doc = false
+
+# Fuzz target: TaskUpdateRequest JSON deserialization
+[[bin]]
+name = "fuzz_task_update"
+path = "fuzz_targets/fuzz_task_update.rs"
+test = false
+doc = false

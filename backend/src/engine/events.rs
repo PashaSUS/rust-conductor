@@ -5,7 +5,7 @@ use super::WorkflowEngine;
 use crate::models::*;
 
 impl WorkflowEngine {
-    pub async fn register_event_handler(&self, handler: &EventHandler) -> Result<(), EngineError> {
+    pub async fn register_event_handler(&self, handler: &EventHandler) -> Result<EventHandler, EngineError> {
         let json = serde_json::to_value(handler).map_err(|e| {
             tracing::error!(name = %handler.name, error = %e, "Failed to serialize event handler");
             EngineError::Serde(e.to_string())
@@ -23,7 +23,7 @@ impl WorkflowEngine {
             tracing::error!(name = %handler.name, error = %e, "DB error registering event handler");
             EngineError::Database(e.to_string())
         })?;
-        Ok(())
+        Ok(handler.clone())
     }
 
     pub async fn get_event_handlers(&self) -> Result<Vec<EventHandler>, EngineError> {

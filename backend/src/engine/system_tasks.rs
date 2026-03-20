@@ -431,7 +431,7 @@ impl WorkflowEngine {
 
         if is_new {
             self.set_task_routing(&task_id, workflow_id).await?;
-            self.kafka
+            self.queue
                 .enqueue(&task_def.name, &task_id)
                 .await
                 .map_err(|e| {
@@ -462,7 +462,7 @@ impl WorkflowEngine {
                     "Re-enqueuing existing SCHEDULED task (possible lost enqueue)"
                 );
                 self.set_task_routing(&task_id, workflow_id).await?;
-                self.kafka
+                self.queue
                     .enqueue(&task_def.name, &task_id)
                     .await
                     .map_err(|e| {
@@ -950,7 +950,7 @@ impl WorkflowEngine {
         let payload_str = serde_json::to_string(&event_payload)
             .unwrap_or_else(|_| "{}".to_string());
 
-        match self.kafka.produce(sink, &payload_str).await {
+        match self.queue.produce(sink, &payload_str).await {
             Ok(()) => {
                 let output = serde_json::json!({ "event": { "sink": sink, "published": true } });
                 let (_task_id, _is_new) = self
@@ -1012,7 +1012,7 @@ impl WorkflowEngine {
 ///   ${workflow.input.field.path}  — value from the workflow input
 ///   ${workflow.workflowId}        — the workflow's ID
 ///   ${refName.output.field.path}  — output of a completed task by reference name
-fn resolve_value(
+pub(crate) fn resolve_value(
     val: &Value,
     workflow_input: &Value,
     task_outputs: &HashMap<String, Value>,
@@ -1038,7 +1038,7 @@ fn resolve_value(
     }
 }
 
-fn resolve_string_value(
+pub(crate) fn resolve_string_value(
     s: &str,
     workflow_input: &Value,
     task_outputs: &HashMap<String, Value>,
@@ -1088,7 +1088,7 @@ fn resolve_string_value(
     Value::String(result)
 }
 
-fn resolve_expression(
+pub(crate) fn resolve_expression(
     expr: &str,
     workflow_input: &Value,
     task_outputs: &HashMap<String, Value>,
@@ -1126,7 +1126,7 @@ fn resolve_expression(
     None
 }
 
-fn navigate_json(val: &Value, path: &[&str]) -> Option<Value> {
+pub(crate) fn navigate_json(val: &Value, path: &[&str]) -> Option<Value> {
     let mut current = val;
     for &segment in path {
         current = current.get(segment)?;
@@ -1138,7 +1138,7 @@ fn navigate_json(val: &Value, path: &[&str]) -> Option<Value> {
 ///   - `"iteration < N"` — continue while iteration count is below N
 ///   - `"true"` / `"false"` — literal
 ///   - Otherwise: check if the last task output's `result` field is truthy
-fn evaluate_loop_condition(condition: &str, last_output: &Value, iteration: usize) -> bool {
+pub(crate) fn evaluate_loop_condition(condition: &str, last_output: &Value, iteration: usize) -> bool {
     let trimmed = condition.trim();
 
     if trimmed == "false" || trimmed.is_empty() {

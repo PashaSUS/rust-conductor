@@ -1,0 +1,35 @@
+# cargo-mutants configuration
+# Install: cargo install cargo-mutants
+# Run:     cargo mutants --in-place -j 4
+# Report:  cargo mutants --in-place --output mutants.out
+
+# Timeout per mutant test (seconds)
+timeout_multiplier = 2.0
+minimum_test_timeout = 60
+
+# Only mutate source files (not tests, build scripts, proto)
+examine_globs = [
+    "src/engine/*.rs",
+    "src/models/*.rs",
+    "src/store/*.rs",
+]
+
+# Skip files that are hard to test in isolation
+exclude_globs = [
+    "src/main.rs",
+    "src/api/**",
+    "src/grpc/**",
+    "src/swagger.rs",
+    "src/config.rs",
+    "src/seq.rs",
+    "build.rs",
+    "tests/**",
+    "benches/**",
+]
+
+# Skip mutations in functions that are trivial or infrastructure-only
+exclude_re = [
+    "^create_pool$",
+    "^run_migrations$",
+    "^configure$",
+]

@@ -1,16 +1,17 @@
 import { useState, useEffect } from "react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { useThemeText, type ThemeText } from "@/components/ThemeContext";
 
-function getRelativeTime(ts: number): string {
+function getRelativeTime(ts: number, t: ThemeText): string {
   const now = Date.now();
   const diff = now - ts;
 
-  if (diff < 0) return "just now";
-  if (diff < 5000) return "just now";
-  if (diff < 60000) return `${Math.floor(diff / 1000)}s ago`;
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-  if (diff < 604800000) return `${Math.floor(diff / 86400000)}d ago`;
+  if (diff < 0) return t.justNow;
+  if (diff < 5000) return t.justNow;
+  if (diff < 60000) return `${Math.floor(diff / 1000)}${t.secondsAgo}`;
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}${t.minutesAgo}`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}${t.hoursAgo}`;
+  if (diff < 604800000) return `${Math.floor(diff / 86400000)}${t.daysAgo}`;
   return new Date(ts).toLocaleDateString();
 }
 
@@ -30,6 +31,7 @@ interface RelativeTimeProps {
 }
 
 export function RelativeTime({ value, live = true, className }: RelativeTimeProps) {
+  const t = useThemeText();
   const [, setTick] = useState(0);
   const ts = parseTs(value);
 
@@ -42,7 +44,7 @@ export function RelativeTime({ value, live = true, className }: RelativeTimeProp
   if (ts === null) return <span className={className}>—</span>;
 
   const absolute = new Date(ts).toLocaleString();
-  const relative = getRelativeTime(ts);
+  const relative = getRelativeTime(ts, t);
 
   return (
     <TooltipProvider>

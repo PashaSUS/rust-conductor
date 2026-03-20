@@ -225,7 +225,7 @@ impl WorkflowEngine {
             .map_err(|e| EngineError::Database(e.to_string()))?;
 
             self.set_task_routing(task_id, workflow_id).await?;
-            self.kafka
+            self.queue
                 .enqueue(task_def_name, task_id)
                 .await
                 .map_err(|e| EngineError::Redis(e))?;
@@ -493,6 +493,82 @@ impl WorkflowEngine {
             async move { (id.clone(), self.terminate_workflow(&id, reason).await) }
         }).collect();
         Ok(collect_bulk_results(join_all(futs).await))
+    }
+
+    // ── Workflow Status ──
+
+    pub async fn get_workflow_status(&self, workflow_id: &str, include_tasks: bool) -> Result<Workflow, EngineError> {
+        if include_tasks {
+            self.get_workflow(workflow_id).await
+        } else {
+            let db = self.shards.shard_for(workflow_id);
+            let wf_row = sqlx::query_as::<_, WorkflowRow>(
+                "SELECT * FROM workflow WHERE workflow_id = $1",
+            )
+            .bind(workflow_id)
+            .fetch_optional(db)
+            .await
+            .map_err(|e| EngineError::Database(e.to_string()))?
+            .ok_or_else(|| EngineError::NotFound(format!("Workflow not found: {workflow_id}")))?;
+
+            Ok(Workflow {
+                workflow_id: wf_row.workflow_id,
+                workflow_name: wf_row.workflow_name,
+                workflow_version: wf_row.workflow_version,
+                status: serde_json::from_value(Value::String(wf_row.status))
+                    .unwrap_or(WorkflowStatus::Running),
+                input: wf_row.input,
+                output: wf_row.output,
+                tasks: vec![],
+                correlation_id: wf_row.correlation_id,
+                start_time: wf_row.start_time.timestamp_millis(),
+                end_time: wf_row.end_time.map(|t| t.timestamp_millis()),
+                update_time: wf_row.update_time.timestamp_millis(),
+                created_by: wf_row.created_by,
+                updated_by: None,
+                reason_for_incompletion: wf_row.reason_for_incompletion,
+                workflow_definition: wf_row.workflow_def.and_then(|v| serde_json::from_value(v).ok()),
+                priority: wf_row.priority,
+                variables: wf_row.variables.as_object().cloned().unwrap_or_default().into_iter().collect(),
+                failed_reference_task_names: vec![],
+                owner_app: None,
+                parent_workflow_id: None,
+                parent_workflow_task_id: None,
+                re_run_from_workflow_id: None,
+                event: None,
+                task_to_domain: HashMap::new(),
+                failed_task_names: vec![],
+                external_input_payload_storage_path: None,
+                external_output_payload_storage_path: None,
+                last_retried_time: None,
+                history: vec![],
+                idempotency_key: None,
+                rate_limit_key: None,
+                rate_limited: None,
+            })
+        }
+    }
+
+    // ── Update Workflow Variables ──
+
+    pub async fn update_workflow_variables(
+        &self,
+        workflow_id: &str,
+        variables: &HashMap<String, Value>,
+    ) -> Result<Workflow, EngineError> {
+        let db = self.shards.shard_for(workflow_id);
+        let vars_json = serde_json::to_value(variables).unwrap_or(Value::Object(Default::default()));
+
+        sqlx::query(
+            "UPDATE workflow SET variables = variables || $2, update_time = NOW() WHERE workflow_id = $1",
+        )
+        .bind(workflow_id)
+        .bind(&vars_json)
+        .execute(db)
+        .await
+        .map_err(|e| EngineError::Database(e.to_string()))?;
+
+        self.get_workflow(workflow_id).await
     }
 }
 

@@ -16,6 +16,7 @@ import { Plus, Trash2, Eye, Play, Search, Code, FormInput } from "lucide-react";
 import { TaskDefForm } from "@/components/TaskDefForm";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { CopyButton } from "@/components/CopyButton";
+import { useThemeText } from "@/components/ThemeContext";
 
 /** Try to parse a string value into a typed value */
 function parseFieldValue(raw: string): unknown {
@@ -46,6 +47,7 @@ function buildInputFromFields(fields: Record<string, string>): Record<string, un
 export default function TaskDefs() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const t = useThemeText();
   const [viewDef, setViewDef] = useState<TaskDef | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [testRunDef, setTestRunDef] = useState<TaskDef | null>(null);
@@ -63,7 +65,7 @@ export default function TaskDefs() {
   const createMut = useMutation({
     mutationFn: (defs: TaskDef[]) => metadataApi.registerTaskDefs(defs),
     onSuccess: () => {
-      toast.success("Task definition(s) created");
+      toast.success(t.toastTaskDefCreated);
       queryClient.invalidateQueries({ queryKey: ["task-defs"] });
       setCreateOpen(false);
     },
@@ -73,7 +75,7 @@ export default function TaskDefs() {
   const deleteMut = useMutation({
     mutationFn: (name: string) => metadataApi.deleteTaskDef(name),
     onSuccess: () => {
-      toast.success("Deleted");
+      toast.success(t.toastDeleted);
       queryClient.invalidateQueries({ queryKey: ["task-defs"] });
     },
   });
@@ -85,7 +87,7 @@ export default function TaskDefs() {
       await metadataApi.registerWorkflowDef({
         name: wfName,
         version: 1,
-        description: `Auto-generated test workflow for task: ${taskName}`,
+        description: `${t.testWorkflowDesc}: ${taskName}`,
         tasks: [
           {
             name: "fork_test",
@@ -114,7 +116,7 @@ export default function TaskDefs() {
       return workflowId;
     },
     onSuccess: (workflowId) => {
-      toast.success("Test workflow started");
+      toast.success(t.toastWorkflowStarted);
       setTestRunDef(null);
       setTestInput("{}");
       navigate(`/executions/${workflowId}`);
@@ -133,10 +135,10 @@ export default function TaskDefs() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold tracking-tight">Task Definitions</h2>
+        <h2 className="text-2xl font-bold tracking-tight">{t.taskDefsTitle}</h2>
         <Button size="sm" onClick={() => setCreateOpen(true)}>
           <Plus className="h-4 w-4 mr-1" />
-          New Task Def
+          {t.newTaskDef}
         </Button>
       </div>
 
@@ -144,14 +146,14 @@ export default function TaskDefs() {
       <div className="flex items-center gap-2">
         <Search className="h-4 w-4 text-muted-foreground" />
         <Input
-          placeholder="Filter task definitions..."
+          placeholder={t.filterTaskDefs}
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           className="max-w-xs"
         />
         {searchTerm && (
           <span className="text-xs text-muted-foreground">
-            {filteredDefs.length} of {defs?.length ?? 0}
+            {filteredDefs.length} {t.of} {defs?.length ?? 0}
           </span>
         )}
       </div>
@@ -159,25 +161,25 @@ export default function TaskDefs() {
       <Card>
         <CardContent className="pt-6">
           {isLoading ? (
-            <p className="text-muted-foreground text-sm">Loading...</p>
+            <p className="text-muted-foreground text-sm">{t.loading}</p>
           ) : filteredDefs.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               <p className="text-sm">
                 {defs?.length === 0
-                  ? "No task definitions yet. Create your first one!"
-                  : "No definitions match your search."}
+                  ? t.noTaskDefs
+                  : t.noDefsMatch}
               </p>
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Retry Count</TableHead>
-                  <TableHead>Timeout</TableHead>
-                  <TableHead>Response Timeout</TableHead>
-                  <TableHead>Owner</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead>{t.name}</TableHead>
+                  <TableHead>{t.retryCount}</TableHead>
+                  <TableHead>{t.timeout}</TableHead>
+                  <TableHead>{t.responseTimeout}</TableHead>
+                  <TableHead>{t.owner}</TableHead>
+                  <TableHead className="text-right">{t.actions}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -202,13 +204,13 @@ export default function TaskDefs() {
                           for (const k of def.inputKeys ?? []) fields[k] = "";
                           setTestFieldValues(fields);
                           setTestInputMode((def.inputKeys?.length ?? 0) > 0 ? "fields" : "json");
-                        }} title="Test Run">
+                        }} title={t.testRun}>
                           <Play className="h-3 w-3" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => setViewDef(def)} title="View">
+                        <Button variant="ghost" size="icon" onClick={() => setViewDef(def)} title={t.view}>
                           <Eye className="h-3 w-3" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => setDeleteTarget(def.name)} title="Delete">
+                        <Button variant="ghost" size="icon" onClick={() => setDeleteTarget(def.name)} title={t.delete}>
                           <Trash2 className="h-3 w-3" />
                         </Button>
                       </div>
@@ -225,12 +227,12 @@ export default function TaskDefs() {
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Create Task Definition</DialogTitle>
+            <DialogTitle>{t.createTaskDef}</DialogTitle>
           </DialogHeader>
           <Tabs defaultValue="form">
             <TabsList>
-              <TabsTrigger value="form">Form</TabsTrigger>
-              <TabsTrigger value="json">JSON</TabsTrigger>
+              <TabsTrigger value="form">{t.form}</TabsTrigger>
+              <TabsTrigger value="json">{t.json}</TabsTrigger>
             </TabsList>
             <TabsContent value="form">
               <TaskDefForm
@@ -260,12 +262,12 @@ export default function TaskDefs() {
                   if (draft) {
                     createMut.mutate(draft);
                   } else {
-                    toast.error("Invalid JSON");
+                    toast.error(t.toastInvalidJson);
                   }
                 }}
                 disabled={createMut.isPending}
               >
-                {createMut.isPending ? "Creating..." : "Create from JSON"}
+                {createMut.isPending ? t.creating : t.createFromJson}
               </Button>
             </TabsContent>
           </Tabs>
@@ -291,16 +293,15 @@ export default function TaskDefs() {
       <Dialog open={!!testRunDef} onOpenChange={() => setTestRunDef(null)}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Test Run: {testRunDef?.name}</DialogTitle>
+            <DialogTitle>{t.testRun}: {testRunDef?.name}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            This will create a workflow with a FORK → <strong>{testRunDef?.name}</strong> → JOIN structure and start it.
-            The task will appear in its queue, ready to be polled and executed.
+            {t.testRunDescription}
           </p>
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label className="text-sm font-medium">Task Input</Label>
+              <Label className="text-sm font-medium">{t.taskInput}</Label>
               {(testRunDef?.inputKeys?.length ?? 0) > 0 && (
                 <Button
                   type="button"
@@ -328,9 +329,9 @@ export default function TaskDefs() {
                   }}
                 >
                   {testInputMode === "fields" ? (
-                    <><Code className="h-3 w-3" /> JSON</>
+                    <><Code className="h-3 w-3" /> {t.json}</>
                   ) : (
-                    <><FormInput className="h-3 w-3" /> Fields</>
+                    <><FormInput className="h-3 w-3" /> {t.fields}</>
                   )}
                 </Button>
               )}
@@ -346,13 +347,13 @@ export default function TaskDefs() {
                       onChange={(e) =>
                         setTestFieldValues((prev) => ({ ...prev, [k]: e.target.value }))
                       }
-                      placeholder={`Value for ${k}`}
+                      placeholder={`${t.valueFor} ${k}`}
                       className="font-mono text-xs"
                     />
                   </div>
                 ))}
                 <p className="text-[10px] text-muted-foreground">
-                  Values are auto-parsed: numbers, booleans (true/false), JSON objects/arrays, or strings.
+                  {t.autoParseHint}
                 </p>
               </div>
             ) : (
@@ -375,12 +376,12 @@ export default function TaskDefs() {
                     : JSON.parse(testInput);
                 testRunMut.mutate({ taskName: testRunDef!.name, input });
               } catch {
-                toast.error("Invalid JSON input");
+                toast.error(t.toastInvalidJson);
               }
             }}
             disabled={testRunMut.isPending}
           >
-            {testRunMut.isPending ? "Starting..." : "Run Test"}
+            {testRunMut.isPending ? t.startingWorkflow : t.runTest}
           </Button>
         </DialogContent>
       </Dialog>
@@ -389,9 +390,9 @@ export default function TaskDefs() {
       <ConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
-        title="Delete Task Definition"
-        description={`Are you sure you want to delete "${deleteTarget}"? This action cannot be undone.`}
-        confirmLabel="Delete"
+        title={t.deleteTaskDef}
+        description={`"${deleteTarget}" — ${t.deleteConfirmSuffix}`}
+        confirmLabel={t.delete}
         variant="destructive"
         onConfirm={async () => {
           if (deleteTarget) {

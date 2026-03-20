@@ -6,7 +6,9 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::scope("/admin")
             .route("/config", web::get().to(get_all_config))
-            .route("/sweep/{workflowId}", web::post().to(sweep_workflow)),
+            .route("/sweep/{workflowId}", web::post().to(sweep_workflow))
+            .route("/task/{taskType}", web::get().to(get_tasks_for_type))
+            .route("/task/{taskType}/requeuetasks", web::post().to(requeue_pending_tasks)),
     );
     cfg.service(
         web::scope("/queue")
@@ -53,4 +55,20 @@ async fn queue_status(
 ) -> Result<HttpResponse, crate::engine::EngineError> {
     let paused = engine.is_queue_paused(&path.into_inner()).await?;
     Ok(HttpResponse::Ok().json(serde_json::json!({ "paused": paused })))
+}
+
+async fn get_tasks_for_type(
+    engine: web::Data<WorkflowEngine>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, crate::engine::EngineError> {
+    let tasks = engine.get_tasks_for_type(&path.into_inner()).await?;
+    Ok(HttpResponse::Ok().json(tasks))
+}
+
+async fn requeue_pending_tasks(
+    engine: web::Data<WorkflowEngine>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, crate::engine::EngineError> {
+    let count = engine.requeue_pending_tasks(&path.into_inner()).await?;
+    Ok(HttpResponse::Ok().json(count))
 }

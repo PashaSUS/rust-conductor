@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Code, FormInput } from "lucide-react";
+import { useThemeText } from "@/components/ThemeContext";
 
 interface TaskInputFieldsProps {
   task: TaskFormState;
@@ -48,6 +49,7 @@ export function TaskInputFields({
   sources,
   hasRegisteredTask,
 }: TaskInputFieldsProps) {
+  const t = useThemeText();
   const [selectedGroups, setSelectedGroups] = useState<Record<string, string>>({});
 
   const toggleInputMode = () => {
@@ -111,7 +113,7 @@ export function TaskInputFields({
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <Label>Input Parameters</Label>
+        <Label>{t.inputParameters}</Label>
         <Button
           type="button"
           variant="ghost"
@@ -120,9 +122,9 @@ export function TaskInputFields({
           onClick={toggleInputMode}
         >
           {task.inputMode === "fields" ? (
-            <><Code className="h-3 w-3" /> JSON</>
+            <><Code className="h-3 w-3" /> {t.json}</>
           ) : (
-            <><FormInput className="h-3 w-3" /> Fields</>
+            <><FormInput className="h-3 w-3" /> {t.fields}</>
           )}
         </Button>
       </div>
@@ -153,7 +155,7 @@ export function TaskInputFields({
                       }}
                     >
                       <SelectTrigger className="w-45 text-xs h-8 shrink-0">
-                        <SelectValue placeholder="Source..." />
+                        <SelectValue placeholder={t.source} />
                       </SelectTrigger>
                       <SelectContent>
                         {groupNames.map((g) => (
@@ -162,7 +164,7 @@ export function TaskInputFields({
                           </SelectItem>
                         ))}
                         <SelectItem value="__custom__">
-                          <span className="text-xs text-muted-foreground italic">Custom value</span>
+                          <span className="text-xs text-muted-foreground italic">{t.customValue}</span>
                         </SelectItem>
                       </SelectContent>
                     </Select>
@@ -181,7 +183,7 @@ export function TaskInputFields({
                         onValueChange={(v) => setFieldValue(key, v)}
                       >
                         <SelectTrigger className="flex-1 text-xs font-mono h-8 text-left">
-                          <SelectValue placeholder="Select parameter..." />
+                          <SelectValue placeholder={t.selectParameter} />
                         </SelectTrigger>
                         <SelectContent>
                           {groupItems.map((s) => (
@@ -206,15 +208,15 @@ export function TaskInputFields({
           ) : (
             <p className="text-xs text-muted-foreground py-2">
               {hasRegisteredTask
-                ? "This task has no defined input keys."
+                ? t.noInputKeys
                 : task.type === "SIMPLE"
-                  ? "Select a registered task to see its input parameters, or switch to JSON mode."
-                  : "Provide the needed parameters in JSON mode."}
+                  ? t.selectTaskForInputs
+                  : t.provideParamsJson}
             </p>
           )}
           {hasRegisteredTask && lockedKeys.length > 0 && (
             <p className="text-[10px] text-muted-foreground border-t pt-2">
-              Pick a source first (workflow input or a previous task), then select the specific parameter.
+              {t.pickSourceHint}
             </p>
           )}
         </div>

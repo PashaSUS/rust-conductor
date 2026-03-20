@@ -7,18 +7,24 @@ mod metadata;
 mod rows;
 pub mod shard;
 mod sweeper;
-mod system_tasks;
+pub(crate) mod system_tasks;
 mod task_ops;
 mod workflow_ops;
 
+#[cfg(test)]
+mod tests;
+
+#[cfg(feature = "kafka")]
 use crate::store::kafka::KafkaTaskQueue;
+#[cfg(not(feature = "kafka"))]
+use crate::store::redis_queue::RedisTaskQueue;
 use crate::store::redis::ShardedRedis;
 pub use error::EngineError;
 pub use shard::ShardedPool;
 
 use crate::models::*;
 
-fn is_task_terminal(status: &TaskStatus) -> bool {
+pub(crate) fn is_task_terminal(status: &TaskStatus) -> bool {
     matches!(
         status,
         TaskStatus::Completed
@@ -31,15 +37,14 @@ fn is_task_terminal(status: &TaskStatus) -> bool {
     )
 }
 
-#[allow(dead_code)]
-fn is_task_successful(status: &TaskStatus) -> bool {
+pub(crate) fn is_task_successful(status: &TaskStatus) -> bool {
     matches!(
         status,
         TaskStatus::Completed | TaskStatus::Skipped | TaskStatus::CompletedWithErrors
     )
 }
 
-fn is_task_failed(status: &TaskStatus) -> bool {
+pub(crate) fn is_task_failed(status: &TaskStatus) -> bool {
     matches!(
         status,
         TaskStatus::Failed | TaskStatus::FailedWithTerminalError | TaskStatus::TimedOut
@@ -54,12 +59,32 @@ const TASK_ROUTING_KEY: &str = "conductor:task_routing";
 pub struct WorkflowEngine {
     shards: ShardedPool,
     redis: ShardedRedis,
-    kafka: KafkaTaskQueue,
+    #[cfg(feature = "kafka")]
+    queue: KafkaTaskQueue,
+    #[cfg(not(feature = "kafka"))]
+    queue: RedisTaskQueue,
+    #[cfg(feature = "external-storage")]
+    pub(crate) external_storage: Option<crate::store::s3::ExternalPayloadStorage>,
 }
 
 impl WorkflowEngine {
-    pub fn new(shards: ShardedPool, redis: ShardedRedis, kafka: KafkaTaskQueue) -> Self {
-        Self { shards, redis, kafka }
+    pub fn new(
+        shards: ShardedPool,
+        redis: ShardedRedis,
+        #[cfg(feature = "kafka")]
+        queue: KafkaTaskQueue,
+        #[cfg(not(feature = "kafka"))]
+        queue: RedisTaskQueue,
+        #[cfg(feature = "external-storage")]
+        external_storage: Option<crate::store::s3::ExternalPayloadStorage>,
+    ) -> Self {
+        Self {
+            shards,
+            redis,
+            queue,
+            #[cfg(feature = "external-storage")]
+            external_storage,
+        }
     }
 
     // ── Task-shard routing helpers ─────────────────────────────────────

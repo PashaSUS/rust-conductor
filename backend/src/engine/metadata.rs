@@ -7,7 +7,7 @@ use crate::models::*;
 impl WorkflowEngine {
     // ── Workflow Definition CRUD ──
 
-    pub async fn register_workflow_def(&self, def: &WorkflowDef) -> Result<(), EngineError> {
+    pub async fn register_workflow_def(&self, def: &WorkflowDef) -> Result<WorkflowDef, EngineError> {
         let json = serde_json::to_value(def).map_err(|e| {
             tracing::error!(name = %def.name, version = def.version, error = %e, "Failed to serialize workflow def");
             EngineError::Serde(e.to_string())
@@ -25,7 +25,7 @@ impl WorkflowEngine {
             tracing::error!(name = %def.name, version = def.version, error = %e, "DB error registering workflow def");
             EngineError::Database(e.to_string())
         })?;
-        Ok(())
+        Ok(def.clone())
     }
 
     pub async fn get_workflow_def(
@@ -100,7 +100,7 @@ impl WorkflowEngine {
 
     // ── Task Definition CRUD ──
 
-    pub async fn register_task_def(&self, def: &TaskDef) -> Result<(), EngineError> {
+    pub async fn register_task_def(&self, def: &TaskDef) -> Result<TaskDef, EngineError> {
         let json = serde_json::to_value(def).map_err(|e| {
             tracing::error!(name = %def.name, error = %e, "Failed to serialize task def");
             EngineError::Serde(e.to_string())
@@ -117,7 +117,7 @@ impl WorkflowEngine {
             tracing::error!(name = %def.name, error = %e, "DB error registering task def");
             EngineError::Database(e.to_string())
         })?;
-        Ok(())
+        Ok(def.clone())
     }
 
     pub async fn get_task_def(&self, name: &str) -> Result<TaskDef, EngineError> {

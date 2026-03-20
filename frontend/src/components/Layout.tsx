@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Outlet, Link, useNavigate, useLocation } from "react-router";
 import {
   LayoutDashboard,
@@ -6,6 +6,7 @@ import {
   FileCode2,
   ListChecks,
   Layers,
+  Info,
   Zap,
   Rocket,
   Search,
@@ -22,29 +23,28 @@ import {
 } from "@/components/ui/tooltip";
 import { StartWorkflowDialog } from "@/components/StartWorkflowDialog";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { CommandPalette } from "@/components/CommandPalette";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
-
-const navItems = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard, shortcut: "1" },
-  { to: "/executions", label: "Executions", icon: Play, shortcut: "2" },
-  {
-    to: "/definitions",
-    label: "Workflow Defs",
-    icon: FileCode2,
-    shortcut: "3",
-  },
-  { to: "/taskdefs", label: "Task Defs", icon: ListChecks, shortcut: "4" },
-  { to: "/queues", label: "Task Queues", icon: Layers, shortcut: "5" },
-];
+import { useThemeText } from "@/components/ThemeContext";
 
 export default function Layout() {
+  const t = useThemeText();
   const [startOpen, setStartOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem("sidebar-collapsed") === "true",
   );
   const navigate = useNavigate();
   const { pathname } = useLocation();
+
+  const navItems = useMemo(() => [
+    { to: "/", label: t.dashboard, icon: LayoutDashboard, shortcut: "1" },
+    { to: "/executions", label: t.executions, icon: Play, shortcut: "2" },
+    { to: "/definitions", label: t.workflowDefs, icon: FileCode2, shortcut: "3" },
+    { to: "/taskdefs", label: t.taskDefs, icon: ListChecks, shortcut: "4" },
+    { to: "/queues", label: t.taskQueues, icon: Layers, shortcut: "5" },
+    { to: "/about", label: t.about, icon: Info, shortcut: "6" },
+  ], [t]);
 
   useEffect(() => {
     localStorage.setItem("sidebar-collapsed", String(collapsed));
@@ -78,6 +78,10 @@ export default function Layout() {
           case "5":
             e.preventDefault();
             navigate("/queues");
+            break;
+          case "6":
+            e.preventDefault();
+            navigate("/about");
             break;
           case "n":
             e.preventDefault();
@@ -117,7 +121,7 @@ export default function Layout() {
             <Zap className="h-6 w-6 text-chart-1 shrink-0" />
             {!collapsed && (
               <h1 className="font-bold text-lg text-sidebar-foreground">
-                Rust Conductor
+                {t.appName}
               </h1>
             )}
           </div>
@@ -192,7 +196,7 @@ export default function Layout() {
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="right">
-                    <p>Search (Ctrl+K)</p>
+                    <p>{t.search} (Ctrl+K)</p>
                   </TooltipContent>
                 </Tooltip>
                 <Tooltip>
@@ -207,7 +211,7 @@ export default function Layout() {
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="right">
-                    <p>Start Workflow (Alt+N)</p>
+                    <p>{t.startWorkflow} (Alt+N)</p>
                   </TooltipContent>
                 </Tooltip>
               </>
@@ -225,7 +229,7 @@ export default function Layout() {
                 >
                   <span className="flex items-center gap-2">
                     <Search className="h-4 w-4" />
-                    Search…
+                    {t.search}
                   </span>
                   <kbd className="pointer-events-none hidden sm:inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
                     Ctrl+K
@@ -238,7 +242,7 @@ export default function Layout() {
                   onClick={() => setStartOpen(true)}
                 >
                   <Rocket className="h-4 w-4" />
-                  Start Workflow
+                  {t.startWorkflow}
                 </Button>
               </>
             )}
@@ -251,13 +255,14 @@ export default function Layout() {
                 : "px-6 justify-between",
             )}
           >
-            {!collapsed && <span>Conductor-compliant engine</span>}
+            {!collapsed && <span>{t.tagline}</span>}
             <div
               className={cn(
                 "flex items-center",
                 collapsed ? "flex-col gap-1" : "gap-1",
               )}
             >
+              <ThemeSwitcher />
               <ThemeToggle />
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -275,7 +280,7 @@ export default function Layout() {
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="right">
-                  <p>{collapsed ? "Expand" : "Collapse"} sidebar (Alt+B)</p>
+                  <p>{collapsed ? t.expandSidebar : t.collapseSidebar} (Alt+B)</p>
                 </TooltipContent>
               </Tooltip>
             </div>

@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle } from "lucide-react";
+import { useThemeText } from "@/components/ThemeContext";
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -24,10 +25,12 @@ export function ConfirmDialog({
   onOpenChange,
   title,
   description,
-  confirmLabel = "Confirm",
+  confirmLabel,
   variant = "destructive",
   onConfirm,
 }: ConfirmDialogProps) {
+  const t = useThemeText();
+  const resolvedConfirmLabel = confirmLabel ?? t.confirm;
   const [pending, setPending] = useState(false);
 
   const handleConfirm = async () => {
@@ -54,14 +57,14 @@ export function ConfirmDialog({
         </DialogHeader>
         <div className="flex justify-end gap-2 mt-2">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
-            Cancel
+            {t.cancel}
           </Button>
           <Button
             variant={variant}
             onClick={handleConfirm}
             disabled={pending}
           >
-            {pending ? "Please wait..." : confirmLabel}
+            {pending ? t.pleaseWait : resolvedConfirmLabel}
           </Button>
         </div>
       </DialogContent>

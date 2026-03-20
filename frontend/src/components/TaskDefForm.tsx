@@ -12,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useThemeText } from "@/components/ThemeContext";
 
 interface TaskDefFormProps {
   onSubmit: (defs: TaskDef[]) => void;
@@ -19,6 +20,7 @@ interface TaskDefFormProps {
 }
 
 export function TaskDefForm({ onSubmit, isPending }: TaskDefFormProps) {
+  const t = useThemeText();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [retryCount, setRetryCount] = useState(3);
@@ -53,7 +55,7 @@ export function TaskDefForm({ onSubmit, isPending }: TaskDefFormProps) {
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label htmlFor="td-name">Name *</Label>
+          <Label htmlFor="td-name">{t.nameRequired}</Label>
           <Input
             id="td-name"
             value={name}
@@ -62,7 +64,7 @@ export function TaskDefForm({ onSubmit, isPending }: TaskDefFormProps) {
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="td-owner">Owner Email</Label>
+          <Label htmlFor="td-owner">{t.ownerEmail}</Label>
           <Input
             id="td-owner"
             type="email"
@@ -74,19 +76,19 @@ export function TaskDefForm({ onSubmit, isPending }: TaskDefFormProps) {
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="td-desc">Description</Label>
+          <Label htmlFor="td-desc">{t.description}</Label>
         <Textarea
           id="td-desc"
           rows={2}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="What does this task do?"
+          placeholder={t.taskDescriptionHint}
         />
       </div>
 
       <div className="grid grid-cols-3 gap-4">
         <div className="space-y-2">
-          <Label>Retry Count</Label>
+          <Label>{t.retryCount}</Label>
           <Input
             type="number"
             min={0}
@@ -95,20 +97,20 @@ export function TaskDefForm({ onSubmit, isPending }: TaskDefFormProps) {
           />
         </div>
         <div className="space-y-2">
-          <Label>Retry Logic</Label>
+          <Label>{t.retryLogic}</Label>
           <Select value={retryLogic} onValueChange={setRetryLogic}>
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="FIXED">Fixed</SelectItem>
-              <SelectItem value="EXPONENTIAL_BACKOFF">Exponential Backoff</SelectItem>
-              <SelectItem value="LINEAR_BACKOFF">Linear Backoff</SelectItem>
+              <SelectItem value="FIXED">{t.retryFixed}</SelectItem>
+              <SelectItem value="EXPONENTIAL_BACKOFF">{t.retryExponential}</SelectItem>
+              <SelectItem value="LINEAR_BACKOFF">{t.retryLinear}</SelectItem>
             </SelectContent>
           </Select>
         </div>
         <div className="space-y-2">
-          <Label>Retry Delay (s)</Label>
+          <Label>{t.retryDelay}</Label>
           <Input
             type="number"
             min={0}
@@ -120,7 +122,7 @@ export function TaskDefForm({ onSubmit, isPending }: TaskDefFormProps) {
 
       <div className="grid grid-cols-3 gap-4">
         <div className="space-y-2">
-          <Label>Timeout (s)</Label>
+          <Label>{t.timeoutSeconds}</Label>
           <Input
             type="number"
             min={0}
@@ -129,20 +131,20 @@ export function TaskDefForm({ onSubmit, isPending }: TaskDefFormProps) {
           />
         </div>
         <div className="space-y-2">
-          <Label>Timeout Policy</Label>
+          <Label>{t.timeoutPolicy}</Label>
           <Select value={timeoutPolicy} onValueChange={setTimeoutPolicy}>
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="TIME_OUT_WF">Time Out Workflow</SelectItem>
-              <SelectItem value="ALERT_ONLY">Alert Only</SelectItem>
-              <SelectItem value="RETRY">Retry</SelectItem>
+              <SelectItem value="TIME_OUT_WF">{t.timeoutPolicyTimeOut}</SelectItem>
+              <SelectItem value="ALERT_ONLY">{t.timeoutPolicyAlert}</SelectItem>
+              <SelectItem value="RETRY">{t.timeoutPolicyRetry}</SelectItem>
             </SelectContent>
           </Select>
         </div>
         <div className="space-y-2">
-          <Label>Response Timeout (s)</Label>
+          <Label>{t.responseTimeoutLabel}</Label>
           <Input
             type="number"
             min={0}
@@ -154,39 +156,39 @@ export function TaskDefForm({ onSubmit, isPending }: TaskDefFormProps) {
 
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label>Concurrent Exec Limit</Label>
+          <Label>{t.concurrentExecLimit}</Label>
           <Input
             type="number"
             min={0}
             value={concurrentExecLimit}
             onChange={(e) => setConcurrentExecLimit(Number(e.target.value) || 0)}
-            placeholder="0 = unlimited"
+            placeholder={t.unlimitedHint}
           />
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label>Input Keys</Label>
+          <Label>{t.inputKeys}</Label>
           <TagInput
             tags={inputKeys}
             onChange={setInputKeys}
-            placeholder="Type a key and press Enter"
+            placeholder={t.typeKeyAndEnter}
           />
         </div>
         <div className="space-y-2">
-          <Label>Output Keys</Label>
+          <Label>{t.outputKeys}</Label>
           <TagInput
             tags={outputKeys}
             onChange={setOutputKeys}
-            placeholder="Type a key and press Enter"
+            placeholder={t.typeKeyAndEnter}
           />
         </div>
       </div>
 
       <div className="flex justify-end">
         <Button onClick={handleSubmit} disabled={isPending || !name.trim()}>
-          {isPending ? "Creating..." : "Create Task Definition"}
+          {isPending ? t.creating : t.createTaskDef}
         </Button>
       </div>
     </div>

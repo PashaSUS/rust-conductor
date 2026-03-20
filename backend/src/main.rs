@@ -80,10 +80,40 @@ async fn main() -> std::io::Result<()> {
 
     let sharded_pool = engine::ShardedPool::new(shard_pools);
 
-    let kafka = store::kafka::KafkaTaskQueue::new(&cfg.kafka_brokers)
+    #[cfg(feature = "kafka")]
+    let queue = store::kafka::KafkaTaskQueue::new(&cfg.kafka_brokers)
         .expect("Failed to create Kafka task queue");
 
-    let engine = engine::WorkflowEngine::new(sharded_pool.clone(), redis_pool.clone(), kafka);
+    #[cfg(not(feature = "kafka"))]
+    let queue = store::redis_queue::RedisTaskQueue::new(redis_pool.clone());
+
+    // Optional S3-compatible external payload storage (MinIO, AWS S3, etc.)
+    #[cfg(feature = "external-storage")]
+    let external_storage = if cfg.external_storage_enabled {
+        match store::s3::ExternalPayloadStorage::from_env() {
+            Ok(s3) => {
+                if let Err(e) = s3.ensure_bucket().await {
+                    tracing::warn!(error = %e, "Could not ensure S3 bucket exists — continuing anyway");
+                }
+                tracing::info!("External payload storage (S3/MinIO) enabled");
+                Some(s3)
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "Failed to initialize external storage — disabled");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    let engine = engine::WorkflowEngine::new(
+        sharded_pool.clone(),
+        redis_pool.clone(),
+        queue,
+        #[cfg(feature = "external-storage")]
+        external_storage,
+    );
 
     // Start background sweeper for orphaned/stale tasks
     engine::WorkflowEngine::start_background_sweeper(std::sync::Arc::new(engine.clone()));
@@ -117,12 +147,22 @@ async fn main() -> std::io::Result<()> {
         cfg.port
     );
 
+    let cors_origin = cfg.cors_origin.clone();
+
     HttpServer::new(move || {
-        let cors = Cors::default()
-            .allow_any_origin()
-            .allow_any_method()
-            .allow_any_header()
-            .max_age(3600);
+        let cors = if let Some(ref origin) = cors_origin {
+            Cors::default()
+                .allowed_origin(origin)
+                .allow_any_method()
+                .allow_any_header()
+                .max_age(3600)
+        } else {
+            Cors::default()
+                .allow_any_origin()
+                .allow_any_method()
+                .allow_any_header()
+                .max_age(3600)
+        };
 
         let json_cfg = web::JsonConfig::default().limit(10 * 1024 * 1024); // 10MB payload limit
 

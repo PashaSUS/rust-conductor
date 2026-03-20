@@ -1,5 +1,6 @@
 import type { TaskResult } from "@/api/conductor";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { useThemeText } from "@/components/ThemeContext";
 
 const STATUS_COLORS: Record<string, string> = {
   COMPLETED: "bg-emerald-500",
@@ -31,6 +32,7 @@ interface Props {
 }
 
 export function ExecutionTimeline({ tasks, workflowStartTime, workflowEndTime }: Props) {
+  const t = useThemeText();
   if (tasks.length === 0) return null;
 
   const now = Date.now();
@@ -95,10 +97,10 @@ export function ExecutionTimeline({ tasks, workflowStartTime, workflowEndTime }:
               <TooltipContent side="top" className="text-xs">
                 <div className="space-y-1">
                   <p className="font-semibold">{task.referenceTaskName}</p>
-                  <p>Status: {task.status}</p>
-                  <p>Type: {task.taskType}</p>
-                  <p>Duration: {formatDuration(duration)}</p>
-                  {task.workerId && <p>Worker: {task.workerId}</p>}
+                  <p>{t.status}: {task.status}</p>
+                  <p>{t.type}: {task.taskType}</p>
+                  <p>{t.duration}: {formatDuration(duration)}</p>
+                  {task.workerId && <p>{t.worker}: {task.workerId}</p>}
                 </div>
               </TooltipContent>
             </Tooltip>

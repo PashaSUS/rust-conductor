@@ -128,7 +128,7 @@ impl WorkflowEngine {
         def_tasks: &[WorkflowTask],
         task_map: &HashMap<String, &TaskResult>,
         input: &Value,
-        mut seq: i32,
+        seq: i32,
     ) -> Result<bool, EngineError> {
         for (idx, task_def) in def_tasks.iter().enumerate() {
             let ref_name = &task_def.task_reference_name;
@@ -267,7 +267,6 @@ impl WorkflowEngine {
                 }
 
                 None => {
-                    seq += 1;
                     self.schedule_tasks(
                         workflow_id,
                         &def_tasks[idx..],

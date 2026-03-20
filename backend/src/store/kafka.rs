@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 
-const CONSUMER_POOL_SIZE: usize = 4;
+const CONSUMER_POOL_SIZE: usize = 1;
 
 /// Kafka-backed task queue. Each task type maps to a Kafka topic
 /// (`conductor.task.{task_type}`). Provides durable, at-least-once delivery
@@ -76,7 +76,7 @@ impl KafkaTaskQueue {
         for i in 0..CONSUMER_POOL_SIZE {
             let consumer: StreamConsumer = ClientConfig::new()
                 .set("bootstrap.servers", &self.brokers)
-                .set("group.id", "conductor-workers")
+                .set("group.id", &format!("conductor-workers-{task_type}"))
                 .set("enable.auto.commit", "false")
                 .set("auto.offset.reset", "earliest")
                 .set("session.timeout.ms", "10000")
@@ -149,7 +149,7 @@ impl KafkaTaskQueue {
     pub async fn dequeue(&self, task_type: &str) -> Option<String> {
         let consumer_handle = self.get_or_create_consumer(task_type);
         let consumer = consumer_handle.lock().await;
-        match tokio::time::timeout(Duration::from_millis(100), consumer.recv()).await {
+        match tokio::time::timeout(Duration::from_millis(500), consumer.recv()).await {
             Ok(Ok(msg)) => {
                 let task_id = msg
                     .payload_view::<str>()
@@ -157,10 +157,18 @@ impl KafkaTaskQueue {
                     .map(|s| s.to_string());
                 if task_id.is_some() {
                     let _ = consumer.commit_message(&msg, CommitMode::Async);
+                    tracing::debug!(task_type = %task_type, task_id = ?task_id, "Kafka dequeue success");
                 }
                 task_id
             }
-            _ => None,
+            Ok(Err(e)) => {
+                tracing::warn!(task_type = %task_type, error = %e, "Kafka consumer recv error");
+                None
+            }
+            Err(_) => {
+                tracing::trace!(task_type = %task_type, "Kafka dequeue timeout (no messages)");
+                None
+            }
         }
     }
 

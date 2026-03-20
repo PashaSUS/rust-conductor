@@ -3,6 +3,9 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ============================================================
+   DEFAULT THEME (Clean Modern)
+   ============================================================ */
 :root {
   --radius: 0.625rem;
   --background: oklch(0.985 0.002 247.858);
@@ -36,6 +39,9 @@
   --sidebar-accent-foreground: oklch(0.21 0.006 285.885);
   --sidebar-border: oklch(0.87 0.006 264.531);
   --sidebar-ring: oklch(0.553 0.013 264.364);
+  --theme-border-style: solid;
+  --theme-glow: none;
+  --theme-card-shadow: 0 1px 3px rgba(0,0,0,0.08);
 }
 
 .dark {
@@ -70,6 +76,756 @@
   --sidebar-accent-foreground: oklch(0.985 0.002 247.858);
   --sidebar-border: oklch(0.274 0.006 286.033);
   --sidebar-ring: oklch(0.553 0.013 264.364);
+  --theme-card-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+/* ============================================================
+   WARCRAFT THEME — Gold borders, parchment textures, medieval feel
+   Inspired by WarcraftCN component library aesthetics
+   ============================================================ */
+.theme-warcraft {
+  --radius: 0.25rem;
+  --background: #1a1412;
+  --foreground: #e8d5b0;
+  --card: #241e18;
+  --card-foreground: #e8d5b0;
+  --popover: #2a2118;
+  --popover-foreground: #e8d5b0;
+  --primary: #c9a44a;
+  --primary-foreground: #1a1412;
+  --secondary: #3d3228;
+  --secondary-foreground: #d4b87a;
+  --muted: #2e261e;
+  --muted-foreground: #a08b6a;
+  --accent: #4a3c2e;
+  --accent-foreground: #e8d5b0;
+  --destructive: #c43e3e;
+  --border: #5c4a32;
+  --input: #3d3228;
+  --ring: #c9a44a;
+  --chart-1: #c9a44a;
+  --chart-2: #6ba368;
+  --chart-3: #5b8dd9;
+  --chart-4: #d4764e;
+  --chart-5: #9b6bb5;
+  --sidebar: #1e1814;
+  --sidebar-foreground: #e8d5b0;
+  --sidebar-primary: #c9a44a;
+  --sidebar-primary-foreground: #1a1412;
+  --sidebar-accent: #3d3228;
+  --sidebar-accent-foreground: #e8d5b0;
+  --sidebar-border: #5c4a32;
+  --sidebar-ring: #c9a44a;
+  --theme-border-style: solid;
+  --theme-glow: 0 0 8px rgba(201, 164, 74, 0.15);
+  --theme-card-shadow: 0 2px 8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(201,164,74,0.1);
+}
+
+.theme-warcraft.dark {
+  --background: #0f0d0a;
+  --foreground: #e8d5b0;
+  --card: #1a1510;
+  --card-foreground: #e8d5b0;
+  --popover: #1e1812;
+  --popover-foreground: #e8d5b0;
+  --primary: #dbb455;
+  --primary-foreground: #0f0d0a;
+  --secondary: #302618;
+  --secondary-foreground: #dbb87a;
+  --muted: #261f16;
+  --muted-foreground: #8a7558;
+  --accent: #3d3020;
+  --accent-foreground: #e8d5b0;
+  --border: #4d3d28;
+  --input: #302618;
+  --sidebar: #14110d;
+  --sidebar-foreground: #e8d5b0;
+  --sidebar-accent: #302618;
+  --sidebar-accent-foreground: #e8d5b0;
+  --sidebar-border: #4d3d28;
+  --theme-card-shadow: 0 2px 12px rgba(0,0,0,0.7), inset 0 1px 0 rgba(201,164,74,0.08);
+}
+
+/* Warcraft light variant */
+:root.theme-warcraft:not(.dark) {
+  --background: #f0e6d2;
+  --foreground: #2c1f0e;
+  --card: #e8dcc4;
+  --card-foreground: #2c1f0e;
+  --popover: #ebe1cd;
+  --popover-foreground: #2c1f0e;
+  --primary: #8b6914;
+  --primary-foreground: #f5eeda;
+  --secondary: #d8c9a8;
+  --secondary-foreground: #3d2e14;
+  --muted: #ddd0b4;
+  --muted-foreground: #7a6840;
+  --accent: #c8b68e;
+  --accent-foreground: #2c1f0e;
+  --border: #b5a07a;
+  --input: #d8c9a8;
+  --sidebar: #e4d8be;
+  --sidebar-foreground: #2c1f0e;
+  --sidebar-accent: #d0c0a0;
+  --sidebar-accent-foreground: #2c1f0e;
+  --sidebar-border: #b5a07a;
+  --theme-card-shadow: 0 2px 8px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.5);
+}
+
+/* ============================================================
+   CYBERPUNK THEME — Neon accents, tech-noir, futuristic glow
+   ============================================================ */
+.theme-cyberpunk {
+  --radius: 0.125rem;
+  --background: #0a0a12;
+  --foreground: #e0e0f0;
+  --card: #12121e;
+  --card-foreground: #e0e0f0;
+  --popover: #16162a;
+  --popover-foreground: #e0e0f0;
+  --primary: #00f0ff;
+  --primary-foreground: #0a0a12;
+  --secondary: #1e1e38;
+  --secondary-foreground: #b0b0d0;
+  --muted: #1a1a30;
+  --muted-foreground: #7878a0;
+  --accent: #2a1a3a;
+  --accent-foreground: #e0e0f0;
+  --destructive: #ff2266;
+  --border: #2a2a50;
+  --input: #1e1e38;
+  --ring: #00f0ff;
+  --chart-1: #00f0ff;
+  --chart-2: #ff2266;
+  --chart-3: #b44aff;
+  --chart-4: #00ff88;
+  --chart-5: #ffaa00;
+  --sidebar: #0e0e1a;
+  --sidebar-foreground: #e0e0f0;
+  --sidebar-primary: #00f0ff;
+  --sidebar-primary-foreground: #0a0a12;
+  --sidebar-accent: #1e1e38;
+  --sidebar-accent-foreground: #e0e0f0;
+  --sidebar-border: #2a2a50;
+  --sidebar-ring: #00f0ff;
+  --theme-border-style: solid;
+  --theme-glow: 0 0 15px rgba(0, 240, 255, 0.15);
+  --theme-card-shadow: 0 0 20px rgba(0, 240, 255, 0.08), 0 2px 8px rgba(0,0,0,0.5);
+}
+
+.theme-cyberpunk.dark {
+  --background: #06060c;
+  --foreground: #e0e0f0;
+  --card: #0c0c18;
+  --card-foreground: #e0e0f0;
+  --popover: #101020;
+  --popover-foreground: #e0e0f0;
+  --primary: #00e5f5;
+  --primary-foreground: #06060c;
+  --secondary: #161630;
+  --secondary-foreground: #a0a0c8;
+  --muted: #141428;
+  --muted-foreground: #606090;
+  --accent: #221538;
+  --accent-foreground: #e0e0f0;
+  --border: #222248;
+  --input: #161630;
+  --sidebar: #08080f;
+  --sidebar-foreground: #e0e0f0;
+  --sidebar-accent: #161630;
+  --sidebar-accent-foreground: #e0e0f0;
+  --sidebar-border: #222248;
+  --theme-card-shadow: 0 0 25px rgba(0, 240, 255, 0.1), 0 2px 12px rgba(0,0,0,0.7);
+}
+
+/* Cyberpunk light variant */
+:root.theme-cyberpunk:not(.dark) {
+  --background: #f0f0fa;
+  --foreground: #0a0a20;
+  --card: #e8e8f5;
+  --card-foreground: #0a0a20;
+  --popover: #ebebf6;
+  --popover-foreground: #0a0a20;
+  --primary: #0088aa;
+  --primary-foreground: #f0f0fa;
+  --secondary: #d8d8f0;
+  --secondary-foreground: #1a1a40;
+  --muted: #dcdcee;
+  --muted-foreground: #5050a0;
+  --accent: #d0d0ea;
+  --accent-foreground: #0a0a20;
+  --destructive: #cc1155;
+  --border: #b8b8da;
+  --input: #d8d8f0;
+  --sidebar: #e4e4f4;
+  --sidebar-foreground: #0a0a20;
+  --sidebar-accent: #d0d0ea;
+  --sidebar-accent-foreground: #0a0a20;
+  --sidebar-border: #b8b8da;
+  --theme-glow: 0 0 10px rgba(0, 136, 170, 0.1);
+  --theme-card-shadow: 0 0 15px rgba(0, 136, 170, 0.06), 0 1px 4px rgba(0,0,0,0.1);
+}
+
+/* ============================================================
+   FOREST THEME — Earth tones, mossy greens, wood textures
+   ============================================================ */
+.theme-forest {
+  --radius: 0.5rem;
+  --background: #161e14;
+  --foreground: #d4e0c8;
+  --card: #1e2a1a;
+  --card-foreground: #d4e0c8;
+  --popover: #223020;
+  --popover-foreground: #d4e0c8;
+  --primary: #5ea84e;
+  --primary-foreground: #f0f5ea;
+  --secondary: #2a3828;
+  --secondary-foreground: #b8d0a8;
+  --muted: #243220;
+  --muted-foreground: #88a878;
+  --accent: #344830;
+  --accent-foreground: #d4e0c8;
+  --destructive: #c45040;
+  --border: #3a5035;
+  --input: #2a3828;
+  --ring: #5ea84e;
+  --chart-1: #5ea84e;
+  --chart-2: #c4a050;
+  --chart-3: #5888b0;
+  --chart-4: #c86848;
+  --chart-5: #8868a8;
+  --sidebar: #1a2418;
+  --sidebar-foreground: #d4e0c8;
+  --sidebar-primary: #5ea84e;
+  --sidebar-primary-foreground: #f0f5ea;
+  --sidebar-accent: #2a3828;
+  --sidebar-accent-foreground: #d4e0c8;
+  --sidebar-border: #3a5035;
+  --sidebar-ring: #5ea84e;
+  --theme-border-style: solid;
+  --theme-glow: 0 0 10px rgba(94, 168, 78, 0.1);
+  --theme-card-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+
+.theme-forest.dark {
+  --background: #0e1410;
+  --foreground: #d4e0c8;
+  --card: #141e12;
+  --card-foreground: #d4e0c8;
+  --popover: #182418;
+  --popover-foreground: #d4e0c8;
+  --primary: #68b858;
+  --primary-foreground: #0e1410;
+  --secondary: #1e2c1c;
+  --secondary-foreground: #b0c8a0;
+  --muted: #1a281a;
+  --muted-foreground: #709868;
+  --accent: #283e24;
+  --accent-foreground: #d4e0c8;
+  --border: #2e4428;
+  --input: #1e2c1c;
+  --sidebar: #10180e;
+  --sidebar-foreground: #d4e0c8;
+  --sidebar-accent: #1e2c1c;
+  --sidebar-accent-foreground: #d4e0c8;
+  --sidebar-border: #2e4428;
+  --theme-card-shadow: 0 2px 12px rgba(0,0,0,0.6);
+}
+
+/* Forest light variant */
+:root.theme-forest:not(.dark) {
+  --background: #eef2ea;
+  --foreground: #1a2814;
+  --card: #e4ead8;
+  --card-foreground: #1a2814;
+  --popover: #e8eedc;
+  --popover-foreground: #1a2814;
+  --primary: #3d7a30;
+  --primary-foreground: #f2f6ee;
+  --secondary: #d0dcc4;
+  --secondary-foreground: #243818;
+  --muted: #d8e2cc;
+  --muted-foreground: #5a7a48;
+  --accent: #c4d4b4;
+  --accent-foreground: #1a2814;
+  --border: #a8c098;
+  --input: #d0dcc4;
+  --sidebar: #e0e8d4;
+  --sidebar-foreground: #1a2814;
+  --sidebar-accent: #c8d6b8;
+  --sidebar-accent-foreground: #1a2814;
+  --sidebar-border: #a8c098;
+  --theme-glow: none;
+  --theme-card-shadow: 0 2px 6px rgba(0,0,0,0.1);
+}
+
+/* ============================================================
+   OCEAN THEME — Deep blues, aqua highlights, coral accents
+   ============================================================ */
+.theme-ocean {
+  --radius: 0.75rem;
+  --background: #0c1824;
+  --foreground: #c8dce8;
+  --card: #122030;
+  --card-foreground: #c8dce8;
+  --popover: #162838;
+  --popover-foreground: #c8dce8;
+  --primary: #38a8d0;
+  --primary-foreground: #f0f8fc;
+  --secondary: #1a3048;
+  --secondary-foreground: #a0c4d8;
+  --muted: #162840;
+  --muted-foreground: #6898b8;
+  --accent: #203850;
+  --accent-foreground: #c8dce8;
+  --destructive: #e05858;
+  --border: #284060;
+  --input: #1a3048;
+  --ring: #38a8d0;
+  --chart-1: #38a8d0;
+  --chart-2: #e07848;
+  --chart-3: #48c088;
+  --chart-4: #d868a0;
+  --chart-5: #b0a048;
+  --sidebar: #0e1c2a;
+  --sidebar-foreground: #c8dce8;
+  --sidebar-primary: #38a8d0;
+  --sidebar-primary-foreground: #f0f8fc;
+  --sidebar-accent: #1a3048;
+  --sidebar-accent-foreground: #c8dce8;
+  --sidebar-border: #284060;
+  --sidebar-ring: #38a8d0;
+  --theme-border-style: solid;
+  --theme-glow: 0 0 12px rgba(56, 168, 208, 0.12);
+  --theme-card-shadow: 0 2px 10px rgba(0,0,0,0.4);
+}
+
+.theme-ocean.dark {
+  --background: #080e18;
+  --foreground: #c8dce8;
+  --card: #0c1620;
+  --card-foreground: #c8dce8;
+  --popover: #101c28;
+  --popover-foreground: #c8dce8;
+  --primary: #40b8e0;
+  --primary-foreground: #080e18;
+  --secondary: #142438;
+  --secondary-foreground: #98b8d0;
+  --muted: #10202e;
+  --muted-foreground: #5888a8;
+  --accent: #1a3248;
+  --accent-foreground: #c8dce8;
+  --border: #203450;
+  --input: #142438;
+  --sidebar: #0a1018;
+  --sidebar-foreground: #c8dce8;
+  --sidebar-accent: #142438;
+  --sidebar-accent-foreground: #c8dce8;
+  --sidebar-border: #203450;
+  --theme-card-shadow: 0 2px 14px rgba(0,0,0,0.6);
+}
+
+/* Ocean light variant */
+:root.theme-ocean:not(.dark) {
+  --background: #eaf2f8;
+  --foreground: #0c2030;
+  --card: #dce8f2;
+  --card-foreground: #0c2030;
+  --popover: #e0ebf4;
+  --popover-foreground: #0c2030;
+  --primary: #1a7a9e;
+  --primary-foreground: #f0f8fc;
+  --secondary: #c8dae8;
+  --secondary-foreground: #143050;
+  --muted: #d0dfe8;
+  --muted-foreground: #3a6888;
+  --accent: #bcd0e0;
+  --accent-foreground: #0c2030;
+  --border: #a0bcd0;
+  --input: #c8dae8;
+  --sidebar: #dae6f0;
+  --sidebar-foreground: #0c2030;
+  --sidebar-accent: #c0d4e4;
+  --sidebar-accent-foreground: #0c2030;
+  --sidebar-border: #a0bcd0;
+  --theme-glow: none;
+  --theme-card-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+
+/* ============================================================
+   POKEMON THEME — Vibrant red/white, playful, Pokédex feel
+   ============================================================ */
+.theme-pokemon {
+  --radius: 1rem;
+  --background: #1a1020;
+  --foreground: #f0e8f5;
+  --card: #241830;
+  --card-foreground: #f0e8f5;
+  --popover: #2a1e38;
+  --popover-foreground: #f0e8f5;
+  --primary: #ef4444;
+  --primary-foreground: #ffffff;
+  --secondary: #352848;
+  --secondary-foreground: #d0c0e0;
+  --muted: #2e2040;
+  --muted-foreground: #9888b0;
+  --accent: #402e58;
+  --accent-foreground: #f0e8f5;
+  --destructive: #f97316;
+  --border: #4a3868;
+  --input: #352848;
+  --ring: #ef4444;
+  --chart-1: #ef4444;
+  --chart-2: #3b82f6;
+  --chart-3: #eab308;
+  --chart-4: #22c55e;
+  --chart-5: #a855f7;
+  --sidebar: #1e1428;
+  --sidebar-foreground: #f0e8f5;
+  --sidebar-primary: #ef4444;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #352848;
+  --sidebar-accent-foreground: #f0e8f5;
+  --sidebar-border: #4a3868;
+  --sidebar-ring: #ef4444;
+  --theme-border-style: solid;
+  --theme-glow: 0 0 10px rgba(239, 68, 68, 0.12);
+  --theme-card-shadow: 0 4px 12px rgba(0,0,0,0.4), 0 0 0 1px rgba(239,68,68,0.08);
+}
+
+.theme-pokemon.dark {
+  --background: #0f0818;
+  --foreground: #f0e8f5;
+  --card: #1a1025;
+  --card-foreground: #f0e8f5;
+  --popover: #1e142e;
+  --popover-foreground: #f0e8f5;
+  --primary: #f05050;
+  --primary-foreground: #ffffff;
+  --secondary: #281c3c;
+  --secondary-foreground: #c0b0d8;
+  --muted: #221838;
+  --muted-foreground: #8070a0;
+  --accent: #342550;
+  --accent-foreground: #f0e8f5;
+  --border: #3e2c58;
+  --input: #281c3c;
+  --sidebar: #120a1e;
+  --sidebar-foreground: #f0e8f5;
+  --sidebar-accent: #281c3c;
+  --sidebar-accent-foreground: #f0e8f5;
+  --sidebar-border: #3e2c58;
+  --theme-card-shadow: 0 4px 16px rgba(0,0,0,0.6), 0 0 0 1px rgba(239,68,68,0.06);
+}
+
+/* Pokemon light variant */
+:root.theme-pokemon:not(.dark) {
+  --background: #fef2f2;
+  --foreground: #1c1017;
+  --card: #fff5f5;
+  --card-foreground: #1c1017;
+  --popover: #fff7f7;
+  --popover-foreground: #1c1017;
+  --primary: #dc2626;
+  --primary-foreground: #ffffff;
+  --secondary: #fde8e8;
+  --secondary-foreground: #7f1d1d;
+  --muted: #fce4e4;
+  --muted-foreground: #9f3838;
+  --accent: #fdd8d8;
+  --accent-foreground: #1c1017;
+  --destructive: #ea580c;
+  --border: #fca5a5;
+  --input: #fde8e8;
+  --sidebar: #fff0f0;
+  --sidebar-foreground: #1c1017;
+  --sidebar-accent: #fde0e0;
+  --sidebar-accent-foreground: #1c1017;
+  --sidebar-border: #fca5a5;
+  --theme-glow: none;
+  --theme-card-shadow: 0 4px 12px rgba(239, 68, 68, 0.08), 0 1px 4px rgba(0,0,0,0.06);
+}
+
+/* ============================================================
+   YUGIOH THEME — Dark violet/gold foil, mystical, card-game feel
+   ============================================================ */
+.theme-yugioh {
+  --radius: 0.375rem;
+  --background: #12081e;
+  --foreground: #e8daf0;
+  --card: #1c1030;
+  --card-foreground: #e8daf0;
+  --popover: #221438;
+  --popover-foreground: #e8daf0;
+  --primary: #daa520;
+  --primary-foreground: #12081e;
+  --secondary: #2c1c44;
+  --secondary-foreground: #c8b4d8;
+  --muted: #241838;
+  --muted-foreground: #8870a0;
+  --accent: #382858;
+  --accent-foreground: #e8daf0;
+  --destructive: #dc2626;
+  --border: #4a3070;
+  --input: #2c1c44;
+  --ring: #9333ea;
+  --chart-1: #daa520;
+  --chart-2: #9333ea;
+  --chart-3: #3b82f6;
+  --chart-4: #ef4444;
+  --chart-5: #22c55e;
+  --sidebar: #160a24;
+  --sidebar-foreground: #e8daf0;
+  --sidebar-primary: #daa520;
+  --sidebar-primary-foreground: #12081e;
+  --sidebar-accent: #2c1c44;
+  --sidebar-accent-foreground: #e8daf0;
+  --sidebar-border: #4a3070;
+  --sidebar-ring: #daa520;
+  --theme-border-style: solid;
+  --theme-glow: 0 0 12px rgba(218, 165, 32, 0.12);
+  --theme-card-shadow: 0 2px 12px rgba(0,0,0,0.5), 0 0 20px rgba(147, 51, 234, 0.06);
+}
+
+.theme-yugioh.dark {
+  --background: #0a0414;
+  --foreground: #e8daf0;
+  --card: #140c22;
+  --card-foreground: #e8daf0;
+  --popover: #180e2c;
+  --popover-foreground: #e8daf0;
+  --primary: #e0b020;
+  --primary-foreground: #0a0414;
+  --secondary: #221638;
+  --secondary-foreground: #b8a4cc;
+  --muted: #1c1230;
+  --muted-foreground: #706090;
+  --accent: #2e2048;
+  --accent-foreground: #e8daf0;
+  --border: #3c2460;
+  --input: #221638;
+  --sidebar: #0c0618;
+  --sidebar-foreground: #e8daf0;
+  --sidebar-accent: #221638;
+  --sidebar-accent-foreground: #e8daf0;
+  --sidebar-border: #3c2460;
+  --theme-card-shadow: 0 2px 16px rgba(0,0,0,0.7), 0 0 30px rgba(147, 51, 234, 0.08);
+}
+
+/* Yu-Gi-Oh light variant */
+:root.theme-yugioh:not(.dark) {
+  --background: #f8f0ff;
+  --foreground: #1a0830;
+  --card: #f0e6fa;
+  --card-foreground: #1a0830;
+  --popover: #f2e8fc;
+  --popover-foreground: #1a0830;
+  --primary: #b8860b;
+  --primary-foreground: #fef8e8;
+  --secondary: #e8d8f4;
+  --secondary-foreground: #2a1248;
+  --muted: #ebe0f4;
+  --muted-foreground: #6a4890;
+  --accent: #dcc8f0;
+  --accent-foreground: #1a0830;
+  --destructive: #dc2626;
+  --border: #c4a0e0;
+  --input: #e8d8f4;
+  --ring: #7c3aed;
+  --sidebar: #f0e4f8;
+  --sidebar-foreground: #1a0830;
+  --sidebar-accent: #e0d0f0;
+  --sidebar-accent-foreground: #1a0830;
+  --sidebar-border: #c4a0e0;
+  --theme-glow: 0 0 8px rgba(184, 134, 11, 0.1);
+  --theme-card-shadow: 0 2px 8px rgba(147, 51, 234, 0.06), 0 1px 4px rgba(0,0,0,0.08);
+}
+
+/* ============================================================
+   CHUCK NORRIS THEME — Bold red/black/steel, aggressive, action
+   ============================================================ */
+.theme-chucknorris {
+  --radius: 0.125rem;
+  --background: #141010;
+  --foreground: #f0e0d8;
+  --card: #1e1818;
+  --card-foreground: #f0e0d8;
+  --popover: #242020;
+  --popover-foreground: #f0e0d8;
+  --primary: #b91c1c;
+  --primary-foreground: #ffffff;
+  --secondary: #302828;
+  --secondary-foreground: #d0b8b0;
+  --muted: #282020;
+  --muted-foreground: #988078;
+  --accent: #3a2e2e;
+  --accent-foreground: #f0e0d8;
+  --destructive: #ef4444;
+  --border: #504040;
+  --input: #302828;
+  --ring: #ef4444;
+  --chart-1: #ef4444;
+  --chart-2: #a0a0a0;
+  --chart-3: #eab308;
+  --chart-4: #f97316;
+  --chart-5: #78716c;
+  --sidebar: #181414;
+  --sidebar-foreground: #f0e0d8;
+  --sidebar-primary: #ef4444;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #302828;
+  --sidebar-accent-foreground: #f0e0d8;
+  --sidebar-border: #504040;
+  --sidebar-ring: #ef4444;
+  --theme-border-style: solid;
+  --theme-glow: 0 0 10px rgba(239, 68, 68, 0.1);
+  --theme-card-shadow: 0 4px 12px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.03);
+}
+
+.theme-chucknorris.dark {
+  --background: #0c0808;
+  --foreground: #f0e0d8;
+  --card: #161010;
+  --card-foreground: #f0e0d8;
+  --popover: #1a1212;
+  --popover-foreground: #f0e0d8;
+  --primary: #dc2626;
+  --primary-foreground: #ffffff;
+  --secondary: #241c1c;
+  --secondary-foreground: #c8b0a8;
+  --muted: #1e1616;
+  --muted-foreground: #887068;
+  --accent: #302424;
+  --accent-foreground: #f0e0d8;
+  --border: #403030;
+  --input: #241c1c;
+  --sidebar: #0e0a0a;
+  --sidebar-foreground: #f0e0d8;
+  --sidebar-accent: #241c1c;
+  --sidebar-accent-foreground: #f0e0d8;
+  --sidebar-border: #403030;
+  --theme-card-shadow: 0 4px 16px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.02);
+}
+
+/* Chuck Norris light variant */
+:root.theme-chucknorris:not(.dark) {
+  --background: #f8f0ee;
+  --foreground: #1a0e0a;
+  --card: #f2e8e4;
+  --card-foreground: #1a0e0a;
+  --popover: #f4ebe8;
+  --popover-foreground: #1a0e0a;
+  --primary: #b91c1c;
+  --primary-foreground: #ffffff;
+  --secondary: #e8d8d2;
+  --secondary-foreground: #3a1810;
+  --muted: #e0d0c8;
+  --muted-foreground: #7a4838;
+  --accent: #dcc4bc;
+  --accent-foreground: #1a0e0a;
+  --destructive: #dc2626;
+  --border: #c8a898;
+  --input: #e8d8d2;
+  --sidebar: #f0e4e0;
+  --sidebar-foreground: #1a0e0a;
+  --sidebar-accent: #e4d0c8;
+  --sidebar-accent-foreground: #1a0e0a;
+  --sidebar-border: #c8a898;
+  --theme-glow: none;
+  --theme-card-shadow: 0 4px 10px rgba(185, 28, 28, 0.06), 0 1px 4px rgba(0,0,0,0.08);
+}
+
+/* ============================================================
+   LORD OF THE RINGS THEME — Elvish gold & mithril, ancient forest green
+   ============================================================ */
+.theme-lotr {
+  --radius: 0.375rem;
+  --background: #0e1410;
+  --foreground: #d8ddd0;
+  --card: #161e18;
+  --card-foreground: #d8ddd0;
+  --popover: #1a241c;
+  --popover-foreground: #d8ddd0;
+  --primary: #b09860;
+  --primary-foreground: #0e1410;
+  --secondary: #202c22;
+  --secondary-foreground: #b8c4a8;
+  --muted: #1c2618;
+  --muted-foreground: #7a9070;
+  --accent: #2a3a2e;
+  --accent-foreground: #d8ddd0;
+  --destructive: #b83020;
+  --border: #3a5040;
+  --input: #202c22;
+  --ring: #b09860;
+  --chart-1: #b09860;
+  --chart-2: #708898;
+  --chart-3: #688850;
+  --chart-4: #c06838;
+  --chart-5: #8070a0;
+  --sidebar: #101814;
+  --sidebar-foreground: #d8ddd0;
+  --sidebar-primary: #b09860;
+  --sidebar-primary-foreground: #0e1410;
+  --sidebar-accent: #202c22;
+  --sidebar-accent-foreground: #d8ddd0;
+  --sidebar-border: #3a5040;
+  --sidebar-ring: #b09860;
+  --theme-border-style: solid;
+  --theme-glow: 0 0 12px rgba(176, 152, 96, 0.12);
+  --theme-card-shadow: 0 2px 10px rgba(0,0,0,0.5), inset 0 1px 0 rgba(176,152,96,0.08);
+}
+
+.theme-lotr.dark {
+  --background: #080e0a;
+  --foreground: #d8ddd0;
+  --card: #0e1610;
+  --card-foreground: #d8ddd0;
+  --popover: #121c14;
+  --popover-foreground: #d8ddd0;
+  --primary: #c0a868;
+  --primary-foreground: #080e0a;
+  --secondary: #182018;
+  --secondary-foreground: #a8b898;
+  --muted: #141e14;
+  --muted-foreground: #688060;
+  --accent: #203028;
+  --accent-foreground: #d8ddd0;
+  --border: #2e4234;
+  --input: #182018;
+  --sidebar: #0a100c;
+  --sidebar-foreground: #d8ddd0;
+  --sidebar-accent: #182018;
+  --sidebar-accent-foreground: #d8ddd0;
+  --sidebar-border: #2e4234;
+  --theme-card-shadow: 0 2px 14px rgba(0,0,0,0.7), inset 0 1px 0 rgba(176,152,96,0.06);
+}
+
+/* LOTR light variant */
+:root.theme-lotr:not(.dark) {
+  --background: #f0ede4;
+  --foreground: #1a2014;
+  --card: #e8e4d8;
+  --card-foreground: #1a2014;
+  --popover: #ece8de;
+  --popover-foreground: #1a2014;
+  --primary: #7a6830;
+  --primary-foreground: #f5f0e4;
+  --secondary: #ddd8c8;
+  --secondary-foreground: #2a3420;
+  --muted: #e0dace;
+  --muted-foreground: #5a6a48;
+  --accent: #ccc4ae;
+  --accent-foreground: #1a2014;
+  --border: #b0a888;
+  --input: #ddd8c8;
+  --sidebar: #e6e2d6;
+  --sidebar-foreground: #1a2014;
+  --sidebar-accent: #d4cebe;
+  --sidebar-accent-foreground: #1a2014;
+  --sidebar-border: #b0a888;
+  --theme-glow: none;
+  --theme-card-shadow: 0 2px 8px rgba(0,0,0,0.1), inset 0 1px 0 rgba(255,255,255,0.5);
 }
 
 @theme inline {
@@ -118,4 +874,582 @@
     @apply bg-background text-foreground;
     font-family: ui-sans-serif, system-ui, sans-serif;
   }
+}
+
+/* ============================================================
+   THEME-SPECIFIC DECORATIVE STYLES
+   ============================================================ */
+
+/* Warcraft: ornate gold borders & parchment feel */
+.theme-warcraft body {
+  font-family: "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
+}
+
+.theme-warcraft [data-slot="card"],
+.theme-warcraft .rounded-xl.border.bg-card {
+  border-width: 2px;
+  border-color: var(--border);
+  box-shadow: var(--theme-card-shadow);
+}
+
+.theme-warcraft [data-slot="button"],
+.theme-warcraft button {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+}
+
+/* Warcraft sidebar ornamental top border */
+.theme-warcraft aside {
+  border-right-width: 2px;
+  border-image: linear-gradient(to bottom, var(--primary), var(--border)) 1;
+}
+
+/* Warcraft gold shimmer on headings */
+.theme-warcraft h2, .theme-warcraft h3 {
+  text-shadow: 0 0 20px rgba(201, 164, 74, 0.25);
+}
+
+/* Warcraft badge glow */
+.theme-warcraft [data-slot="badge"] {
+  border-width: 1px;
+  border-color: var(--primary);
+  box-shadow: 0 0 6px rgba(201, 164, 74, 0.2);
+}
+
+/* Warcraft table header ornate divider */
+.theme-warcraft thead tr {
+  border-bottom-width: 2px;
+  border-image: linear-gradient(to right, transparent, var(--primary), transparent) 1;
+}
+
+/* Warcraft dialog parchment frame */
+.theme-warcraft [role="dialog"] > div {
+  border-width: 2px;
+  border-color: var(--primary);
+  box-shadow: 0 0 30px rgba(201, 164, 74, 0.15), 0 8px 32px rgba(0,0,0,0.5);
+}
+
+/* Cyberpunk: neon glow effects */
+.theme-cyberpunk body {
+  font-family: "JetBrains Mono", "Fira Code", "Consolas", monospace;
+  letter-spacing: 0.02em;
+}
+
+.theme-cyberpunk [data-slot="card"],
+.theme-cyberpunk .rounded-xl.border.bg-card {
+  border-width: 1px;
+  box-shadow: var(--theme-card-shadow);
+}
+
+.theme-cyberpunk [data-slot="button"]:not(:disabled):hover,
+.theme-cyberpunk button:not(:disabled):not([data-slot]):hover {
+  box-shadow: 0 0 12px var(--primary);
+}
+
+.theme-cyberpunk aside {
+  border-right-color: var(--primary);
+  box-shadow: 1px 0 20px rgba(0, 240, 255, 0.06);
+}
+
+.theme-cyberpunk:not(.dark) aside {
+  box-shadow: 1px 0 15px rgba(0, 136, 170, 0.04);
+}
+
+/* Cyberpunk scan-line effect on cards (subtle) */
+.theme-cyberpunk [data-slot="card"]::before,
+.theme-cyberpunk .rounded-xl.border.bg-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 240, 255, 0.015) 2px,
+    rgba(0, 240, 255, 0.015) 4px
+  );
+  border-radius: inherit;
+}
+
+.theme-cyberpunk:not(.dark) [data-slot="card"]::before,
+.theme-cyberpunk:not(.dark) .rounded-xl.border.bg-card::before {
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 100, 140, 0.02) 2px,
+    rgba(0, 100, 140, 0.02) 4px
+  );
+}
+
+/* Cyberpunk glitch-style headings */
+.theme-cyberpunk h2.text-2xl {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  text-shadow: 0 0 10px var(--primary), 0 0 30px rgba(0, 240, 255, 0.2);
+}
+
+.theme-cyberpunk:not(.dark) h2.text-2xl {
+  text-shadow: 0 0 8px rgba(0, 136, 170, 0.15);
+}
+
+/* Cyberpunk neon pulse on primary buttons */
+.theme-cyberpunk [data-slot="button"][data-variant="default"],
+.theme-cyberpunk button.bg-primary {
+  animation: cyber-pulse 3s ease-in-out infinite;
+}
+
+@keyframes cyber-pulse {
+  0%, 100% { box-shadow: 0 0 5px var(--primary); }
+  50% { box-shadow: 0 0 15px var(--primary), 0 0 30px rgba(0, 240, 255, 0.15); }
+}
+
+/* Cyberpunk table rows: left neon accent */
+.theme-cyberpunk tbody tr {
+  border-left: 2px solid transparent;
+  transition: border-color 0.2s ease;
+}
+
+.theme-cyberpunk tbody tr:hover {
+  border-left-color: var(--primary);
+}
+
+/* Forest: organic shapes and earth texture */
+.theme-forest body {
+  font-family: "Merriweather", "Georgia", "Cambria", serif;
+}
+
+.theme-forest [data-slot="card"],
+.theme-forest .rounded-xl.border.bg-card {
+  box-shadow: var(--theme-card-shadow);
+}
+
+.theme-forest aside {
+  border-right-width: 2px;
+  border-image: linear-gradient(to bottom, var(--primary), transparent) 1;
+}
+
+/* Forest: leaf-like top accent on cards */
+.theme-forest [data-slot="card"]::after,
+.theme-forest .rounded-xl.border.bg-card::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, var(--primary), transparent);
+  border-radius: inherit;
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* Forest headings with verdant glow */
+.theme-forest h2, .theme-forest h3 {
+  text-shadow: 0 0 15px rgba(94, 168, 78, 0.15);
+}
+
+/* Forest subtle vine border on tables */
+.theme-forest thead tr {
+  border-bottom-width: 2px;
+  border-image: linear-gradient(to right, transparent, var(--primary), transparent) 1;
+}
+
+/* Ocean: flowing, rounded shapes */
+.theme-ocean body {
+  font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+}
+
+.theme-ocean [data-slot="card"],
+.theme-ocean .rounded-xl.border.bg-card {
+  box-shadow: var(--theme-card-shadow);
+}
+
+.theme-ocean aside {
+  background: linear-gradient(
+    180deg,
+    var(--sidebar) 0%,
+    color-mix(in srgb, var(--sidebar) 90%, var(--primary)) 100%
+  );
+}
+
+/* Ocean wave-like top accent on cards */
+.theme-ocean [data-slot="card"]::after,
+.theme-ocean .rounded-xl.border.bg-card::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--primary), color-mix(in srgb, var(--primary) 60%, transparent), var(--primary));
+  border-radius: inherit;
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* Ocean headings with aqua glow */
+.theme-ocean h2 {
+  text-shadow: 0 0 12px rgba(56, 168, 208, 0.2);
+}
+
+/* Ocean buttons: gentle wave shadow */
+.theme-ocean [data-slot="button"]:not(:disabled):hover,
+.theme-ocean button:not(:disabled):not([data-slot]):hover {
+  box-shadow: 0 2px 12px rgba(56, 168, 208, 0.2);
+}
+
+/* Ocean table header: tidal underline */
+.theme-ocean thead tr {
+  border-bottom-width: 2px;
+  border-image: linear-gradient(to right, transparent, var(--primary), transparent) 1;
+}
+
+/* Pokemon: vibrant red/white, playful rounded shapes */
+.theme-pokemon body {
+  font-family: "Nunito", "Poppins", "Segoe UI", system-ui, sans-serif;
+}
+
+.theme-pokemon h2, .theme-pokemon h3 {
+  letter-spacing: 0.02em;
+}
+
+.theme-pokemon [data-slot="card"],
+.theme-pokemon .rounded-xl.border.bg-card {
+  border-width: 2px;
+  box-shadow: var(--theme-card-shadow);
+  border-radius: 1rem;
+  overflow: hidden;
+}
+
+/* Pokemon pokeball stripe accent on cards */
+.theme-pokemon [data-slot="card"]::after,
+.theme-pokemon .rounded-xl.border.bg-card::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--destructive), var(--primary), var(--destructive));
+  pointer-events: none;
+}
+
+/* Pokemon buttons: rounded and bouncy */
+.theme-pokemon [data-slot="button"],
+.theme-pokemon button {
+  border-radius: 9999px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.theme-pokemon [data-slot="button"]:not(:disabled):hover,
+.theme-pokemon button:not(:disabled):not([data-slot]):hover {
+  transform: scale(1.03);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.25);
+}
+
+/* Pokemon pokeball icon in sidebar */
+.theme-pokemon aside {
+  border-right-width: 3px;
+  border-image: linear-gradient(to bottom, var(--destructive), var(--primary), var(--destructive)) 1;
+}
+
+/* Pokemon table rows: catch animation on hover */
+.theme-pokemon tbody tr {
+  transition: transform 0.15s ease, background-color 0.2s ease;
+}
+
+.theme-pokemon tbody tr:hover {
+  transform: translateX(4px);
+}
+
+/* Pokemon badge styling: type-badge feel */
+.theme-pokemon [data-slot="badge"] {
+  border-radius: 9999px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 0.65rem;
+}
+
+/* Yu-Gi-Oh: dark violet/gold foil, mystical card game feel */
+.theme-yugioh body {
+  font-family: "Cinzel", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+}
+
+.theme-yugioh h2, .theme-yugioh h3 {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  text-shadow: 0 0 15px rgba(218, 165, 32, 0.3);
+}
+
+.theme-yugioh [data-slot="card"],
+.theme-yugioh .rounded-xl.border.bg-card {
+  border-width: 2px;
+  border-color: var(--primary);
+  box-shadow: var(--theme-card-shadow);
+  position: relative;
+}
+
+/* Yu-Gi-Oh holographic shimmer on cards */
+.theme-yugioh [data-slot="card"]::before,
+.theme-yugioh .rounded-xl.border.bg-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    135deg,
+    rgba(218, 165, 32, 0.04) 0%,
+    rgba(147, 51, 234, 0.04) 25%,
+    rgba(218, 165, 32, 0.06) 50%,
+    rgba(147, 51, 234, 0.04) 75%,
+    rgba(218, 165, 32, 0.04) 100%
+  );
+  border-radius: inherit;
+}
+
+/* Yu-Gi-Oh gold foil top accent */
+.theme-yugioh [data-slot="card"]::after,
+.theme-yugioh .rounded-xl.border.bg-card::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, var(--primary), var(--ring), var(--primary), transparent);
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.theme-yugioh [data-slot="button"],
+.theme-yugioh button {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+}
+
+/* Yu-Gi-Oh sidebar: dark mystic border */
+.theme-yugioh aside {
+  border-right-width: 2px;
+  border-image: linear-gradient(to bottom, var(--primary), var(--ring), var(--primary)) 1;
+  box-shadow: 1px 0 15px rgba(218, 165, 32, 0.08);
+}
+
+/* Yu-Gi-Oh dialog: duel arena frame */
+.theme-yugioh [role="dialog"] > div {
+  border-width: 2px;
+  border-color: var(--primary);
+  box-shadow: 0 0 40px rgba(218, 165, 32, 0.15), 0 8px 32px rgba(0,0,0,0.5);
+}
+
+/* Yu-Gi-Oh badge: rarity star style */
+.theme-yugioh [data-slot="badge"] {
+  border-width: 1px;
+  border-color: var(--primary);
+  font-variant: small-caps;
+}
+
+/* Yu-Gi-Oh table header: mystic divider */
+.theme-yugioh thead tr {
+  border-bottom-width: 2px;
+  border-image: linear-gradient(to right, transparent, var(--primary), var(--ring), var(--primary), transparent) 1;
+}
+
+/* Chuck Norris: Bold, aggressive, red/black/steel, action movie feel */
+.theme-chucknorris body {
+  font-family: "Impact", "Arial Black", "Haettenschweiler", sans-serif;
+  letter-spacing: 0.03em;
+}
+
+.theme-chucknorris h2, .theme-chucknorris h3 {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  text-shadow: 2px 2px 0 rgba(0,0,0,0.4), 0 0 15px rgba(239, 68, 68, 0.3);
+}
+
+.theme-chucknorris [data-slot="card"],
+.theme-chucknorris .rounded-xl.border.bg-card {
+  border-width: 2px;
+  border-color: var(--border);
+  box-shadow: var(--theme-card-shadow);
+  border-radius: 0.25rem;
+}
+
+/* Chuck Norris danger stripe on cards */
+.theme-chucknorris [data-slot="card"]::after,
+.theme-chucknorris .rounded-xl.border.bg-card::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--destructive) 0px,
+    var(--destructive) 8px,
+    transparent 8px,
+    transparent 16px
+  );
+  pointer-events: none;
+}
+
+/* Chuck Norris buttons: steel plate feel */
+.theme-chucknorris [data-slot="button"],
+.theme-chucknorris button {
+  text-transform: uppercase;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  border-radius: 0.125rem;
+}
+
+.theme-chucknorris [data-slot="button"]:not(:disabled):hover,
+.theme-chucknorris button:not(:disabled):not([data-slot]):hover {
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.4);
+  transform: scale(1.02);
+}
+
+/* Chuck Norris sidebar: military-style */
+.theme-chucknorris aside {
+  border-right-width: 3px;
+  border-color: var(--destructive);
+  box-shadow: 2px 0 10px rgba(239, 68, 68, 0.1);
+}
+
+/* Chuck Norris fist-punch animation on table row hover */
+.theme-chucknorris tbody tr {
+  transition: transform 0.15s ease, background-color 0.2s ease;
+}
+
+.theme-chucknorris tbody tr:hover {
+  transform: translateX(6px);
+  border-left: 3px solid var(--destructive);
+}
+
+/* Chuck Norris badge: military stencil style */
+.theme-chucknorris [data-slot="badge"] {
+  text-transform: uppercase;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  border-radius: 0.125rem;
+}
+
+/* Chuck Norris dialog: war bunker frame */
+.theme-chucknorris [role="dialog"] > div {
+  border-width: 3px;
+  border-color: var(--destructive);
+  box-shadow: 0 0 30px rgba(239, 68, 68, 0.15), 0 8px 32px rgba(0,0,0,0.5);
+}
+
+/* Lord of the Rings: Elvish elegance, mithril shimmer, ancient parchment */
+.theme-lotr body {
+  font-family: "Cinzel", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
+}
+
+.theme-lotr h2, .theme-lotr h3 {
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 20px rgba(176, 152, 96, 0.25);
+}
+
+.theme-lotr [data-slot="card"],
+.theme-lotr .rounded-xl.border.bg-card {
+  border-width: 2px;
+  border-color: var(--border);
+  box-shadow: var(--theme-card-shadow);
+}
+
+/* LOTR mithril shimmer on cards */
+.theme-lotr [data-slot="card"]::before,
+.theme-lotr .rounded-xl.border.bg-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    135deg,
+    rgba(176, 152, 96, 0.03) 0%,
+    rgba(112, 136, 152, 0.04) 30%,
+    rgba(176, 152, 96, 0.05) 50%,
+    rgba(112, 136, 152, 0.04) 70%,
+    rgba(176, 152, 96, 0.03) 100%
+  );
+  border-radius: inherit;
+}
+
+/* LOTR gold leaf top accent on cards */
+.theme-lotr [data-slot="card"]::after,
+.theme-lotr .rounded-xl.border.bg-card::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, var(--primary), color-mix(in srgb, var(--primary) 60%, #708898), var(--primary), transparent);
+  pointer-events: none;
+  border-radius: inherit;
+  opacity: 0.6;
+}
+
+.theme-lotr [data-slot="button"],
+.theme-lotr button {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+/* LOTR sidebar: Elvish flowing border */
+.theme-lotr aside {
+  border-right-width: 2px;
+  border-image: linear-gradient(to bottom, var(--primary), color-mix(in srgb, var(--primary) 40%, var(--border)), var(--primary)) 1;
+}
+
+/* LOTR dialog: ancient scroll frame */
+.theme-lotr [role="dialog"] > div {
+  border-width: 2px;
+  border-color: var(--primary);
+  box-shadow: 0 0 30px rgba(176, 152, 96, 0.15), 0 8px 32px rgba(0,0,0,0.5);
+}
+
+/* LOTR badge: Elvish inscription style */
+.theme-lotr [data-slot="badge"] {
+  border-width: 1px;
+  border-color: var(--primary);
+  letter-spacing: 0.04em;
+  font-variant: small-caps;
+}
+
+/* LOTR table header: ancient divider */
+.theme-lotr thead tr {
+  border-bottom-width: 2px;
+  border-image: linear-gradient(to right, transparent, var(--primary), color-mix(in srgb, var(--primary) 50%, #708898), var(--primary), transparent) 1;
+}
+
+/* LOTR hover: soft golden glow */
+.theme-lotr [data-slot="button"]:not(:disabled):hover,
+.theme-lotr button:not(:disabled):not([data-slot]):hover {
+  box-shadow: 0 0 12px rgba(176, 152, 96, 0.25);
+}
+
+/* Smooth transitions when switching themes */
+html {
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+html * {
+  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, color 0.15s ease;
 }

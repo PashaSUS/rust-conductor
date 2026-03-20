@@ -5,9 +5,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Layers, Search, Inbox } from "lucide-react";
+import { useThemeText } from "@/components/ThemeContext";
 
 export default function TaskQueues() {
   const [filter, setFilter] = useState("");
+  const t = useThemeText();
 
   const { data: sizes, isLoading } = useQuery({
     queryKey: ["queue-sizes"],
@@ -26,15 +28,15 @@ export default function TaskQueues() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold tracking-tight">Task Queues</h2>
+        <h2 className="text-2xl font-bold tracking-tight">{t.taskQueuesTitle}</h2>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1 text-xs text-muted-foreground">
             <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            Live (5s)
+            {t.liveInterval}
           </div>
           <Badge variant="secondary" className="gap-1">
             <Layers className="h-3 w-3" />
-            {total} total queued
+            {total} {t.totalQueued}
           </Badge>
         </div>
       </div>
@@ -42,7 +44,7 @@ export default function TaskQueues() {
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
-          placeholder="Filter queues…"
+          placeholder={t.filterQueues}
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           className="pl-9 max-w-sm"
@@ -52,17 +54,17 @@ export default function TaskQueues() {
       <Card>
         <CardHeader>
           <CardTitle className="text-sm font-medium">
-            Active Queues {filter && <span className="text-muted-foreground font-normal">({entries.length} of {allEntries.length})</span>}
+            {t.activeQueues} {filter && <span className="text-muted-foreground font-normal">({entries.length} {t.of} {allEntries.length})</span>}
           </CardTitle>
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <p className="text-muted-foreground text-sm">Loading...</p>
+            <p className="text-muted-foreground text-sm">{t.loading}</p>
           ) : entries.length === 0 ? (
             <div className="py-8 text-center">
               <Inbox className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
               <p className="text-muted-foreground text-sm">
-                {filter ? "No queues match your filter" : "No tasks in queue"}
+                {filter ? t.noQueuesMatch : t.noTasksInQueue}
               </p>
             </div>
           ) : (

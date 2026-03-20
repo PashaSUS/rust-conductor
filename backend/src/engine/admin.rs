@@ -4,7 +4,7 @@ use futures::future::join_all;
 use serde_json::Value;
 
 use super::error::EngineError;
-use super::rows::ConfigRow;
+use super::rows::{ConfigRow, TaskRow};
 use super::WorkflowEngine;
 use crate::models::*;
 
@@ -88,14 +88,21 @@ impl WorkflowEngine {
             },
         });
 
-        let kafka_ok = self.kafka.health_check().await;
+        let queue_ok = self.queue.health_check().await;
 
         health_results.push(Health {
-            healthy: kafka_ok,
-            error_message: if kafka_ok { None } else { Some("Kafka connection failed".into()) },
+            healthy: queue_ok,
+            error_message: if queue_ok {
+                None
+            } else {
+                Some("Task queue connection failed".into())
+            },
             details: {
                 let mut m = HashMap::new();
+                #[cfg(feature = "kafka")]
                 m.insert("name".into(), Value::String("kafka".into()));
+                #[cfg(not(feature = "kafka"))]
+                m.insert("name".into(), Value::String("redis-streams".into()));
                 m
             },
         });
@@ -116,5 +123,54 @@ impl WorkflowEngine {
             "FORK" | "FORK_JOIN" | "JOIN" | "DECISION" | "SWITCH" | "SUB_WORKFLOW"
                 | "DO_WHILE" | "TERMINATE" | "SET_VARIABLE" | "WAIT" | "HTTP" | "EVENT"
         )
+    }
+
+    // ── Admin task operations ──
+
+    pub async fn get_tasks_for_type(&self, task_type: &str) -> Result<Vec<TaskResult>, EngineError> {
+        let futs: Vec<_> = self.shards.all_shards().iter().map(|shard| {
+            async move {
+                sqlx::query_as::<_, TaskRow>(
+                    "SELECT * FROM task WHERE task_def_name = $1 ORDER BY scheduled_time DESC LIMIT 100",
+                )
+                .bind(task_type)
+                .fetch_all(shard)
+                .await
+                .map_err(|e| EngineError::Database(e.to_string()))
+            }
+        }).collect();
+
+        let results = join_all(futs).await;
+        let mut all_tasks = Vec::new();
+        for result in results {
+            all_tasks.extend(result?.into_iter().map(|r| r.into()));
+        }
+        Ok(all_tasks)
+    }
+
+    pub async fn requeue_pending_tasks(&self, task_type: &str) -> Result<i64, EngineError> {
+        let futs: Vec<_> = self.shards.all_shards().iter().map(|shard| {
+            async move {
+                let rows: Vec<(String, String)> = sqlx::query_as(
+                    "SELECT task_id, workflow_instance_id FROM task WHERE task_def_name = $1 AND status = 'SCHEDULED'",
+                )
+                .bind(task_type)
+                .fetch_all(shard)
+                .await
+                .map_err(|e| EngineError::Database(e.to_string()))?;
+                Ok::<_, EngineError>(rows)
+            }
+        }).collect();
+
+        let results = join_all(futs).await;
+        let mut count: i64 = 0;
+        for result in results {
+            for (task_id, workflow_id) in result? {
+                self.set_task_routing(&task_id, &workflow_id).await?;
+                self.queue.enqueue(task_type, &task_id).await.map_err(|e| EngineError::Redis(e))?;
+                count += 1;
+            }
+        }
+        Ok(count)
     }
 }

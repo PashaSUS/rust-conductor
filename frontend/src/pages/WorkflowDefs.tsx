@@ -13,9 +13,11 @@ import WorkflowBuilder from "@/components/WorkflowBuilder";
 import { StartWorkflowDialog } from "@/components/StartWorkflowDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { CopyButton } from "@/components/CopyButton";
+import { useThemeText } from "@/components/ThemeContext";
 
 export default function WorkflowDefs() {
   const queryClient = useQueryClient();
+  const t = useThemeText();
   const [viewDef, setViewDef] = useState<WorkflowDef | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [editDef, setEditDef] = useState<WorkflowDef | null>(null);
@@ -31,7 +33,7 @@ export default function WorkflowDefs() {
   const createMut = useMutation({
     mutationFn: (def: WorkflowDef) => metadataApi.registerWorkflowDef(def),
     onSuccess: () => {
-      toast.success("Workflow definition saved");
+      toast.success(t.toastWorkflowDefSaved);
       queryClient.invalidateQueries({ queryKey: ["workflow-defs"] });
       setCreateOpen(false);
       setEditDef(null);
@@ -43,7 +45,7 @@ export default function WorkflowDefs() {
     mutationFn: ({ name, version }: { name: string; version: number }) =>
       metadataApi.deleteWorkflowDef(name, version),
     onSuccess: () => {
-      toast.success("Deleted");
+      toast.success(t.toastDeleted);
       queryClient.invalidateQueries({ queryKey: ["workflow-defs"] });
     },
   });
@@ -67,10 +69,10 @@ export default function WorkflowDefs() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold tracking-tight">Workflow Definitions</h2>
+        <h2 className="text-2xl font-bold tracking-tight">{t.workflowDefsTitle}</h2>
         <Button size="sm" onClick={() => setCreateOpen(true)}>
           <Plus className="h-4 w-4 mr-1" />
-          New Definition
+          {t.newDefinition}
         </Button>
       </div>
 
@@ -78,14 +80,14 @@ export default function WorkflowDefs() {
       <div className="flex items-center gap-2">
         <Search className="h-4 w-4 text-muted-foreground" />
         <Input
-          placeholder="Filter definitions..."
+          placeholder={t.filterDefinitions}
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           className="max-w-xs"
         />
         {searchTerm && (
           <span className="text-xs text-muted-foreground">
-            {filteredDefs.length} of {defs?.length ?? 0}
+            {filteredDefs.length} {t.of} {defs?.length ?? 0}
           </span>
         )}
       </div>
@@ -93,25 +95,25 @@ export default function WorkflowDefs() {
       <Card>
         <CardContent className="pt-6">
           {isLoading ? (
-            <p className="text-muted-foreground text-sm">Loading...</p>
+            <p className="text-muted-foreground text-sm">{t.loading}</p>
           ) : filteredDefs.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               <p className="text-sm">
                 {defs?.length === 0
-                  ? "No workflow definitions yet. Create your first one!"
-                  : "No definitions match your search."}
+                  ? t.noWorkflowDefs
+                  : t.noDefsMatch}
               </p>
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Version</TableHead>
-                  <TableHead>Tasks</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead>Timeout</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead>{t.name}</TableHead>
+                  <TableHead>{t.version}</TableHead>
+                  <TableHead>{t.tasks}</TableHead>
+                  <TableHead>{t.description}</TableHead>
+                  <TableHead>{t.timeout}</TableHead>
+                  <TableHead className="text-right">{t.actions}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -124,29 +126,29 @@ export default function WorkflowDefs() {
                       </div>
                     </TableCell>
                     <TableCell><Badge variant="secondary">v{def.version}</Badge></TableCell>
-                    <TableCell>{def.tasks.length} tasks</TableCell>
+                    <TableCell>{def.tasks.length} {t.tasksTab}</TableCell>
                     <TableCell className="text-muted-foreground text-xs max-w-48 truncate">
                       {def.description || "—"}
                     </TableCell>
                     <TableCell className="text-muted-foreground text-xs">
-                      {def.timeoutSeconds ? `${def.timeoutSeconds}s` : "none"}
+                      {def.timeoutSeconds ? `${def.timeoutSeconds}s` : t.none}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex gap-1 justify-end">
-                        <Button variant="ghost" size="icon" onClick={() => setStartDef(def)} title="Start Execution">
+                        <Button variant="ghost" size="icon" onClick={() => setStartDef(def)} title={t.startExecution}>
                           <Play className="h-3 w-3" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => setViewDef(def)} title="View JSON">
+                        <Button variant="ghost" size="icon" onClick={() => setViewDef(def)} title={t.viewJson}>
                           <Eye className="h-3 w-3" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => cloneDef(def)} title="Clone & Edit">
+                        <Button variant="ghost" size="icon" onClick={() => cloneDef(def)} title={t.cloneAndEdit}>
                           <Copy className="h-3 w-3" />
                         </Button>
                         <Button
                           variant="ghost"
                           size="icon"
                           onClick={() => setDeleteTarget({ name: def.name, version: def.version })}
-                          title="Delete"
+                          title={t.delete}
                         >
                           <Trash2 className="h-3 w-3" />
                         </Button>
@@ -164,12 +166,12 @@ export default function WorkflowDefs() {
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Create Workflow Definition</DialogTitle>
+            <DialogTitle>{t.createWorkflowDef}</DialogTitle>
           </DialogHeader>
           <WorkflowBuilder
             onSubmit={(def) => createMut.mutate(def)}
             isPending={createMut.isPending}
-            submitLabel="Create Workflow"
+            submitLabel={t.createWorkflow}
           />
         </DialogContent>
       </Dialog>
@@ -178,14 +180,14 @@ export default function WorkflowDefs() {
       <Dialog open={!!editDef} onOpenChange={() => setEditDef(null)}>
         <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Edit Workflow Definition</DialogTitle>
+            <DialogTitle>{t.editWorkflowDef}</DialogTitle>
           </DialogHeader>
           {editDef && (
             <WorkflowBuilder
               initialDef={editDef}
               onSubmit={(def) => createMut.mutate(def)}
               isPending={createMut.isPending}
-              submitLabel="Save Workflow"
+              submitLabel={t.saveWorkflow}
             />
           )}
         </DialogContent>
@@ -209,7 +211,7 @@ export default function WorkflowDefs() {
           </pre>
           <div className="flex justify-end gap-2">
             <Button variant="outline" size="sm" onClick={() => { if (viewDef) { setEditDef(JSON.parse(JSON.stringify(viewDef))); setViewDef(null); } }}>
-              Edit
+              {t.edit}
             </Button>
             <CopyButton value={JSON.stringify(viewDef, null, 2)} />
           </div>
@@ -220,9 +222,9 @@ export default function WorkflowDefs() {
       <ConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
-        title="Delete Workflow Definition"
-        description={`Are you sure you want to delete "${deleteTarget?.name}" v${deleteTarget?.version}? This action cannot be undone.`}
-        confirmLabel="Delete"
+        title={t.deleteWorkflowDef}
+        description={`"${deleteTarget?.name}" v${deleteTarget?.version} — ${t.deleteConfirmSuffix}`}
+        confirmLabel={t.delete}
         variant="destructive"
         onConfirm={async () => {
           if (deleteTarget) {

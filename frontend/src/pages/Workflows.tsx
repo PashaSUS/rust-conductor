@@ -14,6 +14,7 @@ import { CopyButton } from "@/components/CopyButton";
 import { StartWorkflowDialog } from "@/components/StartWorkflowDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { RelativeTime } from "@/components/RelativeTime";
+import { useThemeText } from "@/components/ThemeContext";
 
 const PAGE_SIZE = 25;
 
@@ -53,6 +54,7 @@ function useFilterParams() {
 export default function Workflows() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const t = useThemeText();
   const { params, setParams } = useFilterParams();
   const [search, setSearch] = useState(params.freeText ?? "");
   const [workflowName, setWorkflowName] = useState(params.workflowType ?? "");
@@ -74,7 +76,7 @@ export default function Workflows() {
   const terminateMut = useMutation({
     mutationFn: (id: string) => workflowApi.terminate(id),
     onSuccess: () => {
-      toast.success("Workflow terminated");
+      toast.success(t.toastWorkflowTerminated);
       queryClient.invalidateQueries({ queryKey: ["workflow-search"] });
     },
   });
@@ -82,7 +84,7 @@ export default function Workflows() {
   const pauseMut = useMutation({
     mutationFn: (id: string) => workflowApi.pause(id),
     onSuccess: () => {
-      toast.success("Workflow paused");
+      toast.success(t.toastWorkflowPaused);
       queryClient.invalidateQueries({ queryKey: ["workflow-search"] });
     },
   });
@@ -90,7 +92,7 @@ export default function Workflows() {
   const resumeMut = useMutation({
     mutationFn: (id: string) => workflowApi.resume(id),
     onSuccess: () => {
-      toast.success("Workflow resumed");
+      toast.success(t.toastWorkflowResumed);
       queryClient.invalidateQueries({ queryKey: ["workflow-search"] });
     },
   });
@@ -98,7 +100,7 @@ export default function Workflows() {
   const restartMut = useMutation({
     mutationFn: (id: string) => workflowApi.restart(id),
     onSuccess: () => {
-      toast.success("Workflow restarted");
+      toast.success(t.toastWorkflowRestarted);
       queryClient.invalidateQueries({ queryKey: ["workflow-search"] });
     },
   });
@@ -121,27 +123,27 @@ export default function Workflows() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold tracking-tight">Workflow Executions</h2>
+        <h2 className="text-2xl font-bold tracking-tight">{t.executionsTitle}</h2>
         <div className="flex items-center gap-2">
           <Button
             variant={autoRefresh ? "default" : "outline"}
             size="sm"
             onClick={() => setAutoRefresh(!autoRefresh)}
-            title={autoRefresh ? "Auto-refresh ON (5s)" : "Auto-refresh OFF"}
+            title={autoRefresh ? t.autoRefreshOn : t.autoRefreshOff}
           >
             <RefreshCw className={`h-3 w-3 mr-1 ${autoRefresh ? "animate-spin" : ""}`} />
-            {autoRefresh ? "Live" : "Auto-refresh"}
+            {autoRefresh ? t.live : t.autoRefresh}
           </Button>
           <Button size="sm" onClick={() => setStartOpen(true)}>
             <Plus className="h-4 w-4 mr-1" />
-            Start Workflow
+            {t.startWorkflow}
           </Button>
         </div>
       </div>
 
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium">Search & Filter</CardTitle>
+          <CardTitle className="text-sm font-medium">{t.searchAndFilter}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex gap-2">
@@ -152,12 +154,12 @@ export default function Workflows() {
                 setWorkflowName(v);
                 setParams((p) => ({ ...p, workflowType: v || undefined, start: 0 }));
               }}
-              placeholder="All Workflow Types"
-              searchPlaceholder="Search workflows..."
+              placeholder={t.allWorkflowTypes}
+              searchPlaceholder={t.searchPlaceholder}
               className="w-55"
             />
             <Input
-              placeholder="Search by name, ID, or correlation ID..."
+              placeholder={t.searchPlaceholder}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSearch()}
@@ -175,7 +177,7 @@ export default function Workflows() {
                 size="sm"
                 onClick={() => setParams((p) => ({ ...p, status: s || undefined, start: 0 }))}
               >
-                {s || "All"}
+                {s || t.allStatuses}
               </Button>
             ))}
           </div>
@@ -185,25 +187,25 @@ export default function Workflows() {
       <Card>
         <CardContent className="pt-6">
           {isLoading ? (
-            <p className="text-muted-foreground text-sm">Loading...</p>
+            <p className="text-muted-foreground text-sm">{t.loading}</p>
           ) : (
             <>
               <p className="text-xs text-muted-foreground mb-3">
-                {data?.totalHits ?? 0} results
+                {data?.totalHits ?? 0} {t.results}
                 {(data?.totalHits ?? 0) > 0 && (
                   <span className="ml-2">
-                    (showing {(params.start ?? 0) + 1}–{Math.min((params.start ?? 0) + PAGE_SIZE, data?.totalHits ?? 0)})
+                    ({t.showing} {(params.start ?? 0) + 1}–{Math.min((params.start ?? 0) + PAGE_SIZE, data?.totalHits ?? 0)})
                   </span>
                 )}
               </p>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Workflow</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Started</TableHead>
-                    <TableHead>Ended</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead>{t.workflow}</TableHead>
+                    <TableHead>{t.status}</TableHead>
+                    <TableHead>{t.started}</TableHead>
+                    <TableHead>{t.ended}</TableHead>
+                    <TableHead className="text-right">{t.actions}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -229,21 +231,21 @@ export default function Workflows() {
                         <div className="flex gap-1 justify-end">
                           {wf.status === "RUNNING" && (
                             <>
-                              <Button variant="ghost" size="icon" onClick={() => pauseMut.mutate(wf.workflowId)} title="Pause">
+                              <Button variant="ghost" size="icon" onClick={() => pauseMut.mutate(wf.workflowId)} title={t.pause}>
                                 <Pause className="h-3 w-3" />
                               </Button>
-                              <Button variant="ghost" size="icon" onClick={() => setTerminateTarget(wf.workflowId)} title="Terminate">
+                              <Button variant="ghost" size="icon" onClick={() => setTerminateTarget(wf.workflowId)} title={t.terminate}>
                                 <XCircle className="h-3 w-3" />
                               </Button>
                             </>
                           )}
                           {wf.status === "PAUSED" && (
-                            <Button variant="ghost" size="icon" onClick={() => resumeMut.mutate(wf.workflowId)} title="Resume">
+                            <Button variant="ghost" size="icon" onClick={() => resumeMut.mutate(wf.workflowId)} title={t.resume}>
                               <Play className="h-3 w-3" />
                             </Button>
                           )}
                           {(wf.status === "FAILED" || wf.status === "TERMINATED" || wf.status === "COMPLETED") && (
-                            <Button variant="ghost" size="icon" onClick={() => restartMut.mutate(wf.workflowId)} title="Restart">
+                            <Button variant="ghost" size="icon" onClick={() => restartMut.mutate(wf.workflowId)} title={t.restart}>
                               <RotateCcw className="h-3 w-3" />
                             </Button>
                           )}
@@ -267,7 +269,7 @@ export default function Workflows() {
                       disabled={(params.start ?? 0) === 0}
                       onClick={() => setParams((p) => ({ ...p, start: Math.max((p.start ?? 0) - PAGE_SIZE, 0) }))}
                     >
-                      <ChevronLeft className="h-4 w-4 mr-1" />Prev
+                      <ChevronLeft className="h-4 w-4 mr-1" />{t.prev}
                     </Button>
                     <Button
                       variant="outline"
@@ -275,7 +277,7 @@ export default function Workflows() {
                       disabled={(params.start ?? 0) + PAGE_SIZE >= (data?.totalHits ?? 0)}
                       onClick={() => setParams((p) => ({ ...p, start: (p.start ?? 0) + PAGE_SIZE }))}
                     >
-                      Next<ChevronRight className="h-4 w-4 ml-1" />
+                      {t.next}<ChevronRight className="h-4 w-4 ml-1" />
                     </Button>
                   </div>
                 </div>
@@ -295,9 +297,9 @@ export default function Workflows() {
       <ConfirmDialog
         open={!!terminateTarget}
         onOpenChange={(open) => { if (!open) setTerminateTarget(null); }}
-        title="Terminate Workflow"
-        description="Are you sure you want to terminate this workflow execution? This will stop all running tasks."
-        confirmLabel="Terminate"
+        title={t.terminateWorkflow}
+        description={t.terminateConfirm}
+        confirmLabel={t.terminate}
         variant="destructive"
         onConfirm={async () => {
           if (terminateTarget) {

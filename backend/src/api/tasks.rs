@@ -1,4 +1,5 @@
 use actix_web::{web, HttpResponse};
+use serde_json::Value;
 
 use crate::engine::WorkflowEngine;
 use crate::models::TaskUpdateRequest;
@@ -11,6 +12,13 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .route("/poll/{taskType}", web::get().to(poll_task))
             .route("/poll/batch/{taskType}", web::get().to(batch_poll))
             .route("/queue/sizes", web::get().to(queue_sizes))
+            .route("/queue/all", web::get().to(queue_all))
+            .route("/queue/all/verbose", web::get().to(queue_all_verbose))
+            .route("/queue/polldata", web::get().to(poll_data))
+            .route("/queue/polldata/all", web::get().to(poll_data_all))
+            .route("/in_progress/{taskType}", web::get().to(in_progress_tasks))
+            .route("/in_progress/{workflowId}/{taskRefName}", web::get().to(in_progress_task_for_workflow))
+            .route("/{workflowId}/{taskRefName}/{status}", web::post().to(update_task_by_ref_name))
             .route("/{taskId}", web::get().to(get_task))
             .route("/{taskId}/ack", web::post().to(ack_task))
             .route("/{taskId}/log", web::get().to(get_task_logs))
@@ -146,4 +154,75 @@ struct TaskSearchQuery {
     free_text: Option<String>,
     start: Option<i64>,
     size: Option<i64>,
+}
+
+async fn update_task_by_ref_name(
+    engine: web::Data<WorkflowEngine>,
+    path: web::Path<(String, String, String)>,
+    body: web::Json<Value>,
+) -> Result<HttpResponse, crate::engine::EngineError> {
+    let (workflow_id, task_ref_name, status) = path.into_inner();
+    let output = body.into_inner();
+    let task_id = engine
+        .update_task_by_ref_name(&workflow_id, &task_ref_name, &status, &output)
+        .await?;
+    Ok(HttpResponse::Ok().json(task_id))
+}
+
+async fn in_progress_tasks(
+    engine: web::Data<WorkflowEngine>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, crate::engine::EngineError> {
+    let tasks = engine.get_in_progress_tasks(&path.into_inner()).await?;
+    Ok(HttpResponse::Ok().json(tasks))
+}
+
+async fn in_progress_task_for_workflow(
+    engine: web::Data<WorkflowEngine>,
+    path: web::Path<(String, String)>,
+) -> Result<HttpResponse, crate::engine::EngineError> {
+    let (workflow_id, task_ref_name) = path.into_inner();
+    let task = engine
+        .get_in_progress_task_for_workflow(&workflow_id, &task_ref_name)
+        .await?;
+    match task {
+        Some(t) => Ok(HttpResponse::Ok().json(t)),
+        None => Ok(HttpResponse::NoContent().finish()),
+    }
+}
+
+async fn queue_all(
+    engine: web::Data<WorkflowEngine>,
+) -> Result<HttpResponse, crate::engine::EngineError> {
+    let details = engine.get_all_queue_details().await?;
+    Ok(HttpResponse::Ok().json(details))
+}
+
+async fn queue_all_verbose(
+    engine: web::Data<WorkflowEngine>,
+) -> Result<HttpResponse, crate::engine::EngineError> {
+    let details = engine.get_all_queue_details_verbose().await?;
+    Ok(HttpResponse::Ok().json(details))
+}
+
+async fn poll_data(
+    engine: web::Data<WorkflowEngine>,
+    query: web::Query<PollDataQuery>,
+) -> Result<HttpResponse, crate::engine::EngineError> {
+    let task_type = query.task_type.as_deref().unwrap_or("");
+    let data = engine.get_poll_data(task_type).await?;
+    Ok(HttpResponse::Ok().json(data))
+}
+
+async fn poll_data_all(
+    engine: web::Data<WorkflowEngine>,
+) -> Result<HttpResponse, crate::engine::EngineError> {
+    let data = engine.get_all_poll_data().await?;
+    Ok(HttpResponse::Ok().json(data))
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PollDataQuery {
+    task_type: Option<String>,
 }
