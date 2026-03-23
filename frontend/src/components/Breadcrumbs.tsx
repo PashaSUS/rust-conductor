@@ -14,6 +14,8 @@ export function Breadcrumbs() {
     definitions: t.breadcrumbDefinitions,
     taskdefs: t.breadcrumbTaskDefs,
     queues: t.breadcrumbQueues,
+    dependencies: t.breadcrumbDependencies,
+    schedules: t.breadcrumbSchedules,
     about: t.breadcrumbAbout,
   }), [t]);
 

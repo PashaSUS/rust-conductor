@@ -62,17 +62,20 @@ interface StartWorkflowDialogProps {
   onOpenChange: (open: boolean) => void;
   /** Pre-select a specific workflow definition */
   preselectedDef?: WorkflowDef;
+  /** Pre-fill input data (e.g. for execution replay) */
+  prefilledInput?: Record<string, unknown>;
 }
 
 export function StartWorkflowDialog({
   open,
   onOpenChange,
   preselectedDef,
+  prefilledInput,
 }: StartWorkflowDialogProps) {
   const navigate = useNavigate();
   const t = useThemeText();
 
-  const { data: defs, isLoading: defsLoading } = useQuery({
+  const { data: defs } = useQuery({
     queryKey: ["workflow-defs"],
     queryFn: metadataApi.listWorkflowDefs,
     enabled: open,
@@ -82,9 +85,13 @@ export function StartWorkflowDialog({
   const [selectedVersion, setSelectedVersion] = useState(
     preselectedDef?.version?.toString() ?? ""
   );
-  const [inputJson, setInputJson] = useState("{}");
+  const [inputJson, setInputJson] = useState(
+    prefilledInput ? JSON.stringify(prefilledInput, null, 2) : "{}"
+  );
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
-  const [inputMode, setInputMode] = useState<"fields" | "json">("fields");
+  const [inputMode, setInputMode] = useState<"fields" | "json">(
+    prefilledInput ? "json" : "fields"
+  );
   const [correlationId, setCorrelationId] = useState("");
 
   // Sync when preselectedDef changes (e.g. play button on a different workflow)
@@ -160,9 +167,9 @@ export function StartWorkflowDialog({
         setSelectedName("");
         setSelectedVersion("");
       }
-      setInputJson("{}");
+      setInputJson(prefilledInput ? JSON.stringify(prefilledInput, null, 2) : "{}");
       setFieldValues({});
-      setInputMode("fields");
+      setInputMode(prefilledInput ? "json" : "fields");
       setCorrelationId("");
     }
     onOpenChange(open);
@@ -246,7 +253,7 @@ export function StartWorkflowDialog({
                     setSelectedVersion(versions?.[0]?.toString() ?? "");
                   }}
                   placeholder={t.selectWorkflow}
-                  searchPlaceholder={t.searchWorkflows ?? "Search workflows..."}
+                  searchPlaceholder={t.searchPlaceholder}
                 />
               )}
             </div>

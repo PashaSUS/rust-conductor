@@ -48,6 +48,10 @@ export default function WorkflowBuilder({
   const [inputParams, setInputParams] = useState<string[]>(
     initialDef?.inputParameters ?? []
   );
+  const [onCompleteWebhook, setOnCompleteWebhook] = useState(initialDef?.onCompleteWebhook ?? "");
+  const [onFailureWebhook, setOnFailureWebhook] = useState(initialDef?.onFailureWebhook ?? "");
+  const [slaDeadlineSeconds, setSlaDeadlineSeconds] = useState(initialDef?.slaDeadlineSeconds ?? 0);
+  const [tags, setTags] = useState<string[]>(initialDef?.tags ?? []);
 
   // Tasks
   const [tasks, setTasks] = useState<TaskFormState[]>(
@@ -72,6 +76,9 @@ export default function WorkflowBuilder({
         case "timeoutSeconds": setTimeoutSeconds(value as number); break;
         case "ownerEmail": setOwnerEmail(value as string); break;
         case "failureWorkflow": setFailureWorkflow(value as string); break;
+        case "onCompleteWebhook": setOnCompleteWebhook(value as string); break;
+        case "onFailureWebhook": setOnFailureWebhook(value as string); break;
+        case "slaDeadlineSeconds": setSlaDeadlineSeconds(value as number); break;
       }
     },
     []
@@ -123,8 +130,12 @@ export default function WorkflowBuilder({
     if (ownerEmail) def.ownerEmail = ownerEmail;
     if (failureWorkflow) def.failureWorkflow = failureWorkflow;
     if (workflowInputParams.length > 0) def.inputParameters = workflowInputParams;
+    if (onCompleteWebhook) def.onCompleteWebhook = onCompleteWebhook;
+    if (onFailureWebhook) def.onFailureWebhook = onFailureWebhook;
+    if (slaDeadlineSeconds > 0) def.slaDeadlineSeconds = slaDeadlineSeconds;
+    if (tags.length > 0) def.tags = tags;
     return def;
-  }, [name, version, description, timeoutSeconds, ownerEmail, failureWorkflow, workflowInputParams, tasks]);
+  }, [name, version, description, timeoutSeconds, ownerEmail, failureWorkflow, workflowInputParams, onCompleteWebhook, onFailureWebhook, slaDeadlineSeconds, tags, tasks]);
 
   const handleVisualSubmit = () => {
     if (!name.trim() || tasks.length === 0) return;
@@ -157,6 +168,10 @@ export default function WorkflowBuilder({
       setOwnerEmail(def.ownerEmail ?? "");
       setFailureWorkflow(def.failureWorkflow ?? "");
       setInputParams(def.inputParameters ?? []);
+      setOnCompleteWebhook(def.onCompleteWebhook ?? "");
+      setOnFailureWebhook(def.onFailureWebhook ?? "");
+      setSlaDeadlineSeconds(def.slaDeadlineSeconds ?? 0);
+      setTags(def.tags ?? []);
       setTasks(def.tasks.map(workflowTaskToForm));
       setJsonError("");
       setMode("visual");
@@ -214,8 +229,13 @@ export default function WorkflowBuilder({
             ownerEmail={ownerEmail}
             failureWorkflow={failureWorkflow}
             inputParams={inputParams}
+            onCompleteWebhook={onCompleteWebhook}
+            onFailureWebhook={onFailureWebhook}
+            slaDeadlineSeconds={slaDeadlineSeconds}
+            tags={tags}
             onUpdate={handleSettingsUpdate}
             onUpdateInputParams={setInputParams}
+            onUpdateTags={setTags}
           />
 
           {/* Tasks */}

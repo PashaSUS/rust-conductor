@@ -323,6 +323,7 @@ impl WorkflowEngine {
 
     /// SUB_WORKFLOW — create the task as IN_PROGRESS first, then start a child
     /// workflow only if we won the creation race.
+    /// Enforces max-depth limiting to prevent infinite recursion.
     pub(crate) async fn handle_sub_workflow_task(
         &self,
         workflow_id: &str,
@@ -330,6 +331,21 @@ impl WorkflowEngine {
         input: &Value,
         seq: i32,
     ) -> Result<(), EngineError> {
+        // Check sub-workflow depth to prevent infinite recursion (max 10 levels)
+        const MAX_SUB_WORKFLOW_DEPTH: u32 = 10;
+        let depth = self.get_sub_workflow_depth(workflow_id).await?;
+        if depth >= MAX_SUB_WORKFLOW_DEPTH {
+            tracing::error!(
+                workflow_id = %workflow_id,
+                depth = depth,
+                max_depth = MAX_SUB_WORKFLOW_DEPTH,
+                "Sub-workflow max depth exceeded"
+            );
+            return Err(EngineError::InvalidState(format!(
+                "Sub-workflow max depth ({MAX_SUB_WORKFLOW_DEPTH}) exceeded at depth {depth}"
+            )));
+        }
+
         let params = task_def.sub_workflow_param.as_ref().ok_or_else(|| {
             tracing::error!(
                 workflow_id = %workflow_id,
@@ -373,6 +389,7 @@ impl WorkflowEngine {
             created_by: None,
             idempotency_key: None,
             idempotency_strategy: None,
+            tags: vec![],
         };
         let child_id = self.start_workflow(&child_req).await?;
 
@@ -428,6 +445,22 @@ impl WorkflowEngine {
         let (task_id, is_new) = self
             .insert_task_record(workflow_id, task_def, input, seq, "SCHEDULED", &Value::Object(Default::default()), None)
             .await?;
+
+        // Inject env_vars from task definition into the task row
+        if is_new {
+            if let Ok(td) = self.get_task_def(&task_def.name).await {
+                if let Some(env) = &td.env_vars {
+                    let db = self.shards.shard_for(workflow_id);
+                    let _ = sqlx::query(
+                        "UPDATE task SET env_vars = $2 WHERE task_id = $1",
+                    )
+                    .bind(&task_id)
+                    .bind(env)
+                    .execute(db)
+                    .await;
+                }
+            }
+        }
 
         if is_new {
             self.set_task_routing(&task_id, workflow_id).await?;
@@ -971,6 +1004,56 @@ impl WorkflowEngine {
         Ok(())
     }
 
+    // ── LAMBDA / INLINE ──────────────────────────────────────────────────
+
+    /// LAMBDA — execute an inline expression without an external worker.
+    /// The task's `script_expression` or `expression` field contains a simple
+    /// JSON expression that is evaluated using the task input. The result is
+    /// written as the task output and the task completes immediately.
+    pub(crate) async fn handle_lambda_task(
+        &self,
+        workflow_id: &str,
+        task_def: &WorkflowTask,
+        input: &Value,
+        seq: i32,
+    ) -> Result<(), EngineError> {
+        let task_input = self.resolve_task_input(workflow_id, task_def, input).await?;
+
+        let output = if let Some(expr) = &task_def.script_expression {
+            // Try to parse the expression as a JSON value, with variable substitution
+            match serde_json::from_str::<Value>(expr) {
+                Ok(v) => v,
+                Err(_) => {
+                    // If it's not valid JSON, treat it as a simple key lookup from input
+                    task_input.get(expr).cloned().unwrap_or(Value::String(expr.clone()))
+                }
+            }
+        } else if let Some(expr) = &task_def.expression {
+            match serde_json::from_str::<Value>(expr) {
+                Ok(v) => v,
+                Err(_) => task_input.get(expr).cloned().unwrap_or(Value::String(expr.clone())),
+            }
+        } else {
+            // If no expression, pass through input as output
+            task_input.clone()
+        };
+
+        let result_output = serde_json::json!({
+            "result": output,
+        });
+
+        let (_task_id, _is_new) = self
+            .insert_task_record(workflow_id, task_def, &task_input, seq, "COMPLETED", &result_output, None)
+            .await?;
+
+        tracing::info!(
+            workflow_id = %workflow_id,
+            ref_name = %task_def.task_reference_name,
+            "LAMBDA task evaluated"
+        );
+        Ok(())
+    }
+
     // ── Shared helper ────────────────────────────────────────────────────
 
     /// Resolve task input parameters using template expressions.
@@ -1001,6 +1084,35 @@ impl WorkflowEngine {
         .map_err(|e| EngineError::Database(e.to_string()))?;
         let task_outputs: HashMap<String, Value> = task_output_rows.into_iter().collect();
         Ok(resolve_value(&raw, input, &task_outputs, workflow_id))
+    }
+
+    /// Walk the parent_workflow_id chain to compute sub-workflow nesting depth.
+    async fn get_sub_workflow_depth(&self, workflow_id: &str) -> Result<u32, EngineError> {
+        let mut depth = 0u32;
+        let mut current_id = workflow_id.to_string();
+        loop {
+            let db = self.shards.shard_for(&current_id);
+            let parent: Option<Option<String>> = sqlx::query_scalar(
+                "SELECT parent_workflow_id FROM workflow WHERE workflow_id = $1",
+            )
+            .bind(&current_id)
+            .fetch_optional(db)
+            .await
+            .map_err(|e| EngineError::Database(e.to_string()))?;
+
+            match parent {
+                Some(Some(pid)) if !pid.is_empty() => {
+                    depth += 1;
+                    current_id = pid;
+                    if depth > 100 {
+                        // Safety: break infinite loops
+                        break;
+                    }
+                }
+                _ => break,
+            }
+        }
+        Ok(depth)
     }
 }
 

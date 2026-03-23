@@ -9,10 +9,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Pause, Play, XCircle, RotateCcw, RefreshCcw, ChevronDown, ChevronRight, ExternalLink, X, Clock } from "lucide-react";
+import { Pause, Play, XCircle, RotateCcw, RefreshCcw, ChevronDown, ChevronRight, ExternalLink, X, Clock, Repeat } from "lucide-react";
 import { CopyButton } from "@/components/CopyButton";
 import { ExecutionTimeline } from "@/components/ExecutionTimeline";
 import { JsonView } from "@/components/JsonView";
+import { StartWorkflowDialog } from "@/components/StartWorkflowDialog";
 import { useThemeText } from "@/components/ThemeContext";
 
 export default function WorkflowDetail() {
@@ -22,6 +23,7 @@ export default function WorkflowDetail() {
   const queryClient = useQueryClient();
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const [selectedDiagramTask, setSelectedDiagramTask] = useState<TaskResult | null>(null);
+  const [replayOpen, setReplayOpen] = useState(false);
 
   const toggleTask = (taskId: string) => {
     setExpandedTasks((prev) => {
@@ -85,6 +87,9 @@ export default function WorkflowDetail() {
             {(wf.status === "FAILED" || wf.status === "TIMED_OUT" || wf.status === "TERMINATED" || wf.status === "COMPLETED") && (
               <Button variant="outline" size="sm" onClick={() => restartMut.mutate()}><RotateCcw className="h-3 w-3 mr-1" />{t.restart}</Button>
             )}
+            <Button variant="outline" size="sm" onClick={() => setReplayOpen(true)}>
+              <Repeat className="h-3 w-3 mr-1" />{t.replayExecution}
+            </Button>
           </div>
         </div>
       </div>
@@ -313,10 +318,37 @@ export default function WorkflowDetail() {
               <InfoRow label={t.ended} value={formatTs(wf.endTime)} />
               <InfoRow label={t.updated} value={formatTs(wf.updateTime)} />
               {wf.reasonForIncompletion && <InfoRow label={t.reason} value={wf.reasonForIncompletion} />}
+              {wf.tags && wf.tags.length > 0 && (
+                <div className="flex items-center">
+                  <span className="font-medium text-muted-foreground w-36">{t.tagsLabel}</span>
+                  <div className="flex gap-1 flex-wrap">
+                    {wf.tags.map((tag) => (
+                      <Badge key={tag} variant="secondary">{tag}</Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {wfDef?.slaDeadlineSeconds && wfDef.slaDeadlineSeconds > 0 && (
+                <InfoRow label={t.slaDeadline} value={`${wfDef.slaDeadlineSeconds}s`} />
+              )}
+              {wfDef?.onCompleteWebhook && (
+                <InfoRow label={t.onCompleteWebhook} value={wfDef.onCompleteWebhook} />
+              )}
+              {wfDef?.onFailureWebhook && (
+                <InfoRow label={t.onFailureWebhook} value={wfDef.onFailureWebhook} />
+              )}
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Replay dialog — pre-filled with this execution's workflow & input */}
+      <StartWorkflowDialog
+        open={replayOpen}
+        onOpenChange={setReplayOpen}
+        preselectedDef={{ name: wf.workflowName, version: wf.workflowVersion } as any}
+        prefilledInput={wf.input as Record<string, unknown> | undefined}
+      />
     </div>
   );
 }

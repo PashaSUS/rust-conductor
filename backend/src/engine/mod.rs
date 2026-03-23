@@ -5,6 +5,7 @@ mod events;
 mod execution;
 mod metadata;
 mod rows;
+mod scheduler;
 pub mod shard;
 mod sweeper;
 pub(crate) mod system_tasks;

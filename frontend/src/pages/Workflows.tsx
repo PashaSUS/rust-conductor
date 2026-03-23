@@ -2,11 +2,12 @@ import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router";
 import { toast } from "sonner";
-import { workflowApi, metadataApi, type SearchParams } from "@/api/conductor";
+import { workflowApi, metadataApi, bulkApi, type SearchParams } from "@/api/conductor";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Search, XCircle, Pause, Play, RotateCcw, ChevronLeft, ChevronRight, Plus, RefreshCw } from "lucide-react";
@@ -61,6 +62,7 @@ export default function Workflows() {
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [startOpen, setStartOpen] = useState(false);
   const [terminateTarget, setTerminateTarget] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const { data: workflowDefs } = useQuery({
     queryKey: ["workflow-defs-list"],
@@ -104,6 +106,43 @@ export default function Workflows() {
       queryClient.invalidateQueries({ queryKey: ["workflow-search"] });
     },
   });
+
+  const bulkInvalidate = () => {
+    setSelectedIds(new Set());
+    queryClient.invalidateQueries({ queryKey: ["workflow-search"] });
+  };
+  const bulkPauseMut = useMutation({
+    mutationFn: (ids: string[]) => bulkApi.pause(ids),
+    onSuccess: () => { toast.success(t.bulkSuccess); bulkInvalidate(); },
+  });
+  const bulkResumeMut = useMutation({
+    mutationFn: (ids: string[]) => bulkApi.resume(ids),
+    onSuccess: () => { toast.success(t.bulkSuccess); bulkInvalidate(); },
+  });
+  const bulkRetryMut = useMutation({
+    mutationFn: (ids: string[]) => bulkApi.retry(ids),
+    onSuccess: () => { toast.success(t.bulkSuccess); bulkInvalidate(); },
+  });
+  const bulkRestartMut = useMutation({
+    mutationFn: (ids: string[]) => bulkApi.restart(ids),
+    onSuccess: () => { toast.success(t.bulkSuccess); bulkInvalidate(); },
+  });
+  const bulkTerminateMut = useMutation({
+    mutationFn: (ids: string[]) => bulkApi.terminate(ids),
+    onSuccess: () => { toast.success(t.bulkSuccess); bulkInvalidate(); },
+  });
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const toggleAll = () => {
+    const ids = (data?.results ?? []).map((w) => w.workflowId);
+    setSelectedIds((prev) => prev.size === ids.length ? new Set() : new Set(ids));
+  };
 
   const handleSearch = () => {
     setParams((p) => ({
@@ -198,9 +237,25 @@ export default function Workflows() {
                   </span>
                 )}
               </p>
+              {selectedIds.size > 0 && (
+                <div className="flex items-center gap-2 mb-3 p-2 rounded-md bg-muted">
+                  <span className="text-xs font-medium">{selectedIds.size} {t.selectedCount}</span>
+                  <Button size="sm" variant="outline" onClick={() => bulkPauseMut.mutate([...selectedIds])}>{t.bulkPause}</Button>
+                  <Button size="sm" variant="outline" onClick={() => bulkResumeMut.mutate([...selectedIds])}>{t.bulkResume}</Button>
+                  <Button size="sm" variant="outline" onClick={() => bulkRetryMut.mutate([...selectedIds])}>{t.bulkRetry}</Button>
+                  <Button size="sm" variant="outline" onClick={() => bulkRestartMut.mutate([...selectedIds])}>{t.bulkRestart}</Button>
+                  <Button size="sm" variant="destructive" onClick={() => bulkTerminateMut.mutate([...selectedIds])}>{t.bulkTerminate}</Button>
+                </div>
+              )}
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-8">
+                      <Checkbox
+                        checked={selectedIds.size > 0 && selectedIds.size === (data?.results ?? []).length}
+                        onCheckedChange={toggleAll}
+                      />
+                    </TableHead>
                     <TableHead>{t.workflow}</TableHead>
                     <TableHead>{t.status}</TableHead>
                     <TableHead>{t.started}</TableHead>
@@ -215,6 +270,12 @@ export default function Workflows() {
                       className="cursor-pointer"
                       onClick={() => navigate(`/executions/${wf.workflowId}`)}
                     >
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <Checkbox
+                          checked={selectedIds.has(wf.workflowId)}
+                          onCheckedChange={() => toggleSelect(wf.workflowId)}
+                        />
+                      </TableCell>
                       <TableCell>
                         <div>
                           <span className="font-medium">{wf.workflowType}</span>

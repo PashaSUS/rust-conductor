@@ -2,7 +2,7 @@ use actix_web::{web, HttpResponse};
 use serde_json::Value;
 
 use crate::engine::WorkflowEngine;
-use crate::models::TaskUpdateRequest;
+use crate::models::{TaskDef, TaskUpdateRequest};
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(
@@ -18,6 +18,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .route("/queue/polldata/all", web::get().to(poll_data_all))
             .route("/in_progress/{taskType}", web::get().to(in_progress_tasks))
             .route("/in_progress/{workflowId}/{taskRefName}", web::get().to(in_progress_task_for_workflow))
+            .route("/register/{taskType}", web::post().to(register_task_type))
             .route("/{workflowId}/{taskRefName}/{status}", web::post().to(update_task_by_ref_name))
             .route("/{taskId}", web::get().to(get_task))
             .route("/{taskId}/ack", web::post().to(ack_task))
@@ -225,4 +226,55 @@ async fn poll_data_all(
 #[serde(rename_all = "camelCase")]
 struct PollDataQuery {
     task_type: Option<String>,
+}
+
+/// Dynamic task registration — workers can register a task type at runtime.
+async fn register_task_type(
+    engine: web::Data<WorkflowEngine>,
+    path: web::Path<String>,
+    body: Option<web::Json<TaskDef>>,
+) -> Result<HttpResponse, crate::engine::EngineError> {
+    let task_type = path.into_inner();
+    let def = match body {
+        Some(b) => {
+            let mut d = b.into_inner();
+            d.name = task_type;
+            d
+        }
+        None => TaskDef {
+            name: task_type,
+            description: None,
+            retry_count: 3,
+            retry_logic: Default::default(),
+            retry_delay_seconds: 60,
+            timeout_seconds: 3600,
+            timeout_policy: Default::default(),
+            response_timeout_seconds: 600,
+            concurrent_exec_limit: None,
+            input_keys: vec![],
+            output_keys: vec![],
+            input_template: Default::default(),
+            rate_limit_per_frequency: None,
+            rate_limit_frequency_in_seconds: None,
+            owner_email: None,
+            poll_timeout_seconds: None,
+            backoff_scale_factor: 1,
+            total_timeout_seconds: None,
+            owner_app: None,
+            create_time: None,
+            update_time: None,
+            created_by: None,
+            updated_by: None,
+            base_type: None,
+            isolation_group_id: None,
+            execution_name_space: None,
+            input_schema: None,
+            output_schema: None,
+            enforce_schema: false,
+            retry_on_errors: vec![],
+            env_vars: None,
+        },
+    };
+    let result = engine.register_task_def(&def).await?;
+    Ok(HttpResponse::Ok().json(result))
 }

@@ -98,6 +98,62 @@ export const healthApi = {
   check: () => fetch(`${import.meta.env.VITE_API_BASE || ""}/health`).then((r) => r.json()),
 };
 
+// ── Schedules ──
+
+export interface ScheduledWorkflow {
+  scheduleId: string;
+  name: string;
+  cronExpression: string;
+  timezone: string;
+  workflowName: string;
+  workflowVersion: number;
+  workflowInput: unknown;
+  enabled: boolean;
+  lastRunAt?: number;
+  nextRunAt?: number;
+  lastError?: string;
+}
+
+export const scheduleApi = {
+  list: () => request<ScheduledWorkflow[]>("/schedule"),
+
+  get: (id: string) => request<ScheduledWorkflow>(`/schedule/${encodeURIComponent(id)}`),
+
+  create: (s: Omit<ScheduledWorkflow, "scheduleId" | "lastRunAt" | "nextRunAt">) =>
+    request<ScheduledWorkflow>("/schedule", { method: "POST", body: JSON.stringify({ ...s, scheduleId: "" }) }),
+
+  delete: (id: string) =>
+    request<void>(`/schedule/${encodeURIComponent(id)}`, { method: "DELETE" }),
+
+  enable: (id: string) =>
+    request<void>(`/schedule/${encodeURIComponent(id)}/enable`, { method: "PUT" }),
+
+  disable: (id: string) =>
+    request<void>(`/schedule/${encodeURIComponent(id)}/disable`, { method: "PUT" }),
+};
+
+// ── Bulk Operations ──
+
+export const bulkApi = {
+  pause: (ids: string[]) =>
+    request<Record<string, string>>("/workflow/bulk/pause", { method: "PUT", body: JSON.stringify(ids) }),
+
+  resume: (ids: string[]) =>
+    request<Record<string, string>>("/workflow/bulk/resume", { method: "PUT", body: JSON.stringify(ids) }),
+
+  retry: (ids: string[]) =>
+    request<Record<string, string>>("/workflow/bulk/retry", { method: "POST", body: JSON.stringify(ids) }),
+
+  restart: (ids: string[]) =>
+    request<Record<string, string>>("/workflow/bulk/restart", { method: "POST", body: JSON.stringify(ids) }),
+
+  terminate: (ids: string[], reason?: string) =>
+    request<Record<string, string>>("/workflow/bulk/terminate", {
+      method: "POST",
+      body: JSON.stringify({ workflowIds: ids, reason }),
+    }),
+};
+
 // ── Types ──
 
 export interface WorkflowDef {
@@ -115,6 +171,10 @@ export interface WorkflowDef {
   ownerEmail?: string;
   variables?: Record<string, unknown>;
   inputTemplate?: Record<string, unknown>;
+  onCompleteWebhook?: string;
+  onFailureWebhook?: string;
+  tags?: string[];
+  slaDeadlineSeconds?: number;
 }
 
 export interface WorkflowTask {
@@ -151,6 +211,8 @@ export interface TaskDef {
   ownerEmail?: string;
   createdOn?: string;
   updatedOn?: string;
+  retryOnErrors?: string[];
+  envVars?: Record<string, unknown>;
 }
 
 export interface StartWorkflowRequest {
@@ -159,6 +221,7 @@ export interface StartWorkflowRequest {
   input?: Record<string, unknown>;
   correlationId?: string;
   priority?: number;
+  tags?: string[];
 }
 
 export interface Workflow {
@@ -176,6 +239,7 @@ export interface Workflow {
   createdBy?: string;
   reasonForIncompletion?: string;
   priority: number;
+  tags?: string[];
 }
 
 export interface TaskResult {

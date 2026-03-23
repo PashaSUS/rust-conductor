@@ -74,6 +74,12 @@ pub struct TaskDef {
     pub output_schema: Option<SchemaDef>,
     #[serde(default)]
     pub enforce_schema: bool,
+    /// If non-empty, only retry on failures whose reason contains one of these strings.
+    #[serde(default)]
+    pub retry_on_errors: Vec<String>,
+    /// Environment variables/secrets to inject into poll responses for this task type.
+    #[serde(default)]
+    pub env_vars: Option<Value>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -278,6 +284,12 @@ pub struct PollTask {
     pub poll_count: i32,
     #[serde(default)]
     pub retry_count: i32,
+    /// Task priority (higher = polled first in batch).
+    #[serde(default)]
+    pub priority: i32,
+    /// Environment variables/secrets injected from task definition.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub env_vars: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

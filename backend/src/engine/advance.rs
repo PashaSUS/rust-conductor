@@ -113,6 +113,9 @@ impl WorkflowEngine {
 
             tracing::info!(workflow_id = %workflow_id, "Workflow completed");
 
+            // Fire completion webhook if configured
+            self.notify_webhooks(def, workflow_id, "COMPLETED", &output);
+
             self.try_complete_parent_sub_workflow(workflow_id, &output)
                 .await?;
         }
@@ -425,6 +428,25 @@ impl WorkflowEngine {
 
         self.trigger_failure_workflow(workflow_id, reason).await?;
 
+        // Fire failure webhook if configured
+        {
+            let db = self.shards.shard_for(workflow_id);
+            if let Some(def_json) = sqlx::query_scalar::<_, Option<Value>>(
+                "SELECT workflow_def FROM workflow WHERE workflow_id = $1",
+            )
+            .bind(workflow_id)
+            .fetch_optional(db)
+            .await
+            .ok()
+            .flatten()
+            .flatten()
+            {
+                if let Ok(def) = serde_json::from_value::<WorkflowDef>(def_json) {
+                    self.notify_webhooks(&def, workflow_id, terminal_status, &Value::Null);
+                }
+            }
+        }
+
         tracing::warn!(workflow_id = %workflow_id, status = %terminal_status, "Workflow terminated");
         Ok(())
     }
@@ -485,6 +507,7 @@ impl WorkflowEngine {
             created_by: Some("system:failure-handler".to_string()),
             idempotency_key: None,
             idempotency_strategy: None,
+            tags: vec![],
         };
 
         match self.start_workflow(&req).await {
@@ -507,5 +530,52 @@ impl WorkflowEngine {
         }
 
         Ok(())
+    }
+
+    /// Fire a webhook (POST) for workflow lifecycle events.
+    /// Runs in a detached task so it never blocks the main workflow path.
+    pub(crate) fn fire_webhook(url: String, payload: Value) {
+        tokio::spawn(async move {
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(10))
+                .build()
+                .unwrap_or_default();
+            match client.post(&url).json(&payload).send().await {
+                Ok(resp) => {
+                    tracing::info!(url = %url, status = %resp.status(), "Webhook delivered");
+                }
+                Err(e) => {
+                    tracing::error!(url = %url, error = %e, "Webhook delivery failed");
+                }
+            }
+        });
+    }
+
+    /// Notify configured webhooks on workflow completion or failure.
+    pub(crate) fn notify_webhooks(&self, def: &WorkflowDef, workflow_id: &str, status: &str, output: &Value) {
+        let payload = serde_json::json!({
+            "workflowId": workflow_id,
+            "workflowName": def.name,
+            "status": status,
+            "output": output,
+        });
+
+        match status {
+            "COMPLETED" => {
+                if let Some(url) = &def.on_complete_webhook {
+                    if !url.is_empty() {
+                        Self::fire_webhook(url.clone(), payload);
+                    }
+                }
+            }
+            "FAILED" | "TIMED_OUT" => {
+                if let Some(url) = &def.on_failure_webhook {
+                    if !url.is_empty() {
+                        Self::fire_webhook(url.clone(), payload);
+                    }
+                }
+            }
+            _ => {}
+        }
     }
 }

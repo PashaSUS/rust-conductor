@@ -1,7 +1,7 @@
 use actix_web::{web, HttpResponse};
 
 use crate::engine::WorkflowEngine;
-use crate::models::{BulkResponse, TaskDef, WorkflowDef};
+use crate::models::{BulkResponse, InstantiateTemplateRequest, TaskDef, WorkflowDef, WorkflowTemplate};
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(
@@ -20,7 +20,13 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .route("/taskdefs", web::put().to(update_task_def))
             .route("/taskdefs", web::get().to(list_task_defs))
             .route("/taskdefs/{taskType}", web::get().to(get_task_def))
-            .route("/taskdefs/{taskType}", web::delete().to(delete_task_def)),
+            .route("/taskdefs/{taskType}", web::delete().to(delete_task_def))
+            // Workflow templates
+            .route("/template", web::post().to(register_template))
+            .route("/template", web::get().to(list_templates))
+            .route("/template/{name}", web::get().to(get_template))
+            .route("/template/{name}", web::delete().to(delete_template))
+            .route("/template/instantiate", web::post().to(instantiate_template)),
     );
 }
 
@@ -127,4 +133,45 @@ async fn delete_task_def(
 #[derive(serde::Deserialize)]
 struct VersionQuery {
     version: Option<i32>,
+}
+
+// ── Workflow Template Handlers ──
+
+async fn register_template(
+    engine: web::Data<WorkflowEngine>,
+    body: web::Json<WorkflowTemplate>,
+) -> Result<HttpResponse, crate::engine::EngineError> {
+    let tmpl = engine.register_template(&body).await?;
+    Ok(HttpResponse::Ok().json(tmpl))
+}
+
+async fn list_templates(
+    engine: web::Data<WorkflowEngine>,
+) -> Result<HttpResponse, crate::engine::EngineError> {
+    let templates = engine.list_templates().await?;
+    Ok(HttpResponse::Ok().json(templates))
+}
+
+async fn get_template(
+    engine: web::Data<WorkflowEngine>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, crate::engine::EngineError> {
+    let tmpl = engine.get_template(&path.into_inner()).await?;
+    Ok(HttpResponse::Ok().json(tmpl))
+}
+
+async fn delete_template(
+    engine: web::Data<WorkflowEngine>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, crate::engine::EngineError> {
+    engine.delete_template(&path.into_inner()).await?;
+    Ok(HttpResponse::Ok().finish())
+}
+
+async fn instantiate_template(
+    engine: web::Data<WorkflowEngine>,
+    body: web::Json<InstantiateTemplateRequest>,
+) -> Result<HttpResponse, crate::engine::EngineError> {
+    let wf_id = engine.instantiate_template(&body).await?;
+    Ok(HttpResponse::Ok().json(wf_id))
 }

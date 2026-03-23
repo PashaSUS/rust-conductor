@@ -101,6 +101,9 @@ async fn search_workflows(
     engine: web::Data<WorkflowEngine>,
     query: web::Query<SearchQuery>,
 ) -> Result<HttpResponse, crate::engine::EngineError> {
+    let tags: Option<Vec<String>> = query.tags.as_ref().map(|t| {
+        t.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
+    });
     let result = engine
         .search_workflows(
             query.status.as_deref(),
@@ -108,6 +111,7 @@ async fn search_workflows(
             query.free_text.as_deref(),
             query.start.unwrap_or(0),
             query.size.unwrap_or(100),
+            tags.as_deref(),
         )
         .await?;
     Ok(HttpResponse::Ok().json(result))
@@ -126,6 +130,7 @@ struct SearchQuery {
     free_text: Option<String>,
     start: Option<i64>,
     size: Option<i64>,
+    tags: Option<String>,
 }
 
 async fn rerun_workflow(
@@ -242,6 +247,7 @@ async fn start_workflow_by_name(
         created_by: None,
         idempotency_key: None,
         idempotency_strategy: None,
+        tags: vec![],
     };
     let id = engine.start_workflow(&req).await?;
     Ok(HttpResponse::Ok().json(id))

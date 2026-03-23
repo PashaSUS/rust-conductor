@@ -13,8 +13,13 @@ interface WorkflowSettingsProps {
   ownerEmail: string;
   failureWorkflow: string;
   inputParams: string[];
+  onCompleteWebhook: string;
+  onFailureWebhook: string;
+  slaDeadlineSeconds: number;
+  tags: string[];
   onUpdate: (field: string, value: string | number) => void;
   onUpdateInputParams: (params: string[]) => void;
+  onUpdateTags: (tags: string[]) => void;
 }
 
 export function WorkflowSettings({
@@ -25,8 +30,13 @@ export function WorkflowSettings({
   ownerEmail,
   failureWorkflow,
   inputParams,
+  onCompleteWebhook,
+  onFailureWebhook,
+  slaDeadlineSeconds,
+  tags,
   onUpdate,
   onUpdateInputParams,
+  onUpdateTags,
 }: WorkflowSettingsProps) {
   const t = useThemeText();
   return (
@@ -111,6 +121,46 @@ export function WorkflowSettings({
           <p className="text-[10px] text-muted-foreground">
             {t.inputParamHint}
           </p>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="wf-complete-webhook">{t.onCompleteWebhook}</Label>
+            <Input
+              id="wf-complete-webhook"
+              value={onCompleteWebhook}
+              onChange={(e) => onUpdate("onCompleteWebhook", e.target.value)}
+              placeholder="https://example.com/hook"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="wf-failure-webhook">{t.onFailureWebhook}</Label>
+            <Input
+              id="wf-failure-webhook"
+              value={onFailureWebhook}
+              onChange={(e) => onUpdate("onFailureWebhook", e.target.value)}
+              placeholder="https://example.com/hook"
+            />
+          </div>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="wf-sla">{t.slaDeadline}</Label>
+          <Input
+            id="wf-sla"
+            type="number"
+            min={0}
+            value={slaDeadlineSeconds}
+            onChange={(e) => onUpdate("slaDeadlineSeconds", Number(e.target.value) || 0)}
+            placeholder={t.optional}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="wf-tags">{t.tagsLabel}</Label>
+          <TagInput
+            id="wf-tags"
+            tags={tags}
+            onChange={onUpdateTags}
+            placeholder={t.tagsPlaceholder}
+          />
         </div>
       </CardContent>
     </Card>

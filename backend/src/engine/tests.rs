@@ -1290,6 +1290,7 @@ fn contract_start_workflow_request_field_names() {
         idempotency_strategy: None,
         workflow_def: None,
         created_by: None,
+        tags: vec![],
     };
     let v = serde_json::to_value(&req).unwrap();
     assert!(v.get("name").is_some());

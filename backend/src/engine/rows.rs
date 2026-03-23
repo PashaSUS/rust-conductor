@@ -30,6 +30,8 @@ pub(crate) struct WorkflowRow {
     pub workflow_def: Option<Value>,
     pub parent_workflow_id: Option<String>,
     pub parent_workflow_task_id: Option<String>,
+    pub tags: Value,
+    pub sla_deadline: Option<chrono::DateTime<Utc>>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -54,6 +56,8 @@ pub(crate) struct TaskRow {
     pub reason_for_incompletion: Option<String>,
     pub sub_workflow_id: Option<String>,
     pub parent_task_id: Option<String>,
+    pub priority: i32,
+    pub env_vars: Option<Value>,
 }
 
 impl From<TaskRow> for TaskResult {

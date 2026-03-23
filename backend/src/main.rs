@@ -148,6 +148,7 @@ async fn main() -> std::io::Result<()> {
     );
 
     let cors_origin = cfg.cors_origin.clone();
+    let rate_limit_redis = redis_pool.clone();
 
     HttpServer::new(move || {
         let cors = if let Some(ref origin) = cors_origin {
@@ -166,10 +167,16 @@ async fn main() -> std::io::Result<()> {
 
         let json_cfg = web::JsonConfig::default().limit(10 * 1024 * 1024); // 10MB payload limit
 
+        // Rate limiter: 1000 requests per 60 seconds per client IP
+        let rate_limiter = api::rate_limit::RateLimiter::new(
+            rate_limit_redis.clone(), 1000, 60,
+        );
+
         App::new()
             .wrap(cors)
             .wrap(TracingLogger::default())
             .wrap(middleware::Compress::default())
+            .wrap(rate_limiter)
             .app_data(json_cfg)
             .app_data(web::Data::new(redis_pool.clone()))
             .app_data(web::Data::new(engine.clone()))

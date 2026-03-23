@@ -12,6 +12,8 @@ import {
   Search,
   PanelLeftClose,
   PanelLeftOpen,
+  GitBranch,
+  Calendar,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -43,7 +45,9 @@ export default function Layout() {
     { to: "/definitions", label: t.workflowDefs, icon: FileCode2, shortcut: "3" },
     { to: "/taskdefs", label: t.taskDefs, icon: ListChecks, shortcut: "4" },
     { to: "/queues", label: t.taskQueues, icon: Layers, shortcut: "5" },
-    { to: "/about", label: t.about, icon: Info, shortcut: "6" },
+    { to: "/dependencies", label: t.dependencyGraph, icon: GitBranch, shortcut: "6" },
+    { to: "/schedules", label: t.schedules, icon: Calendar, shortcut: "7" },
+    { to: "/about", label: t.about, icon: Info, shortcut: "8" },
   ], [t]);
 
   useEffect(() => {
@@ -80,6 +84,14 @@ export default function Layout() {
             navigate("/queues");
             break;
           case "6":
+            e.preventDefault();
+            navigate("/dependencies");
+            break;
+          case "7":
+            e.preventDefault();
+            navigate("/schedules");
+            break;
+          case "8":
             e.preventDefault();
             navigate("/about");
             break;

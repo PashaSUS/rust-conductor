@@ -9,6 +9,8 @@ import WorkflowDetail from "./pages/WorkflowDetail";
 import WorkflowDefs from "./pages/WorkflowDefs";
 import TaskDefs from "./pages/TaskDefs";
 import TaskQueues from "./pages/TaskQueues";
+import WorkflowDependencyGraph from "./pages/WorkflowDependencyGraph";
+import Schedules from "./pages/Schedules";
 import About from "./pages/About";
 
 const queryClient = new QueryClient({
@@ -28,6 +30,8 @@ export default function App() {
               <Route path="/definitions" element={<WorkflowDefs />} />
               <Route path="/taskdefs" element={<TaskDefs />} />
               <Route path="/queues" element={<TaskQueues />} />
+              <Route path="/dependencies" element={<WorkflowDependencyGraph />} />
+              <Route path="/schedules" element={<Schedules />} />
               <Route path="/about" element={<About />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>

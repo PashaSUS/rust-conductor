@@ -70,6 +70,18 @@ pub struct WorkflowDef {
     pub cache_config: Option<CacheConfig>,
     #[serde(default)]
     pub masked_fields: Vec<String>,
+    /// Webhook URL called (POST) when the workflow completes successfully.
+    #[serde(default)]
+    pub on_complete_webhook: Option<String>,
+    /// Webhook URL called (POST) when the workflow fails.
+    #[serde(default)]
+    pub on_failure_webhook: Option<String>,
+    /// Tags for categorization and label-based filtering.
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// SLA deadline in seconds from workflow start. Breaches are detected by the sweeper.
+    #[serde(default)]
+    pub sla_deadline_seconds: Option<i64>,
 }
 
 //  Workflow Task 
@@ -295,6 +307,9 @@ pub struct StartWorkflowRequest {
     pub idempotency_key: Option<String>,
     #[serde(default)]
     pub idempotency_strategy: Option<IdempotencyStrategy>,
+    /// Tags for categorization.
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -319,4 +334,56 @@ pub struct SkipTaskRequest {
     pub task_input: Option<HashMap<String, Value>>,
     #[serde(default)]
     pub task_output: Option<HashMap<String, Value>>,
+}
+
+//  CRON Scheduled Workflow 
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduledWorkflow {
+    #[serde(default)]
+    pub schedule_id: String,
+    pub name: String,
+    pub cron_expression: String,
+    #[serde(default = "default_utc")]
+    pub timezone: String,
+    pub workflow_name: String,
+    #[serde(default = "default_version")]
+    pub workflow_version: i32,
+    #[serde(default)]
+    pub workflow_input: Value,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub last_run_at: Option<i64>,
+    #[serde(default)]
+    pub next_run_at: Option<i64>,
+    #[serde(default)]
+    pub last_error: Option<String>,
+}
+
+fn default_utc() -> String { "UTC".to_string() }
+
+//  Workflow Template 
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowTemplate {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    pub workflow_def: WorkflowDef,
+    /// Parameter names that can be substituted when instantiating the template.
+    #[serde(default)]
+    pub parameters: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstantiateTemplateRequest {
+    pub template_name: String,
+    #[serde(default)]
+    pub parameter_values: HashMap<String, Value>,
+    #[serde(default)]
+    pub input: Value,
 }

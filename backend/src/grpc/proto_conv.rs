@@ -316,6 +316,10 @@ pub fn workflow_def_from_proto(p: &pb::WorkflowDefPb) -> models::WorkflowDef {
         metadata: None,
         cache_config: None,
         masked_fields: vec![],
+        on_complete_webhook: None,
+        on_failure_webhook: None,
+        sla_deadline_seconds: None,
+        tags: vec![],
     }
 }
 
@@ -488,6 +492,8 @@ pub fn task_def_from_proto(p: &pb::TaskDefPb) -> models::TaskDef {
         input_schema: None,
         output_schema: None,
         enforce_schema: false,
+        retry_on_errors: vec![],
+        env_vars: None,
     }
 }
 
@@ -506,6 +512,7 @@ pub fn start_workflow_from_proto(p: pb::StartWorkflowRequest) -> models::StartWo
         created_by: opt_string_owned(p.created_by),
         idempotency_key: opt_string_owned(p.idempotency_key),
         idempotency_strategy: None,
+        tags: vec![],
     }
 }
 
@@ -830,6 +837,10 @@ pub fn workflow_def_from_official(p: &opb::OfWorkflowDefPb) -> models::WorkflowD
         metadata: None,
         cache_config: None,
         masked_fields: vec![],
+        on_complete_webhook: None,
+        on_failure_webhook: None,
+        sla_deadline_seconds: None,
+        tags: vec![],
     }
 }
 
@@ -992,6 +1003,8 @@ pub fn task_def_from_official(p: &opb::OfTaskDefPb) -> models::TaskDef {
         input_schema: None,
         output_schema: None,
         enforce_schema: false,
+        retry_on_errors: vec![],
+        env_vars: None,
     }
 }
 
@@ -1010,6 +1023,7 @@ pub fn start_workflow_from_official(p: opb::OfStartWorkflowRequest) -> models::S
         created_by: opt_string_owned(p.created_by),
         idempotency_key: opt_string_owned(p.idempotency_key),
         idempotency_strategy: None,
+        tags: vec![],
     }
 }
 

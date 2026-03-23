@@ -72,6 +72,8 @@ impl WorkflowEngine {
                         callback_after_seconds: r.callback_after_seconds,
                         poll_count: r.poll_count,
                         retry_count: r.retry_count,
+                        priority: r.priority,
+                        env_vars: r.env_vars,
                     }));
                 }
             }
@@ -113,6 +115,33 @@ impl WorkflowEngine {
             );
         }
 
+        // Validate output data against task definition's output schema
+        if matches!(update.status, TaskStatus::Completed | TaskStatus::CompletedWithErrors) {
+            if let Ok(task) = self.get_task(&update.task_id).await {
+                if let Ok(task_def) = self.get_task_def(&task.task_def_name).await {
+                    if task_def.enforce_schema {
+                        if let Some(schema) = &task_def.output_schema {
+                            if let Some(expected_keys) = &schema.data {
+                                let output = &update.output_data;
+                                for key in expected_keys.keys() {
+                                    if output.get(key).is_none() {
+                                        tracing::error!(
+                                            task_id = %update.task_id,
+                                            missing_key = %key,
+                                            "Output schema validation failed: missing required key"
+                                        );
+                                        return Err(EngineError::InvalidState(format!(
+                                            "Output schema validation failed: missing key '{key}'"
+                                        )));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         let db = self.shards.shard_for(&update.workflow_instance_id);
 
         sqlx::query(
@@ -145,6 +174,37 @@ impl WorkflowEngine {
             || update.status == TaskStatus::FailedWithTerminalError
             || update.status == TaskStatus::TimedOut
         {
+            // Conditional retry: if the task_def specifies retry_on_errors,
+            // only retry when the failure reason matches one of those patterns.
+            // FailedWithTerminalError is never retried.
+            if update.status == TaskStatus::Failed {
+                if let Ok(task) = self.get_task(&update.task_id).await {
+                    if let Ok(task_def) = self.get_task_def(&task.task_def_name).await {
+                        if !task_def.retry_on_errors.is_empty() {
+                            let reason = update.reason_for_incompletion.as_deref().unwrap_or("");
+                            let matches = task_def.retry_on_errors.iter().any(|pattern| {
+                                reason.contains(pattern.as_str())
+                            });
+                            if !matches {
+                                tracing::info!(
+                                    task_id = %update.task_id,
+                                    reason = %reason,
+                                    patterns = ?task_def.retry_on_errors,
+                                    "Task failure does not match retry_on_errors patterns, skipping retry"
+                                );
+                                self.fail_workflow(
+                                    &update.workflow_instance_id,
+                                    update.reason_for_incompletion.as_deref(),
+                                    "FAILED",
+                                )
+                                .await?;
+                                return Ok(update.task_id.clone());
+                            }
+                        }
+                    }
+                }
+            }
+
             let wf_status = if update.status == TaskStatus::TimedOut {
                 "TIMED_OUT"
             } else {
@@ -227,6 +287,8 @@ impl WorkflowEngine {
                         callback_after_seconds: r.callback_after_seconds,
                         poll_count: r.poll_count,
                         retry_count: r.retry_count,
+                        priority: r.priority,
+                        env_vars: r.env_vars,
                     });
                 }
             }
@@ -240,6 +302,8 @@ impl WorkflowEngine {
                 let _ = self.queue.enqueue(task_type, task_id).await;
             }
         }
+        // Sort by priority descending so higher priority tasks are returned first
+        tasks.sort_by(|a, b| b.priority.cmp(&a.priority));
         Ok(tasks)
     }
 

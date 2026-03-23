@@ -28,21 +28,21 @@
 
 ## Backend: Features
 
-- [ ] 21. Add webhook/callback support — notify external URLs on workflow completion or failure.
+- [x] 21. Add webhook/callback support — notify external URLs on workflow completion or failure.
 - [x] 22. Implement workflow versioning with migration support (run v1 workflows while deploying v2 definitions).
-- [ ] 23. Add CRON-based scheduled workflow execution with timezone support.
-- [ ] 24. Implement workflow tagging and label-based filtering for better organization.
-- [ ] 25. Add task priority levels (HIGH/MEDIUM/LOW) with priority-based polling.
-- [ ] 26. Implement dynamic task registration — allow workers to register custom task types at runtime.
-- [ ] 27. Add workflow templates with parameterized placeholders for reusable patterns.
-- [ ] 28. Implement sub-workflow max-depth limiting to prevent infinite recursion.
-- [ ] 29. Add rate limiting per client/API key for multi-tenant deployments.
+- [x] 23. Add CRON-based scheduled workflow execution with timezone support.
+- [x] 24. Implement workflow tagging and label-based filtering for better organization.
+- [x] 25. Add task priority levels (HIGH/MEDIUM/LOW) with priority-based polling.
+- [x] 26. Implement dynamic task registration — allow workers to register custom task types at runtime.
+- [x] 27. Add workflow templates with parameterized placeholders for reusable patterns.
+- [x] 28. Implement sub-workflow max-depth limiting to prevent infinite recursion.
+- [x] 29. Add rate limiting per client/API key for multi-tenant deployments.
 - [x] 30. Implement workflow correlation IDs to group related workflow executions.
-- [ ] 31. Add support for LAMBDA task type to execute inline expressions without external workers.
-- [ ] 32. Implement task output schema validation against task definitions.
-- [ ] 33. Add workflow-level SLA tracking with alerting when SLA breaches are detected.
-- [ ] 34. Implement conditional task retries — only retry on specific error codes, not all failures.
-- [ ] 35. Add support for task-level environment variables/secrets injection.
+- [x] 31. Add support for LAMBDA task type to execute inline expressions without external workers.
+- [x] 32. Implement task output schema validation against task definitions.
+- [x] 33. Add workflow-level SLA tracking with alerting when SLA breaches are detected.
+- [x] 34. Implement conditional task retries — only retry on specific error codes, not all failures.
+- [x] 35. Add support for task-level environment variables/secrets injection.
 
 ## Backend: Security
 
@@ -93,12 +93,12 @@
 
 ## Frontend: Features
 
-- [ ] 71. Add workflow definition version history with diff viewer.
-- [ ] 72. Implement dashboard customization — configurable widgets and layout.
-- [ ] 73. Add task queue depth alerting thresholds configurable from the UI.
-- [ ] 74. Implement workflow definition search across all versions.
-- [ ] 75. Add execution replay — re-run a completed workflow with the same or modified inputs.
-- [ ] 76. Implement workflow dependency graph — show which workflows call which sub-workflows.
+- [x] 71. Add workflow definition version history with diff viewer.
+- [x] 72. Implement dashboard customization — configurable widgets and layout.
+- [x] 73. Add task queue depth alerting thresholds configurable from the UI.
+- [x] 74. Implement workflow definition search across all versions.
+- [x] 75. Add execution replay — re-run a completed workflow with the same or modified inputs.
+- [x] 76. Implement workflow dependency graph — show which workflows call which sub-workflows.
 
 ## Infrastructure & DevOps
 

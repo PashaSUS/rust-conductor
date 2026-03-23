@@ -15,6 +15,7 @@ import {
   LayoutDashboard,
   Layers,
   Search,
+  Calendar,
 } from "lucide-react";
 import { useThemeText } from "@/components/ThemeContext";
 
@@ -92,6 +93,7 @@ export function CommandPalette() {
     { id: "p-wfdef", label: t.workflowDefs, icon: FileCode2, action: () => go("/definitions"), category: t.pages },
     { id: "p-tdef", label: t.taskDefs, icon: ListChecks, action: () => go("/taskdefs"), category: t.pages },
     { id: "p-queues", label: t.taskQueues, icon: Layers, action: () => go("/queues"), category: t.pages },
+    { id: "p-schedules", label: t.schedules, icon: Calendar, action: () => go("/schedules"), category: t.pages },
   ];
   items.push(...pages);
 

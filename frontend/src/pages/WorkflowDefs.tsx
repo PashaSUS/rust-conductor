@@ -8,11 +8,12 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Plus, Trash2, Eye, Play, Copy, Search } from "lucide-react";
+import { Plus, Trash2, Eye, Play, Copy, Search, History } from "lucide-react";
 import WorkflowBuilder from "@/components/WorkflowBuilder";
 import { StartWorkflowDialog } from "@/components/StartWorkflowDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { CopyButton } from "@/components/CopyButton";
+import { VersionHistoryDialog } from "@/components/VersionHistoryDialog";
 import { useThemeText } from "@/components/ThemeContext";
 
 export default function WorkflowDefs() {
@@ -24,6 +25,8 @@ export default function WorkflowDefs() {
   const [startDef, setStartDef] = useState<WorkflowDef | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ name: string; version: number } | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [historyTarget, setHistoryTarget] = useState<{ name: string; version: number } | null>(null);
+  const [searchAllVersions, setSearchAllVersions] = useState(false);
 
   const { data: defs, isLoading } = useQuery({
     queryKey: ["workflow-defs"],
@@ -66,6 +69,16 @@ export default function WorkflowDefs() {
       d.description?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  // When not searching all versions, group by name and show only the latest version
+  const displayDefs = searchAllVersions
+    ? filteredDefs
+    : Object.values(
+        filteredDefs.reduce<Record<string, typeof filteredDefs[0]>>((acc, d) => {
+          if (!acc[d.name] || d.version > acc[d.name].version) acc[d.name] = d;
+          return acc;
+        }, {})
+      );
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -85,9 +98,18 @@ export default function WorkflowDefs() {
           onChange={(e) => setSearchTerm(e.target.value)}
           className="max-w-xs"
         />
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={searchAllVersions}
+            onChange={(e) => setSearchAllVersions(e.target.checked)}
+            className="rounded border-muted-foreground/30"
+          />
+          {t.searchAllVersions}
+        </label>
         {searchTerm && (
           <span className="text-xs text-muted-foreground">
-            {filteredDefs.length} {t.of} {defs?.length ?? 0}
+            {displayDefs.length} {t.of} {defs?.length ?? 0}
           </span>
         )}
       </div>
@@ -117,7 +139,7 @@ export default function WorkflowDefs() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredDefs.map((def) => (
+                {displayDefs.map((def) => (
                   <TableRow key={`${def.name}-${def.version}`}>
                     <TableCell>
                       <div className="flex items-center gap-1">
@@ -140,6 +162,9 @@ export default function WorkflowDefs() {
                         </Button>
                         <Button variant="ghost" size="icon" onClick={() => setViewDef(def)} title={t.viewJson}>
                           <Eye className="h-3 w-3" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => setHistoryTarget({ name: def.name, version: def.version })} title={t.versionHistory}>
+                          <History className="h-3 w-3" />
                         </Button>
                         <Button variant="ghost" size="icon" onClick={() => cloneDef(def)} title={t.cloneAndEdit}>
                           <Copy className="h-3 w-3" />
@@ -232,6 +257,16 @@ export default function WorkflowDefs() {
           }
         }}
       />
+
+      {/* Version history dialog */}
+      {historyTarget && (
+        <VersionHistoryDialog
+          workflowName={historyTarget.name}
+          currentVersion={historyTarget.version}
+          open={!!historyTarget}
+          onOpenChange={(open) => { if (!open) setHistoryTarget(null); }}
+        />
+      )}
     </div>
   );
 }

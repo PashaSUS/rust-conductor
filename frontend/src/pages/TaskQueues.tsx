@@ -1,15 +1,49 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { taskApi } from "@/api/conductor";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Layers, Search, Inbox } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Layers, Search, Inbox, Bell, BellOff, AlertTriangle, X } from "lucide-react";
 import { useThemeText } from "@/components/ThemeContext";
+
+function loadThresholds(): Record<string, number> {
+  try {
+    const stored = localStorage.getItem("queue-alert-thresholds");
+    if (stored) return JSON.parse(stored);
+  } catch { /* ignore */ }
+  return {};
+}
+
+function saveThresholds(thresholds: Record<string, number>) {
+  localStorage.setItem("queue-alert-thresholds", JSON.stringify(thresholds));
+}
 
 export default function TaskQueues() {
   const [filter, setFilter] = useState("");
+  const [alertsOpen, setAlertsOpen] = useState(false);
+  const [thresholds, setThresholds] = useState<Record<string, number>>(loadThresholds);
+  const [editingQueue, setEditingQueue] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
   const t = useThemeText();
+
+  const setThreshold = useCallback((queue: string, value: number) => {
+    setThresholds((prev) => {
+      const next = { ...prev, [queue]: value };
+      saveThresholds(next);
+      return next;
+    });
+  }, []);
+
+  const clearThreshold = useCallback((queue: string) => {
+    setThresholds((prev) => {
+      const next = { ...prev };
+      delete next[queue];
+      saveThresholds(next);
+      return next;
+    });
+  }, []);
 
   const { data: sizes, isLoading } = useQuery({
     queryKey: ["queue-sizes"],
@@ -30,6 +64,10 @@ export default function TaskQueues() {
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold tracking-tight">{t.taskQueuesTitle}</h2>
         <div className="flex items-center gap-3">
+          <Button variant="outline" size="sm" onClick={() => setAlertsOpen((o) => !o)}>
+            {alertsOpen ? <BellOff className="h-3 w-3 mr-1" /> : <Bell className="h-3 w-3 mr-1" />}
+            {t.configureAlerts}
+          </Button>
           <div className="flex items-center gap-1 text-xs text-muted-foreground">
             <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             {t.liveInterval}
@@ -71,11 +109,69 @@ export default function TaskQueues() {
             <div className="space-y-2">
               {entries.map(([name, count]) => {
                 const pct = Math.max((count / maxCount) * 100, 2);
+                const threshold = thresholds[name];
+                const exceeded = threshold !== undefined && count >= threshold;
                 return (
-                  <div key={name} className="group rounded-lg border p-3 hover:bg-muted/30 transition-colors">
+                  <div key={name} className={`group rounded-lg border p-3 transition-colors ${exceeded ? "border-destructive/50 bg-destructive/5" : "hover:bg-muted/30"}`}>
                     <div className="flex items-center justify-between mb-1.5">
-                      <span className="font-medium text-sm">{name}</span>
                       <div className="flex items-center gap-2">
+                        <span className="font-medium text-sm">{name}</span>
+                        {exceeded && (
+                          <span className="flex items-center gap-1 text-destructive text-xs">
+                            <AlertTriangle className="h-3 w-3" />
+                            {t.thresholdExceeded}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {threshold !== undefined && (
+                          <span className="text-xs text-muted-foreground">
+                            {t.alertThreshold}: {threshold}
+                          </span>
+                        )}
+                        {alertsOpen && (
+                          editingQueue === name ? (
+                            <form
+                              className="flex items-center gap-1"
+                              onSubmit={(e) => {
+                                e.preventDefault();
+                                const val = parseInt(editValue, 10);
+                                if (!isNaN(val) && val > 0) setThreshold(name, val);
+                                setEditingQueue(null);
+                              }}
+                            >
+                              <Input
+                                type="number"
+                                min="1"
+                                value={editValue}
+                                onChange={(e) => setEditValue(e.target.value)}
+                                className="h-6 w-20 text-xs"
+                                autoFocus
+                                onBlur={() => setEditingQueue(null)}
+                              />
+                            </form>
+                          ) : (
+                            <div className="flex items-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 text-xs px-2"
+                                onClick={() => {
+                                  setEditingQueue(name);
+                                  setEditValue(String(threshold ?? ""));
+                                }}
+                              >
+                                <Bell className="h-3 w-3 mr-1" />
+                                {t.alertThreshold}
+                              </Button>
+                              {threshold !== undefined && (
+                                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => clearThreshold(name)}>
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              )}
+                            </div>
+                          )
+                        )}
                         <span className="text-xs text-muted-foreground">
                           {total > 0 ? `${((count / total) * 100).toFixed(0)}%` : ""}
                         </span>
@@ -84,7 +180,7 @@ export default function TaskQueues() {
                     </div>
                     <div className="w-full bg-muted rounded-full h-2">
                       <div
-                        className="bg-chart-1 h-2 rounded-full transition-all duration-500"
+                        className={`h-2 rounded-full transition-all duration-500 ${exceeded ? "bg-destructive" : "bg-chart-1"}`}
                         style={{ width: `${pct}%` }}
                       />
                     </div>

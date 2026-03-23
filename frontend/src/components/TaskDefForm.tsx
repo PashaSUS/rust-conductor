@@ -33,6 +33,8 @@ export function TaskDefForm({ onSubmit, isPending }: TaskDefFormProps) {
   const [ownerEmail, setOwnerEmail] = useState("");
   const [inputKeys, setInputKeys] = useState<string[]>([]);
   const [outputKeys, setOutputKeys] = useState<string[]>([]);
+  const [retryOnErrors, setRetryOnErrors] = useState<string[]>([]);
+  const [envVars, setEnvVars] = useState("");
 
   const handleSubmit = () => {
     if (!name.trim()) return;
@@ -48,6 +50,12 @@ export function TaskDefForm({ onSubmit, isPending }: TaskDefFormProps) {
     if (ownerEmail) def.ownerEmail = ownerEmail;
     if (inputKeys.length > 0) def.inputKeys = inputKeys;
     if (outputKeys.length > 0) def.outputKeys = outputKeys;
+    if (retryOnErrors.length > 0) def.retryOnErrors = retryOnErrors;
+    if (envVars.trim()) {
+      try {
+        def.envVars = JSON.parse(envVars);
+      } catch { /* skip invalid json */ }
+    }
     onSubmit([def]);
   };
 
@@ -184,6 +192,26 @@ export function TaskDefForm({ onSubmit, isPending }: TaskDefFormProps) {
             placeholder={t.typeKeyAndEnter}
           />
         </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label>{t.retryOnErrors}</Label>
+        <TagInput
+          tags={retryOnErrors}
+          onChange={setRetryOnErrors}
+          placeholder={t.retryOnErrorsHint}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label>{t.envVars}</Label>
+        <Textarea
+          rows={3}
+          value={envVars}
+          onChange={(e) => setEnvVars(e.target.value)}
+          placeholder={t.envVarsHint}
+          className="font-mono text-xs"
+        />
       </div>
 
       <div className="flex justify-end">

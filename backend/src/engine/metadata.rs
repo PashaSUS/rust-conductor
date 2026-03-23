@@ -169,4 +169,99 @@ impl WorkflowEngine {
         }
         Ok(())
     }
+
+    // ── Workflow Template CRUD ──
+
+    pub async fn register_template(&self, tmpl: &WorkflowTemplate) -> Result<WorkflowTemplate, EngineError> {
+        let json = serde_json::to_value(tmpl).map_err(|e| EngineError::Serde(e.to_string()))?;
+        sqlx::query(
+            "INSERT INTO workflow_template (name, definition) VALUES ($1, $2)
+             ON CONFLICT (name) DO UPDATE SET definition = $2, updated_on = NOW()",
+        )
+        .bind(&tmpl.name)
+        .bind(&json)
+        .execute(self.shards.primary())
+        .await
+        .map_err(|e| EngineError::Database(e.to_string()))?;
+        Ok(tmpl.clone())
+    }
+
+    pub async fn get_template(&self, name: &str) -> Result<WorkflowTemplate, EngineError> {
+        let row = sqlx::query_scalar::<_, Value>(
+            "SELECT definition FROM workflow_template WHERE name = $1",
+        )
+        .bind(name)
+        .fetch_optional(self.shards.primary())
+        .await
+        .map_err(|e| EngineError::Database(e.to_string()))?;
+
+        match row {
+            Some(json) => serde_json::from_value(json).map_err(|e| EngineError::Serde(e.to_string())),
+            None => Err(EngineError::NotFound(format!("Template not found: {name}"))),
+        }
+    }
+
+    pub async fn list_templates(&self) -> Result<Vec<WorkflowTemplate>, EngineError> {
+        let rows = sqlx::query_scalar::<_, Value>(
+            "SELECT definition FROM workflow_template ORDER BY name",
+        )
+        .fetch_all(self.shards.primary())
+        .await
+        .map_err(|e| EngineError::Database(e.to_string()))?;
+
+        rows.into_iter()
+            .map(|r| serde_json::from_value(r).map_err(|e| EngineError::Serde(e.to_string())))
+            .collect()
+    }
+
+    pub async fn delete_template(&self, name: &str) -> Result<(), EngineError> {
+        let result = sqlx::query("DELETE FROM workflow_template WHERE name = $1")
+            .bind(name)
+            .execute(self.shards.primary())
+            .await
+            .map_err(|e| EngineError::Database(e.to_string()))?;
+
+        if result.rows_affected() == 0 {
+            return Err(EngineError::NotFound(format!("Template {name} not found")));
+        }
+        Ok(())
+    }
+
+    /// Instantiate a template: replace parameter placeholders and start.
+    pub async fn instantiate_template(&self, req: &InstantiateTemplateRequest) -> Result<String, EngineError> {
+        let tmpl = self.get_template(&req.template_name).await?;
+        let mut def_json = serde_json::to_string(&tmpl.workflow_def)
+            .map_err(|e| EngineError::Serde(e.to_string()))?;
+
+        // Replace ${paramName} placeholders in the serialized JSON
+        for (key, val) in &req.parameter_values {
+            let placeholder = format!("${{{key}}}");
+            let replacement = match val {
+                Value::String(s) => s.clone(),
+                other => other.to_string(),
+            };
+            def_json = def_json.replace(&placeholder, &replacement);
+        }
+
+        let resolved_def: WorkflowDef = serde_json::from_str(&def_json)
+            .map_err(|e| EngineError::Serde(format!("Template parameter resolution failed: {e}")))?;
+
+        // Register the resolved def (auto-version) and start
+        let _ = self.register_workflow_def(&resolved_def).await?;
+        let start_req = StartWorkflowRequest {
+            name: resolved_def.name,
+            version: resolved_def.version,
+            input: req.input.clone(),
+            correlation_id: Some(format!("template:{}", req.template_name)),
+            priority: 0,
+            task_to_domain: Default::default(),
+            workflow_def: None,
+            external_input_payload_storage_path: None,
+            created_by: Some("template-engine".to_string()),
+            idempotency_key: None,
+            idempotency_strategy: None,
+            tags: vec![format!("template:{}", req.template_name)],
+        };
+        self.start_workflow(&start_req).await
+    }
 }

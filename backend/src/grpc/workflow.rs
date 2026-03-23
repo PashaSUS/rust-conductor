@@ -170,6 +170,7 @@ impl pb::workflow_service_server::WorkflowService for WorkflowServiceImpl {
                 opt(&req.free_text),
                 req.start,
                 req.size,
+                None,
             )
             .await
             .map_err(engine_err_to_status)?;

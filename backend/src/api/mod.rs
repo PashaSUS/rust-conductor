@@ -2,6 +2,8 @@ pub mod admin;
 pub mod bulk;
 pub mod event;
 pub mod metadata;
+pub mod rate_limit;
+pub mod schedule;
 pub mod tasks;
 pub mod workflow;
 
@@ -16,7 +18,8 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .configure(workflow::configure)
             .configure(tasks::configure)
             .configure(event::configure)
-            .configure(admin::configure),
+            .configure(admin::configure)
+            .configure(schedule::configure),
     )
     .route("/health", web::get().to(health));
 }

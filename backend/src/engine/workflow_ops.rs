@@ -241,6 +241,7 @@ impl WorkflowEngine {
         free_text: Option<&str>,
         start: i64,
         size: i64,
+        tags: Option<&[String]>,
     ) -> Result<SearchResult<WorkflowSummary>, EngineError> {
         let mut where_clause = String::from(" WHERE 1=1");
         if let Some(s) = status {
@@ -254,6 +255,12 @@ impl WorkflowEngine {
             where_clause.push_str(&format!(
                 " AND (workflow_name ILIKE '%{safe}%' OR correlation_id ILIKE '%{safe}%' OR workflow_id ILIKE '%{safe}%')"
             ));
+        }
+        if let Some(tag_list) = tags {
+            for tag in tag_list {
+                let safe = tag.replace('\'', "").replace('"', "");
+                where_clause.push_str(&format!(" AND tags @> '[\"{safe}\"]'::jsonb"));
+            }
         }
 
         let select_cols = "SELECT workflow_id, workflow_name, workflow_version, status, start_time, end_time, input::text, output::text, correlation_id, priority FROM workflow";
@@ -324,6 +331,38 @@ impl WorkflowEngine {
 
     pub async fn decide_workflow(&self, workflow_id: &str) -> Result<(), EngineError> {
         self.advance_workflow(workflow_id).await
+    }
+
+    /// Check for RUNNING workflows whose SLA deadline has passed.
+    /// Breached workflows are failed with status TIMED_OUT.
+    pub async fn check_sla_breaches(&self) -> Result<u64, EngineError> {
+        let mut breached: u64 = 0;
+
+        for shard in self.shards.all_shards() {
+            let rows: Vec<(String,)> = sqlx::query_as(
+                "SELECT workflow_id FROM workflow \
+                 WHERE status = 'RUNNING' \
+                   AND sla_deadline IS NOT NULL \
+                   AND sla_deadline < NOW()",
+            )
+            .fetch_all(shard)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "DB error checking SLA breaches");
+                EngineError::Database(e.to_string())
+            })?;
+
+            for (wf_id,) in &rows {
+                tracing::warn!(workflow_id = %wf_id, "SLA breach detected, failing workflow");
+                if let Err(e) = self.fail_workflow(wf_id, Some("SLA deadline breached"), "TIMED_OUT").await {
+                    tracing::error!(workflow_id = %wf_id, error = %e, "Failed to fail SLA-breached workflow");
+                } else {
+                    breached += 1;
+                }
+            }
+        }
+
+        Ok(breached)
     }
 
     pub async fn rerun_workflow(&self, workflow_id: &str, req: &RerunWorkflowRequest) -> Result<String, EngineError> {

@@ -19,7 +19,7 @@ impl WorkflowEngine {
             let orphans = sqlx::query_as::<_, OrphanedTaskRow>(
                 "SELECT task_id, task_def_name, workflow_instance_id FROM task \
                  WHERE status = 'SCHEDULED' \
-                   AND task_type NOT IN ('FORK','FORK_JOIN','JOIN','DECISION','SWITCH','SUB_WORKFLOW','DO_WHILE','TERMINATE','SET_VARIABLE','WAIT') \
+                   AND task_type NOT IN ('FORK','FORK_JOIN','JOIN','DECISION','SWITCH','SUB_WORKFLOW','DO_WHILE','TERMINATE','SET_VARIABLE','WAIT','LAMBDA','INLINE','EVENT') \
                    AND scheduled_time < NOW() - INTERVAL '30 seconds'",
             )
             .fetch_all(shard)
@@ -63,7 +63,7 @@ impl WorkflowEngine {
                 "UPDATE task SET status = 'TIMED_OUT', end_time = $1, update_time = $1, \
                  reason_for_incompletion = 'Task timed out (sweep)' \
                  WHERE status = 'IN_PROGRESS' \
-                   AND task_type NOT IN ('FORK','FORK_JOIN','JOIN','DECISION','SWITCH','SUB_WORKFLOW','DO_WHILE','TERMINATE','SET_VARIABLE','WAIT') \
+                   AND task_type NOT IN ('FORK','FORK_JOIN','JOIN','DECISION','SWITCH','SUB_WORKFLOW','DO_WHILE','TERMINATE','SET_VARIABLE','WAIT','LAMBDA','INLINE','EVENT') \
                    AND start_time < NOW() - INTERVAL '10 minutes' \
                  RETURNING workflow_instance_id",
             )
@@ -186,6 +186,18 @@ impl WorkflowEngine {
                 match engine.sweep_orphaned_tasks().await {
                     Ok(_) => {}
                     Err(e) => tracing::error!(error = %e, "Background sweep failed"),
+                }
+                // Run due CRON schedules
+                match engine.run_due_schedules().await {
+                    Ok(n) if n > 0 => tracing::info!(count = n, "CRON schedules triggered"),
+                    Err(e) => tracing::error!(error = %e, "CRON scheduler check failed"),
+                    _ => {}
+                }
+                // Check SLA breaches
+                match engine.check_sla_breaches().await {
+                    Ok(n) if n > 0 => tracing::warn!(count = n, "SLA breaches detected"),
+                    Err(e) => tracing::error!(error = %e, "SLA breach check failed"),
+                    _ => {}
                 }
             }
         });

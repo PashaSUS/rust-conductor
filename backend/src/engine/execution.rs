@@ -13,9 +13,12 @@ impl WorkflowEngine {
         let now = Utc::now();
         let db = self.shards.shard_for(&workflow_id);
 
+        let tags_json = serde_json::to_value(&req.tags).unwrap_or(Value::Array(vec![]));
+        let sla_deadline = def.sla_deadline_seconds.map(|secs| now + chrono::Duration::seconds(secs));
+
         sqlx::query(
-            "INSERT INTO workflow (workflow_id, workflow_name, workflow_version, status, input, correlation_id, start_time, update_time, priority, workflow_def)
-             VALUES ($1, $2, $3, 'RUNNING', $4, $5, $6, $6, $7, $8)",
+            "INSERT INTO workflow (workflow_id, workflow_name, workflow_version, status, input, correlation_id, start_time, update_time, priority, workflow_def, tags, sla_deadline)
+             VALUES ($1, $2, $3, 'RUNNING', $4, $5, $6, $6, $7, $8, $9, $10)",
         )
         .bind(&workflow_id)
         .bind(&req.name)
@@ -25,6 +28,8 @@ impl WorkflowEngine {
         .bind(now)
         .bind(req.priority)
         .bind(serde_json::to_value(&def).ok())
+        .bind(&tags_json)
+        .bind(sla_deadline)
         .execute(db)
         .await
         .map_err(|e| {
@@ -108,6 +113,10 @@ impl WorkflowEngine {
             }
             "EVENT" => {
                 self.handle_event_task(workflow_id, task_def, input, start_seq)
+                    .await?;
+            }
+            "LAMBDA" | "INLINE" => {
+                self.handle_lambda_task(workflow_id, task_def, input, start_seq)
                     .await?;
             }
             _ => {

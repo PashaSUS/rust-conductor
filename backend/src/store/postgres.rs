@@ -153,6 +153,45 @@ pub async fn run_migrations(pool: &DbPool) {
         // Task reference name lookups during advance_workflow
         "CREATE INDEX IF NOT EXISTS idx_task_wf_ref \
          ON task (workflow_instance_id, reference_task_name, seq DESC)",
+        // CRON scheduled workflows
+        r#"CREATE TABLE IF NOT EXISTS scheduled_workflow (
+            schedule_id     TEXT PRIMARY KEY,
+            name            TEXT NOT NULL,
+            cron_expression TEXT NOT NULL,
+            timezone        TEXT NOT NULL DEFAULT 'UTC',
+            workflow_name   TEXT NOT NULL,
+            workflow_version INT NOT NULL DEFAULT 1,
+            workflow_input  JSONB NOT NULL DEFAULT '{}',
+            enabled         BOOLEAN NOT NULL DEFAULT TRUE,
+            last_run_at     TIMESTAMPTZ,
+            next_run_at     TIMESTAMPTZ,
+            created_on      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_on      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )"#,
+        "CREATE INDEX IF NOT EXISTS idx_scheduled_workflow_next \
+         ON scheduled_workflow (next_run_at) WHERE enabled = TRUE",
+        // Add last_error column for schedule error visibility
+        "ALTER TABLE scheduled_workflow ADD COLUMN IF NOT EXISTS last_error TEXT",
+        // Workflow tags column
+        "ALTER TABLE workflow ADD COLUMN IF NOT EXISTS tags JSONB NOT NULL DEFAULT '[]'",
+        "CREATE INDEX IF NOT EXISTS idx_workflow_tags ON workflow USING GIN (tags)",
+        // Workflow SLA deadline tracking
+        "ALTER TABLE workflow ADD COLUMN IF NOT EXISTS sla_deadline TIMESTAMPTZ",
+        "CREATE INDEX IF NOT EXISTS idx_workflow_sla \
+         ON workflow (sla_deadline) WHERE status = 'RUNNING' AND sla_deadline IS NOT NULL",
+        // Task priority for priority-based polling
+        "ALTER TABLE task ADD COLUMN IF NOT EXISTS priority INT NOT NULL DEFAULT 0",
+        "CREATE INDEX IF NOT EXISTS idx_task_priority \
+         ON task (task_type, status, priority DESC) WHERE status = 'SCHEDULED'",
+        // Task env_vars for secrets injection
+        "ALTER TABLE task ADD COLUMN IF NOT EXISTS env_vars JSONB",
+        // Workflow templates
+        r#"CREATE TABLE IF NOT EXISTS workflow_template (
+            name        TEXT PRIMARY KEY,
+            definition  JSONB NOT NULL,
+            created_on  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_on  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )"#,
     ];
 
     for stmt in statements {
