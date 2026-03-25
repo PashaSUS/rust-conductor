@@ -1,0 +1,14 @@
+apiVersion: v2
+name: rust-conductor
+description: A Helm chart for deploying rust-conductor workflow orchestrator
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - conductor
+  - workflow
+  - orchestrator
+  - rust
+home: https://github.com/example/rust-conductor
+maintainers:
+  - name: rust-conductor

@@ -17,6 +17,11 @@ export function Breadcrumbs() {
     dependencies: t.breadcrumbDependencies,
     schedules: t.breadcrumbSchedules,
     about: t.breadcrumbAbout,
+    create: "Create",
+    designer: "Designer",
+    templates: "Templates",
+    compare: "Compare",
+    diff: "Diff",
   }), [t]);
 
   if (segments.length === 0) return null;

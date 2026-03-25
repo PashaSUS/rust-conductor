@@ -10,6 +10,55 @@ use super::rows::{TaskRow, WorkflowRow, WorkflowSummaryRow};
 use super::WorkflowEngine;
 use crate::models::*;
 
+/// Simple base64 encode (no padding, URL-safe).
+fn base64_encode(data: &[u8]) -> String {
+    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    let mut out = String::new();
+    for chunk in data.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
+        let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
+        let triple = (b0 << 16) | (b1 << 8) | b2;
+        out.push(CHARS[((triple >> 18) & 0x3F) as usize] as char);
+        out.push(CHARS[((triple >> 12) & 0x3F) as usize] as char);
+        if chunk.len() > 1 {
+            out.push(CHARS[((triple >> 6) & 0x3F) as usize] as char);
+        }
+        if chunk.len() > 2 {
+            out.push(CHARS[(triple & 0x3F) as usize] as char);
+        }
+    }
+    out
+}
+
+/// Simple base64 decode (URL-safe, no padding).
+fn base64_decode(data: &[u8]) -> Option<Vec<u8>> {
+    fn val(c: u8) -> Option<u32> {
+        match c {
+            b'A'..=b'Z' => Some((c - b'A') as u32),
+            b'a'..=b'z' => Some((c - b'a' + 26) as u32),
+            b'0'..=b'9' => Some((c - b'0' + 52) as u32),
+            b'-' | b'+' => Some(62),
+            b'_' | b'/' => Some(63),
+            _ => None,
+        }
+    }
+    let mut out = Vec::new();
+    let mut buf: u32 = 0;
+    let mut bits: u32 = 0;
+    for &b in data {
+        if b == b'=' { continue; }
+        buf = (buf << 6) | val(b)?;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((buf >> bits) as u8);
+            buf &= (1 << bits) - 1;
+        }
+    }
+    Some(out)
+}
+
 impl WorkflowEngine {
     pub async fn get_workflow(&self, workflow_id: &str) -> Result<Workflow, EngineError> {
         let db = self.shards.shard_for(workflow_id);
@@ -228,7 +277,7 @@ impl WorkflowEngine {
             self.queue
                 .enqueue(task_def_name, task_id)
                 .await
-                .map_err(|e| EngineError::Redis(e))?;
+                .map_err(EngineError::Redis)?;
         }
 
         Ok(())
@@ -242,6 +291,19 @@ impl WorkflowEngine {
         start: i64,
         size: i64,
         tags: Option<&[String]>,
+    ) -> Result<SearchResult<WorkflowSummary>, EngineError> {
+        self.search_workflows_with_cursor(status, name, free_text, start, size, tags, None).await
+    }
+
+    pub async fn search_workflows_with_cursor(
+        &self,
+        status: Option<&str>,
+        name: Option<&str>,
+        free_text: Option<&str>,
+        start: i64,
+        size: i64,
+        tags: Option<&[String]>,
+        cursor: Option<&str>,
     ) -> Result<SearchResult<WorkflowSummary>, EngineError> {
         let mut where_clause = String::from(" WHERE 1=1");
         if let Some(s) = status {
@@ -258,19 +320,46 @@ impl WorkflowEngine {
         }
         if let Some(tag_list) = tags {
             for tag in tag_list {
-                let safe = tag.replace('\'', "").replace('"', "");
+                let safe = tag.replace(['\'', '"'], "");
                 where_clause.push_str(&format!(" AND tags @> '[\"{safe}\"]'::jsonb"));
+            }
+        }
+
+        // Cursor-based keyset pagination: decode (start_time_ms, workflow_id) from cursor
+        let cursor_decoded = cursor.and_then(|c| {
+            let decoded = String::from_utf8(
+                base64_decode(c.as_bytes())?
+            ).ok()?;
+            let v: serde_json::Value = serde_json::from_str(&decoded).ok()?;
+            let t = v.get("t")?.as_i64()?;
+            let id = v.get("id")?.as_str()?.to_string();
+            Some((t, id))
+        });
+
+        if let Some((cursor_time_ms, cursor_id)) = &cursor_decoded {
+            // Convert milliseconds to a safe timestamp string for keyset pagination
+            let ts = chrono::DateTime::from_timestamp_millis(*cursor_time_ms);
+            if let Some(ts) = ts {
+                let ts_str = ts.format("%Y-%m-%d %H:%M:%S%.6f%z").to_string();
+                let safe_id = cursor_id.replace('\'', "");
+                where_clause.push_str(&format!(
+                    " AND (start_time, workflow_id) < ('{ts_str}'::timestamptz, '{safe_id}')"
+                ));
             }
         }
 
         let select_cols = "SELECT workflow_id, workflow_name, workflow_version, status, start_time, end_time, input::text, output::text, correlation_id, priority FROM workflow";
 
-        // Parallel fan-out across all shards
-        let fetch_size = size + start;
-        let count_query = format!("SELECT COUNT(*) FROM workflow{where_clause}");
-        let data_query = format!("{select_cols}{where_clause} ORDER BY start_time DESC LIMIT {fetch_size} OFFSET 0");
+        // Use read replicas for search queries
+        let read_shards = self.shards.read_shards();
 
-        let futs: Vec<_> = self.shards.all_shards().iter().map(|shard| {
+        // For cursor-based pagination, we don't use OFFSET
+        let effective_offset = if cursor_decoded.is_some() { 0 } else { start };
+        let fetch_size = size + effective_offset;
+        let count_query = format!("SELECT COUNT(*) FROM workflow{where_clause}");
+        let data_query = format!("{select_cols}{where_clause} ORDER BY start_time DESC, workflow_id DESC LIMIT {fetch_size} OFFSET 0");
+
+        let futs: Vec<_> = read_shards.iter().map(|shard| {
             let cq = count_query.clone();
             let dq = data_query.clone();
             async move {
@@ -296,21 +385,33 @@ impl WorkflowEngine {
         }
 
         // Sort merged results and apply pagination
-        all_results.sort_by(|a, b| b.start_time.cmp(&a.start_time));
+        all_results.sort_by(|a, b| {
+            b.start_time.cmp(&a.start_time)
+                .then_with(|| b.workflow_id.cmp(&a.workflow_id))
+        });
+        let skip = if cursor_decoded.is_some() { 0 } else { start as usize };
         let paged: Vec<WorkflowSummary> = all_results
             .into_iter()
-            .skip(start as usize)
+            .skip(skip)
             .take(size as usize)
             .collect();
+
+        // Build next cursor from the last result
+        let next_cursor = paged.last().and_then(|last| {
+            let t = last.start_time.as_ref()?.parse::<i64>().ok()?;
+            let cursor_json = serde_json::json!({"t": t, "id": &last.workflow_id});
+            Some(base64_encode(cursor_json.to_string().as_bytes()))
+        });
 
         Ok(SearchResult {
             total_hits: total,
             results: paged,
+            next_cursor,
         })
     }
 
     pub async fn workflow_stats(&self) -> Result<HashMap<String, i64>, EngineError> {
-        let futs: Vec<_> = self.shards.all_shards().iter().map(|shard| {
+        let futs: Vec<_> = self.shards.read_shards().iter().map(|shard| {
             sqlx::query_as::<_, (String, i64)>(
                 "SELECT status, COUNT(*) FROM workflow GROUP BY status",
             )
@@ -451,7 +552,7 @@ impl WorkflowEngine {
         }
         base_query.push_str(" ORDER BY start_time DESC");
 
-        let futs: Vec<_> = self.shards.all_shards().iter().map(|shard| {
+        let futs: Vec<_> = self.shards.read_shards().iter().map(|shard| {
             let q = base_query.clone();
             async move {
                 sqlx::query_scalar::<_, String>(&q)

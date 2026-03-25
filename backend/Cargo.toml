@@ -18,7 +18,7 @@ sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "chrono", "uu
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-actix-web = "0.7"
-reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+reqwest = { version = "0.13", features = ["json", "rustls"], default-features = false }
 dotenvy = "0.15"
 thiserror = "2"
 futures = "0.3"
@@ -26,40 +26,63 @@ num_cpus = "1"
 utoipa = { version = "5", features = ["actix_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { version = "9", features = ["actix-web", "vendored"] }
 rust-embed = "8"
-rand = { version = "0.8", features = ["std", "small_rng"] }
+rand = { version = "0.9", features = ["std", "small_rng"] }
 anyhow = "1.0.102"
+lru = "0.16"
+
+# GraphQL (optional — enable with `graphql` feature)
+async-graphql = { version = "7", features = ["chrono", "uuid"], optional = true }
+async-graphql-actix-web = { version = "7", optional = true }
+
+# Server-Sent Events (optional — enable with `sse` feature)
+async-stream = { version = "0.3", optional = true }
+
+# WebSocket (optional — enable with `websocket` feature)
+actix-ws = { version = "0.4", optional = true }
 
 # gRPC
-tonic = { version = "0.12", features = ["gzip"] }
+tonic = { version = "0.13", features = ["gzip"] }
+tonic-reflection = { version = "0.13", optional = true }
 prost = "0.13"
 prost-types = "0.13"
-tokio-stream = "0.1"
+tokio-stream = { version = "0.1", features = ["sync"] }
 tower = { version = "0.5", features = ["limit"] }
 
 # Kafka (optional — only needed for PROD; DEV uses Redis Streams)
-rdkafka = { version = "0.36", features = ["tokio", "cmake-build"], optional = true }
+rdkafka = { version = "0.37", features = ["tokio", "cmake-build"], optional = true }
 
 # S3-compatible object storage (MinIO, AWS S3, etc.)
-rust-s3 = { version = "0.35", optional = true, default-features = false, features = ["tokio-rustls-tls"] }
+rust-s3 = { version = "0.37", optional = true, default-features = false, features = ["tokio-rustls-tls"] }
 
 [dev-dependencies]
 tokio-test = "0.4"
 proptest = "1"
 serde_test = "1"
 criterion = { version = "0.5", features = ["html_reports", "async_tokio"] }
-testcontainers = "0.23"
-testcontainers-modules = { version = "0.11", features = ["postgres", "redis", "kafka"] }
+testcontainers = "0.27"
+testcontainers-modules = { version = "0.15", features = ["postgres", "redis", "kafka"] }
 arbitrary = { version = "1", features = ["derive"] }
 
 [build-dependencies]
-tonic-build = "0.12"
+tonic-build = "0.13"
 
 [[bench]]
 name = "workflow_bench"
 harness = false
 
 [features]
-default = ["seq", "kafka"]
+default = ["seq", "kafka", "graphql", "sse", "websocket", "grpc-reflection", "api-v2"]
 seq = []
 kafka = ["rdkafka"]
 external-storage = ["rust-s3"]
+graphql = ["async-graphql", "async-graphql-actix-web"]
+sse = ["async-stream"]
+websocket = ["actix-ws"]
+grpc-reflection = ["tonic-reflection"]
+api-v2 = []
+
+# Build profiles — convenience feature groups
+bare-metal = []                                              # minimal core only
+feature-rich = ["kafka", "graphql", "sse", "websocket", "grpc-reflection", "api-v2", "external-storage", "seq"]
+fast = ["seq"]                                               # optimised for low-latency dev
+scalable = ["kafka", "external-storage", "grpc-reflection"]  # production scaling

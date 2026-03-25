@@ -103,28 +103,11 @@ pub fn struct_to_hashmap(st: &Struct) -> HashMap<String, JsonValue> {
         .collect()
 }
 
-/// Helper: Option<Struct> → serde_json::Value (Object or Null).
-pub fn opt_struct_to_json(st: &Option<Struct>) -> JsonValue {
-    match st {
-        Some(s) => struct_to_json(s),
-        None => JsonValue::Object(Default::default()),
-    }
-}
-
 /// Helper: Option<Struct> → HashMap<String, Value>.
 pub fn opt_struct_to_hashmap(st: &Option<Struct>) -> HashMap<String, JsonValue> {
     match st {
         Some(s) => struct_to_hashmap(s),
         None => HashMap::new(),
-    }
-}
-
-/// Helper: serde_json::Value → Option<Struct> (None for null/empty).
-pub fn json_to_opt_struct(v: &JsonValue) -> Option<Struct> {
-    match v {
-        JsonValue::Null => None,
-        JsonValue::Object(m) if m.is_empty() => None,
-        _ => Some(json_to_struct(v)),
     }
 }
 
@@ -135,11 +118,6 @@ pub fn hashmap_to_opt_struct(m: &HashMap<String, JsonValue>) -> Option<Struct> {
     } else {
         Some(hashmap_to_struct(m))
     }
-}
-
-/// Helper: map<String,String> for proto
-pub fn opt_hashmap_string_to_proto(m: &Option<HashMap<String, String>>) -> HashMap<String, String> {
-    m.clone().unwrap_or_default()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -223,22 +201,12 @@ pub fn opt_struct_to_json_owned(st: Option<Struct>) -> JsonValue {
     }
 }
 
-pub fn struct_to_hashmap_owned(st: Struct) -> HashMap<String, JsonValue> {
-    st.fields.into_iter().map(|(k, v)| (k, prost_to_json_owned(v))).collect()
-}
-
-pub fn opt_struct_to_hashmap_owned(st: Option<Struct>) -> HashMap<String, JsonValue> {
-    match st {
-        Some(s) => struct_to_hashmap_owned(s),
-        None => HashMap::new(),
-    }
-}
-
 fn opt_string_owned(s: String) -> Option<String> {
     if s.is_empty() { None } else { Some(s) }
 }
 
 /// Parse task status from string without serde_json roundtrip.
+#[allow(clippy::result_large_err)]
 pub fn parse_task_status(s: &str) -> Result<models::TaskStatus, Status> {
     match s {
         "IN_PROGRESS" => Ok(models::TaskStatus::InProgress),
@@ -570,6 +538,7 @@ pub fn task_result_to_proto(t: models::TaskResult) -> pb::TaskResultPb {
 
 // ── TaskUpdateRequest ──
 
+#[allow(clippy::result_large_err)]
 pub fn task_update_from_proto(p: pb::UpdateTaskRequest) -> Result<models::TaskUpdateRequest, Status> {
     let status = parse_task_status(&p.status)?;
     Ok(models::TaskUpdateRequest {
@@ -1098,6 +1067,7 @@ pub fn poll_task_to_official(t: models::PollTask) -> opb::OfPollTaskPb {
 
 // ── Official TaskUpdate ──
 
+#[allow(clippy::result_large_err)]
 pub fn task_update_from_official(p: opb::OfUpdateTaskRequest) -> Result<models::TaskUpdateRequest, Status> {
     let status = parse_task_status(&p.status)?;
     Ok(models::TaskUpdateRequest {
@@ -1239,14 +1209,6 @@ pub fn event_handler_from_official(p: &opb::OfEventHandlerPb) -> models::EventHa
         active: p.active,
         evaluator_type: opt_string(&p.evaluator_type),
     }
-}
-
-// ── Health (official) ──
-
-pub fn health_to_official(_h: &models::HealthCheckStatus) -> opb::OfWorkflowPb {
-    // Not needed — official proto doesn't have a Health service
-    // Placeholder to keep symmetry
-    unreachable!()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

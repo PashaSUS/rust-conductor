@@ -24,6 +24,8 @@ pub use error::EngineError;
 pub use shard::ShardedPool;
 
 use crate::models::*;
+use std::num::NonZeroUsize;
+use std::sync::Mutex;
 
 pub(crate) fn is_task_terminal(status: &TaskStatus) -> bool {
     matches!(
@@ -38,6 +40,7 @@ pub(crate) fn is_task_terminal(status: &TaskStatus) -> bool {
     )
 }
 
+#[cfg(test)]
 pub(crate) fn is_task_successful(status: &TaskStatus) -> bool {
     matches!(
         status,
@@ -66,6 +69,13 @@ pub struct WorkflowEngine {
     queue: RedisTaskQueue,
     #[cfg(feature = "external-storage")]
     pub(crate) external_storage: Option<crate::store::s3::ExternalPayloadStorage>,
+    /// In-memory LRU cache for workflow definitions.
+    wf_def_cache: std::sync::Arc<Mutex<lru::LruCache<(String, i32), WorkflowDef>>>,
+    /// In-memory LRU cache for task definitions.
+    task_def_cache: std::sync::Arc<Mutex<lru::LruCache<String, TaskDef>>>,
+    /// Sweeper configuration.
+    pub(crate) sweeper_min_interval_secs: u64,
+    pub(crate) sweeper_max_interval_secs: u64,
 }
 
 impl WorkflowEngine {
@@ -79,13 +89,49 @@ impl WorkflowEngine {
         #[cfg(feature = "external-storage")]
         external_storage: Option<crate::store::s3::ExternalPayloadStorage>,
     ) -> Self {
+        Self::with_cache_size(
+            shards,
+            redis,
+            #[cfg(feature = "kafka")]
+            queue,
+            #[cfg(not(feature = "kafka"))]
+            queue,
+            #[cfg(feature = "external-storage")]
+            external_storage,
+            1000,
+        )
+    }
+
+    pub fn with_cache_size(
+        shards: ShardedPool,
+        redis: ShardedRedis,
+        #[cfg(feature = "kafka")]
+        queue: KafkaTaskQueue,
+        #[cfg(not(feature = "kafka"))]
+        queue: RedisTaskQueue,
+        #[cfg(feature = "external-storage")]
+        external_storage: Option<crate::store::s3::ExternalPayloadStorage>,
+        cache_max_entries: usize,
+    ) -> Self {
+        let cap = NonZeroUsize::new(cache_max_entries.max(1)).unwrap();
         Self {
             shards,
             redis,
             queue,
             #[cfg(feature = "external-storage")]
             external_storage,
+            wf_def_cache: std::sync::Arc::new(Mutex::new(lru::LruCache::new(cap))),
+            task_def_cache: std::sync::Arc::new(Mutex::new(lru::LruCache::new(cap))),
+            sweeper_min_interval_secs: 10,
+            sweeper_max_interval_secs: 60,
         }
+    }
+
+    /// Configure sweeper interval bounds.
+    pub fn with_sweeper_config(mut self, min_secs: u64, max_secs: u64) -> Self {
+        self.sweeper_min_interval_secs = min_secs;
+        self.sweeper_max_interval_secs = max_secs;
+        self
     }
 
     // ── Task-shard routing helpers ─────────────────────────────────────
@@ -180,11 +226,11 @@ impl WorkflowEngine {
             return Ok(Some((wf_id.clone(), self.shards.shard_for(&wf_id))));
         }
         // Single-shard shortcut
-        if self.shards.all_shards().len() == 1 {
+        if self.shards.read_shards().len() == 1 {
             let row: Option<(String,)> =
                 sqlx::query_as("SELECT workflow_instance_id FROM task WHERE task_id = $1")
                     .bind(task_id)
-                    .fetch_optional(&self.shards.all_shards()[0])
+                    .fetch_optional(&self.shards.read_shards()[0])
                     .await
                     .map_err(|e| EngineError::Database(e.to_string()))?;
             if let Some((wf_id,)) = row {
@@ -195,7 +241,7 @@ impl WorkflowEngine {
             return Ok(None);
         }
         // Fallback: parallel fan-out across all shards
-        let futs: Vec<_> = self.shards.all_shards().iter().map(|shard| {
+        let futs: Vec<_> = self.shards.read_shards().iter().map(|shard| {
             sqlx::query_as::<_, (String,)>("SELECT workflow_instance_id FROM task WHERE task_id = $1")
                 .bind(task_id)
                 .fetch_optional(shard)
@@ -207,5 +253,190 @@ impl WorkflowEngine {
             }
         }
         Ok(None)
+    }
+
+    // ── Redis pipeline batching for bulk routing lookups ──────────────
+
+    /// Batch lookup multiple task_ids → workflow_instance_ids via Redis pipeline.
+    pub(crate) async fn batch_get_task_routing(
+        &self,
+        task_ids: &[String],
+    ) -> Result<Vec<Option<String>>, EngineError> {
+        if task_ids.is_empty() {
+            return Ok(vec![]);
+        }
+        // Group task_ids by their Redis shard
+        let mut shard_groups: std::collections::HashMap<usize, Vec<(usize, &str)>> =
+            std::collections::HashMap::new();
+        for (idx, tid) in task_ids.iter().enumerate() {
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            std::hash::Hash::hash(tid.as_str(), &mut hasher);
+            let shard_idx = (std::hash::Hasher::finish(&hasher) as usize) % self.redis.num_shards();
+            shard_groups.entry(shard_idx).or_default().push((idx, tid));
+        }
+
+        let mut results = vec![None; task_ids.len()];
+
+        for (_shard_idx, items) in &shard_groups {
+            let pool = self.redis.pool_for_key(items[0].1);
+            let mut conn = pool.get().await.map_err(|e| EngineError::Redis(e.to_string()))?;
+
+            // Build pipeline
+            let mut pipe = deadpool_redis::redis::pipe();
+            for (_, tid) in items {
+                pipe.cmd("HGET").arg(TASK_ROUTING_KEY).arg(*tid);
+            }
+
+            let values: Vec<Option<String>> = pipe
+                .query_async(&mut *conn)
+                .await
+                .map_err(|e| EngineError::Redis(e.to_string()))?;
+
+            for (i, (orig_idx, _)) in items.iter().enumerate() {
+                if i < values.len() {
+                    results[*orig_idx] = values[i].clone();
+                }
+            }
+        }
+
+        Ok(results)
+    }
+
+    /// Batch set multiple task_id → workflow_id routing entries via Redis pipeline.
+    pub(crate) async fn batch_set_task_routing(
+        &self,
+        mappings: &[(&str, &str)],
+    ) -> Result<(), EngineError> {
+        if mappings.is_empty() {
+            return Ok(());
+        }
+        // Group by Redis shard
+        let mut shard_groups: std::collections::HashMap<usize, Vec<(&str, &str)>> =
+            std::collections::HashMap::new();
+        for &(tid, wid) in mappings {
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            std::hash::Hash::hash(tid, &mut hasher);
+            let shard_idx = (std::hash::Hasher::finish(&hasher) as usize) % self.redis.num_shards();
+            shard_groups.entry(shard_idx).or_default().push((tid, wid));
+        }
+
+        for (_shard_idx, items) in &shard_groups {
+            let pool = self.redis.pool_for_key(items[0].0);
+            let mut conn = pool.get().await.map_err(|e| EngineError::Redis(e.to_string()))?;
+
+            let mut pipe = deadpool_redis::redis::pipe();
+            for &(tid, wid) in items {
+                pipe.cmd("HSET").arg(TASK_ROUTING_KEY).arg(tid).arg(wid);
+            }
+
+            let _: Vec<i64> = pipe
+                .query_async(&mut *conn)
+                .await
+                .map_err(|e| EngineError::Redis(e.to_string()))?;
+        }
+
+        Ok(())
+    }
+
+    // ── Pool metrics for /metrics endpoint ────────────────────────────
+
+    /// Collect connection pool metrics for all backends.
+    pub fn pool_metrics(&self) -> serde_json::Value {
+        let pg_metrics: Vec<serde_json::Value> = self
+            .shards
+            .all_shards()
+            .iter()
+            .enumerate()
+            .map(|(i, pool)| {
+                let m = crate::store::postgres::pool_metrics(pool);
+                serde_json::json!({
+                    "shard": i,
+                    "size": m.size,
+                    "idle": m.num_idle,
+                    "active": m.active,
+                })
+            })
+            .collect();
+
+        let replica_metrics: Vec<serde_json::Value> = if self.shards.has_replicas() {
+            self.shards
+                .read_shards()
+                .iter()
+                .enumerate()
+                .map(|(i, pool)| {
+                    let m = crate::store::postgres::pool_metrics(pool);
+                    serde_json::json!({
+                        "shard": i,
+                        "size": m.size,
+                        "idle": m.num_idle,
+                        "active": m.active,
+                    })
+                })
+                .collect()
+        } else {
+            vec![]
+        };
+
+        let redis_metrics: Vec<serde_json::Value> = self
+            .redis
+            .pool_metrics()
+            .into_iter()
+            .map(|m| {
+                serde_json::json!({
+                    "shard": m.shard,
+                    "size": m.size,
+                    "available": m.available,
+                    "max_size": m.max_size,
+                })
+            })
+            .collect();
+
+        serde_json::json!({
+            "postgres": {
+                "primary": pg_metrics,
+                "replicas": replica_metrics,
+            },
+            "redis": redis_metrics,
+        })
+    }
+
+    // ── LRU cache helpers ─────────────────────────────────────────────
+
+    pub(crate) fn cache_get_workflow_def(&self, name: &str, version: i32) -> Option<WorkflowDef> {
+        self.wf_def_cache
+            .lock()
+            .ok()
+            .and_then(|mut cache| cache.get(&(name.to_string(), version)).cloned())
+    }
+
+    pub(crate) fn cache_put_workflow_def(&self, def: &WorkflowDef) {
+        if let Ok(mut cache) = self.wf_def_cache.lock() {
+            cache.put((def.name.clone(), def.version), def.clone());
+        }
+    }
+
+    pub(crate) fn cache_invalidate_workflow_def(&self, name: &str, version: i32) {
+        if let Ok(mut cache) = self.wf_def_cache.lock() {
+            cache.pop(&(name.to_string(), version));
+        }
+    }
+
+    pub(crate) fn cache_get_task_def(&self, name: &str) -> Option<TaskDef> {
+        self.task_def_cache
+            .lock()
+            .ok()
+            .and_then(|mut cache| cache.get(&name.to_string()).cloned())
+    }
+
+    pub(crate) fn cache_put_task_def(&self, def: &TaskDef) {
+        if let Ok(mut cache) = self.task_def_cache.lock() {
+            cache.put(def.name.clone(), def.clone());
+        }
+    }
+
+    pub(crate) fn cache_invalidate_task_def(&self, name: &str) {
+        if let Ok(mut cache) = self.task_def_cache.lock() {
+            cache.pop(&name.to_string());
+        }
     }
 }

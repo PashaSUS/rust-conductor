@@ -6,7 +6,7 @@ echo  rust-conductor Setup - DEV Mode
 echo ========================================
 echo.
 echo Lightweight setup for development machines.
-echo Single shard, no PgBouncer, no Nginx LB, no Seq.
+echo Single shard, no PgBouncer, no Nginx LB.
 echo Saves ~1-2GB RAM while keeping full functionality.
 echo.
 
@@ -23,7 +23,7 @@ echo  DEV Defaults
 echo ========================================
 echo  Shards: 1, Replicas: 1, Redis: 1
 echo  Kafka: OFF (uses Redis Streams instead)
-echo  PgBouncer: OFF, Nginx LB: OFF, Seq: OFF
+echo  PgBouncer: OFF, Nginx LB: OFF
 echo ========================================
 echo.
 
@@ -32,6 +32,46 @@ set /p "BACKEND_PORT=Backend API port [!BACKEND_PORT!]: " || set "BACKEND_PORT=!
 set /p "GRPC_PORT=gRPC port [!GRPC_PORT!]: " || set "GRPC_PORT=!GRPC_PORT!"
 set /p "FRONTEND_PORT=Frontend port [!FRONTEND_PORT!]: " || set "FRONTEND_PORT=!FRONTEND_PORT!"
 
+
+REM ================================================================
+REM  Interactive Feature Selection
+REM ================================================================
+echo.
+echo ========================================
+echo  Optional Features
+echo ========================================
+echo  Choose which features to enable.
+echo  Press Enter to accept the default (shown in brackets).
+echo ========================================
+echo.
+
+REM -- Seq (structured logging) --
+set "USE_SEQ=N"
+set /p USE_SEQ="Enable Seq structured logging? (y/N): "
+
+REM -- Kafka --
+set "USE_KAFKA=N"
+set /p USE_KAFKA="Enable Kafka event streaming? (y/N): "
+
+REM -- GraphQL --
+set "USE_GRAPHQL=N"
+set /p USE_GRAPHQL="Enable GraphQL API? (y/N): "
+
+REM -- SSE --
+set "USE_SSE=N"
+set /p USE_SSE="Enable Server-Sent Events (SSE)? (y/N): "
+
+REM -- WebSocket --
+set "USE_WS=N"
+set /p USE_WS="Enable WebSocket real-time feeds? (y/N): "
+
+REM -- gRPC Reflection --
+set "USE_GRPC_REFLECT=N"
+set /p USE_GRPC_REFLECT="Enable gRPC reflection? (y/N): "
+
+REM -- API v2 --
+set "USE_V2=N"
+set /p USE_V2="Enable API v2 endpoints? (y/N): "
 
 REM -- External payload storage (RustFS / S3) --
 echo.
@@ -57,6 +97,24 @@ if /i "!USE_MINIO!"=="y" (
     echo   Console: http://localhost:!MINIO_CONSOLE_PORT!
     echo   Default credentials: rustfsadmin / rustfsadmin
     echo.
+)
+
+REM -- Build cargo features string --
+set "CARGO_FEATURES="
+if /i "!USE_SEQ!"=="y" set "CARGO_FEATURES=!CARGO_FEATURES!seq,"
+if /i "!USE_KAFKA!"=="y" set "CARGO_FEATURES=!CARGO_FEATURES!kafka,"
+if /i "!USE_GRAPHQL!"=="y" set "CARGO_FEATURES=!CARGO_FEATURES!graphql,"
+if /i "!USE_SSE!"=="y" set "CARGO_FEATURES=!CARGO_FEATURES!sse,"
+if /i "!USE_WS!"=="y" set "CARGO_FEATURES=!CARGO_FEATURES!websocket,"
+if /i "!USE_GRPC_REFLECT!"=="y" set "CARGO_FEATURES=!CARGO_FEATURES!grpc-reflection,"
+if /i "!USE_V2!"=="y" set "CARGO_FEATURES=!CARGO_FEATURES!api-v2,"
+if /i "!USE_MINIO!"=="y" set "CARGO_FEATURES=!CARGO_FEATURES!external-storage,"
+
+REM Remove trailing comma
+if "!CARGO_FEATURES!"=="" (
+    set "CARGO_FEATURES=bare-metal"
+) else (
+    set "CARGO_FEATURES=!CARGO_FEATURES:~0,-1!"
 )
 
 
@@ -243,7 +301,7 @@ REM -- Backend Migrator --
 >> "%FILE%" echo       context: ./backend
 >> "%FILE%" echo       dockerfile: Dockerfile
 >> "%FILE%" echo       args:
->> "%FILE%" echo         CARGO_FEATURES: "seq"
+>> "%FILE%" echo         CARGO_FEATURES: "!CARGO_FEATURES!"
 >> "%FILE%" echo     environment:
 >> "%FILE%" echo       HOST: "0.0.0.0"
 >> "%FILE%" echo       PORT: "!BACKEND_PORT!"
@@ -276,7 +334,7 @@ REM -- Backend --
 >> "%FILE%" echo       context: ./backend
 >> "%FILE%" echo       dockerfile: Dockerfile
 >> "%FILE%" echo       args:
->> "%FILE%" echo         CARGO_FEATURES: "seq"
+>> "%FILE%" echo         CARGO_FEATURES: "!CARGO_FEATURES!"
 >> "%FILE%" echo     restart: unless-stopped
 >> "%FILE%" echo     ports:
 >> "%FILE%" echo       - "!BACKEND_PORT!:!BACKEND_PORT!"
@@ -341,7 +399,6 @@ echo ========================================
 echo  docker-compose.yml generated [DEV]
 echo ========================================
 echo    Shards:     1 DB, 1 Redis
-echo    Kafka:      OFF (Redis Streams)
 echo    Replicas:   1
 echo    Public URL: !PUBLIC_URL!
 echo    API:        !PUBLIC_URL!/api
@@ -349,7 +406,7 @@ echo    gRPC:       port !GRPC_PORT!
 echo    CORS:       !PUBLIC_URL!
 echo    PgBouncer:  OFF
 echo    Nginx LB:   OFF
-echo    Seq:        OFF
+echo    Features:   !CARGO_FEATURES!
 if /i "!USE_MINIO!"=="y" (
     echo    RustFS API: http://localhost:!MINIO_PORT!
     echo    RustFS UI:  http://localhost:!MINIO_CONSOLE_PORT!

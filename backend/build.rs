@@ -23,9 +23,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    let out_dir = std::env::var("OUT_DIR").unwrap();
+    let descriptor_path = std::path::Path::new(&out_dir).join("conductor_descriptor.bin");
+
     tonic_build::configure()
         .build_server(true)
         .build_client(true)
+        .file_descriptor_set_path(&descriptor_path)
         .compile_protos(
             &["proto/conductor.proto", "proto/conductor_official.proto"],
             &["proto"],

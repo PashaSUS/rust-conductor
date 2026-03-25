@@ -56,7 +56,7 @@ impl WorkflowEngine {
 
     pub async fn health_check(&self) -> Result<HealthCheckStatus, EngineError> {
         // Check all shards in parallel
-        let shard_futs: Vec<_> = self.shards.all_shards().iter().enumerate().map(|(i, shard)| async move {
+        let shard_futs: Vec<_> = self.shards.read_shards().iter().enumerate().map(|(i, shard)| async move {
             let ok = sqlx::query("SELECT 1")
                 .execute(shard)
                 .await
@@ -128,7 +128,7 @@ impl WorkflowEngine {
     // ── Admin task operations ──
 
     pub async fn get_tasks_for_type(&self, task_type: &str) -> Result<Vec<TaskResult>, EngineError> {
-        let futs: Vec<_> = self.shards.all_shards().iter().map(|shard| {
+        let futs: Vec<_> = self.shards.read_shards().iter().map(|shard| {
             async move {
                 sqlx::query_as::<_, TaskRow>(
                     "SELECT * FROM task WHERE task_def_name = $1 ORDER BY scheduled_time DESC LIMIT 100",
@@ -167,7 +167,7 @@ impl WorkflowEngine {
         for result in results {
             for (task_id, workflow_id) in result? {
                 self.set_task_routing(&task_id, &workflow_id).await?;
-                self.queue.enqueue(task_type, &task_id).await.map_err(|e| EngineError::Redis(e))?;
+                self.queue.enqueue(task_type, &task_id).await.map_err(EngineError::Redis)?;
                 count += 1;
             }
         }

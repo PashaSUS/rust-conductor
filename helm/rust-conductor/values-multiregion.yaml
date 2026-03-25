@@ -1,0 +1,108 @@
+# Multi-region Helm values overlay
+# Usage: helm install ... -f values.yaml -f values-multiregion.yaml
+#
+# Architecture:
+#   - Each region runs its own Postgres shards, Redis, and Kafka cluster
+#   - A "region router" annotation on workflows determines the home region
+#   - Cross-region reads are served via read replicas or async replication
+#   - The ingress uses geo-based routing to direct users to the nearest region
+#
+# Deploy per region with region-specific overrides:
+#   helm install conductor-us ./helm/rust-conductor \
+#     -f values.yaml -f values-multiregion.yaml \
+#     --set region.name=us-east-1 \
+#     --set region.isPrimary=true
+
+# ── Region identity ──
+region:
+  name: us-east-1
+  isPrimary: true
+  # Peer regions for cross-region workflow routing
+  peers:
+    - name: eu-west-1
+      apiEndpoint: https://conductor-eu.example.com
+    - name: ap-southeast-1
+      apiEndpoint: https://conductor-ap.example.com
+
+# ── Backend (region-aware) ──
+backend:
+  replicaCount: 3
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 20
+  env:
+    HOST: "0.0.0.0"
+    PORT: "8090"
+    GRPC_PORT: "50055"
+    NUM_SHARDS: "2"
+    RUST_LOG: "info"
+    SKIP_MIGRATIONS: "true"
+    # Region-specific routing
+    REGION: us-east-1
+    PEER_REGIONS: "eu-west-1=https://conductor-eu.example.com,ap-southeast-1=https://conductor-ap.example.com"
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 1Gi
+  # Anti-affinity: spread backend pods across AZs
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/component: backend
+            topologyKey: topology.kubernetes.io/zone
+
+# ── Ingress (geo-routing) ──
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # Geo-based routing annotations (cloud-specific)
+    external-dns.alpha.kubernetes.io/hostname: conductor.example.com
+    external-dns.alpha.kubernetes.io/aws-weight: "100"
+    external-dns.alpha.kubernetes.io/set-identifier: us-east-1
+  hosts:
+    - host: conductor.example.com
+      paths:
+        - path: /api
+          pathType: Prefix
+          service: backend
+          port: 8090
+        - path: /
+          pathType: Prefix
+          service: frontend
+          port: 3170
+  tls:
+    - secretName: conductor-tls
+      hosts:
+        - conductor.example.com
+
+# ── Cross-region database replication ──
+# For multi-region, use external databases with cross-region replication
+postgresql:
+  enabled: false
+externalDatabase:
+  host: conductor-db.us-east-1.rds.amazonaws.com
+  port: 5432
+  user: conductor
+  password: "" # Use secrets
+  database: conductor
+
+redis:
+  enabled: false
+externalRedis:
+  host: conductor-redis.us-east-1.cache.amazonaws.com
+  port: 6379
+
+kafka:
+  enabled: false
+externalKafka:
+  brokers: "b-1.conductor.us-east-1.kafka.amazonaws.com:9092,b-2.conductor.us-east-1.kafka.amazonaws.com:9092"

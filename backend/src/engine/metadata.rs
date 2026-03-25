@@ -25,6 +25,7 @@ impl WorkflowEngine {
             tracing::error!(name = %def.name, version = def.version, error = %e, "DB error registering workflow def");
             EngineError::Database(e.to_string())
         })?;
+        self.cache_put_workflow_def(def);
         Ok(def.clone())
     }
 
@@ -33,6 +34,14 @@ impl WorkflowEngine {
         name: &str,
         version: Option<i32>,
     ) -> Result<WorkflowDef, EngineError> {
+        // Check LRU cache first
+        if let Some(v) = version {
+            if let Some(cached) = self.cache_get_workflow_def(name, v) {
+                return Ok(cached);
+            }
+        }
+
+        let db = self.shards.read_primary();
         let row = match version {
             Some(v) => {
                 sqlx::query_scalar::<_, Value>(
@@ -40,7 +49,7 @@ impl WorkflowEngine {
                 )
                 .bind(name)
                 .bind(v)
-                .fetch_optional(self.shards.primary())
+                .fetch_optional(db)
                 .await
             }
             None => {
@@ -48,17 +57,21 @@ impl WorkflowEngine {
                     "SELECT definition FROM workflow_def WHERE name = $1 ORDER BY version DESC LIMIT 1",
                 )
                 .bind(name)
-                .fetch_optional(self.shards.primary())
+                .fetch_optional(db)
                 .await
             }
         }
         .map_err(|e| EngineError::Database(e.to_string()))?;
 
         match row {
-            Some(json) => serde_json::from_value(json).map_err(|e| {
-                tracing::error!(name = %name, version = ?version, error = %e, "Failed to deserialize workflow def from DB");
-                EngineError::Serde(e.to_string())
-            }),
+            Some(json) => {
+                let def: WorkflowDef = serde_json::from_value(json).map_err(|e| {
+                    tracing::error!(name = %name, version = ?version, error = %e, "Failed to deserialize workflow def from DB");
+                    EngineError::Serde(e.to_string())
+                })?;
+                self.cache_put_workflow_def(&def);
+                Ok(def)
+            }
             None => {
                 tracing::error!(name = %name, version = ?version, "Workflow definition not found");
                 Err(EngineError::NotFound(format!(
@@ -72,7 +85,7 @@ impl WorkflowEngine {
         let rows = sqlx::query_scalar::<_, Value>(
             "SELECT definition FROM workflow_def ORDER BY name, version",
         )
-        .fetch_all(self.shards.primary())
+        .fetch_all(self.shards.read_primary())
         .await
         .map_err(|e| EngineError::Database(e.to_string()))?;
 
@@ -95,6 +108,7 @@ impl WorkflowEngine {
                 "Workflow def {name} v{version} not found"
             )));
         }
+        self.cache_invalidate_workflow_def(name, version);
         Ok(())
     }
 
@@ -117,15 +131,22 @@ impl WorkflowEngine {
             tracing::error!(name = %def.name, error = %e, "DB error registering task def");
             EngineError::Database(e.to_string())
         })?;
+        self.cache_put_task_def(def);
         Ok(def.clone())
     }
 
     pub async fn get_task_def(&self, name: &str) -> Result<TaskDef, EngineError> {
+        // Check LRU cache first
+        if let Some(cached) = self.cache_get_task_def(name) {
+            return Ok(cached);
+        }
+
+        let db = self.shards.read_primary();
         let row = sqlx::query_scalar::<_, Value>(
             "SELECT definition FROM task_def WHERE name = $1",
         )
         .bind(name)
-        .fetch_optional(self.shards.primary())
+        .fetch_optional(db)
         .await
         .map_err(|e| {
             tracing::error!(name = %name, error = %e, "DB error fetching task def");
@@ -133,10 +154,14 @@ impl WorkflowEngine {
         })?;
 
         match row {
-            Some(json) => serde_json::from_value(json).map_err(|e| {
-                tracing::error!(name = %name, error = %e, "Failed to deserialize task def from DB");
-                EngineError::Serde(e.to_string())
-            }),
+            Some(json) => {
+                let def: TaskDef = serde_json::from_value(json).map_err(|e| {
+                    tracing::error!(name = %name, error = %e, "Failed to deserialize task def from DB");
+                    EngineError::Serde(e.to_string())
+                })?;
+                self.cache_put_task_def(&def);
+                Ok(def)
+            }
             None => {
                 tracing::error!(name = %name, "Task def not found");
                 Err(EngineError::NotFound(format!("Task def not found: {name}")))
@@ -148,7 +173,7 @@ impl WorkflowEngine {
         let rows = sqlx::query_scalar::<_, Value>(
             "SELECT definition FROM task_def ORDER BY name",
         )
-        .fetch_all(self.shards.primary())
+        .fetch_all(self.shards.read_primary())
         .await
         .map_err(|e| EngineError::Database(e.to_string()))?;
 
@@ -167,6 +192,7 @@ impl WorkflowEngine {
         if result.rows_affected() == 0 {
             return Err(EngineError::NotFound(format!("Task def {name} not found")));
         }
+        self.cache_invalidate_task_def(name);
         Ok(())
     }
 

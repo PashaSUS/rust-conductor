@@ -1,21 +1,22 @@
 import { useState, useMemo, useCallback } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router";
-import { toast } from "sonner";
-import { workflowApi, metadataApi, bulkApi, type SearchParams } from "@/api/conductor";
+import { workflowApi, metadataApi, type SearchParams } from "@/api/conductor";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Search, XCircle, Pause, Play, RotateCcw, ChevronLeft, ChevronRight, Plus, RefreshCw } from "lucide-react";
+import { Search, XCircle, Pause, Play, RotateCcw, Plus, RefreshCw } from "lucide-react";
 import { CopyButton } from "@/components/CopyButton";
 import { StartWorkflowDialog } from "@/components/StartWorkflowDialog";
+import { StatusBadge } from "@/components/StatusBadge";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { RelativeTime } from "@/components/RelativeTime";
+import { PaginationControls } from "@/components/PaginationControls";
 import { useThemeText } from "@/components/ThemeContext";
+import { useWorkflowMutations, useBulkWorkflowMutations } from "@/hooks/useWorkflowMutations";
 
 const PAGE_SIZE = 25;
 
@@ -54,7 +55,6 @@ function useFilterParams() {
 
 export default function Workflows() {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const t = useThemeText();
   const { params, setParams } = useFilterParams();
   const [search, setSearch] = useState(params.freeText ?? "");
@@ -63,6 +63,10 @@ export default function Workflows() {
   const [startOpen, setStartOpen] = useState(false);
   const [terminateTarget, setTerminateTarget] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const { pauseMut, resumeMut, terminateMut, restartMut } = useWorkflowMutations([["workflow-search"]]);
+  const { bulkPauseMut, bulkResumeMut, bulkRetryMut, bulkRestartMut, bulkTerminateMut } =
+    useBulkWorkflowMutations([["workflow-search"]], () => setSelectedIds(new Set()));
 
   const { data: workflowDefs } = useQuery({
     queryKey: ["workflow-defs-list"],
@@ -73,63 +77,6 @@ export default function Workflows() {
     queryKey: ["workflow-search", params],
     queryFn: () => workflowApi.search(params),
     refetchInterval: autoRefresh ? 5000 : false,
-  });
-
-  const terminateMut = useMutation({
-    mutationFn: (id: string) => workflowApi.terminate(id),
-    onSuccess: () => {
-      toast.success(t.toastWorkflowTerminated);
-      queryClient.invalidateQueries({ queryKey: ["workflow-search"] });
-    },
-  });
-
-  const pauseMut = useMutation({
-    mutationFn: (id: string) => workflowApi.pause(id),
-    onSuccess: () => {
-      toast.success(t.toastWorkflowPaused);
-      queryClient.invalidateQueries({ queryKey: ["workflow-search"] });
-    },
-  });
-
-  const resumeMut = useMutation({
-    mutationFn: (id: string) => workflowApi.resume(id),
-    onSuccess: () => {
-      toast.success(t.toastWorkflowResumed);
-      queryClient.invalidateQueries({ queryKey: ["workflow-search"] });
-    },
-  });
-
-  const restartMut = useMutation({
-    mutationFn: (id: string) => workflowApi.restart(id),
-    onSuccess: () => {
-      toast.success(t.toastWorkflowRestarted);
-      queryClient.invalidateQueries({ queryKey: ["workflow-search"] });
-    },
-  });
-
-  const bulkInvalidate = () => {
-    setSelectedIds(new Set());
-    queryClient.invalidateQueries({ queryKey: ["workflow-search"] });
-  };
-  const bulkPauseMut = useMutation({
-    mutationFn: (ids: string[]) => bulkApi.pause(ids),
-    onSuccess: () => { toast.success(t.bulkSuccess); bulkInvalidate(); },
-  });
-  const bulkResumeMut = useMutation({
-    mutationFn: (ids: string[]) => bulkApi.resume(ids),
-    onSuccess: () => { toast.success(t.bulkSuccess); bulkInvalidate(); },
-  });
-  const bulkRetryMut = useMutation({
-    mutationFn: (ids: string[]) => bulkApi.retry(ids),
-    onSuccess: () => { toast.success(t.bulkSuccess); bulkInvalidate(); },
-  });
-  const bulkRestartMut = useMutation({
-    mutationFn: (ids: string[]) => bulkApi.restart(ids),
-    onSuccess: () => { toast.success(t.bulkSuccess); bulkInvalidate(); },
-  });
-  const bulkTerminateMut = useMutation({
-    mutationFn: (ids: string[]) => bulkApi.terminate(ids),
-    onSuccess: () => { toast.success(t.bulkSuccess); bulkInvalidate(); },
   });
 
   const toggleSelect = (id: string) => {
@@ -160,8 +107,8 @@ export default function Workflows() {
     : [];
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col gap-4 h-[calc(100vh-8rem)]">
+      <div className="flex items-center justify-between shrink-0">
         <h2 className="text-2xl font-bold tracking-tight">{t.executionsTitle}</h2>
         <div className="flex items-center gap-2">
           <Button
@@ -180,7 +127,7 @@ export default function Workflows() {
         </div>
       </div>
 
-      <Card>
+      <Card className="shrink-0">
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-medium">{t.searchAndFilter}</CardTitle>
         </CardHeader>
@@ -223,8 +170,8 @@ export default function Workflows() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardContent className="pt-6">
+      <Card className="flex-1 min-h-0 flex flex-col">
+        <CardContent className="pt-6 flex-1 overflow-auto">
           {isLoading ? (
             <p className="text-muted-foreground text-sm">{t.loading}</p>
           ) : (
@@ -316,36 +263,24 @@ export default function Workflows() {
                   ))}
                 </TableBody>
               </Table>
-              {/* Pagination */}
-              {(data?.totalHits ?? 0) > PAGE_SIZE && (
-                <div className="flex items-center justify-between mt-4">
-                  <p className="text-xs text-muted-foreground">
-                    Page {Math.floor((params.start ?? 0) / PAGE_SIZE) + 1} of{" "}
-                    {Math.ceil((data?.totalHits ?? 0) / PAGE_SIZE)}
-                  </p>
-                  <div className="flex gap-1">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={(params.start ?? 0) === 0}
-                      onClick={() => setParams((p) => ({ ...p, start: Math.max((p.start ?? 0) - PAGE_SIZE, 0) }))}
-                    >
-                      <ChevronLeft className="h-4 w-4 mr-1" />{t.prev}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={(params.start ?? 0) + PAGE_SIZE >= (data?.totalHits ?? 0)}
-                      onClick={() => setParams((p) => ({ ...p, start: (p.start ?? 0) + PAGE_SIZE }))}
-                    >
-                      {t.next}<ChevronRight className="h-4 w-4 ml-1" />
-                    </Button>
-                  </div>
-                </div>
-              )}
             </>
           )}
         </CardContent>
+        {/* Pagination footer — outside scroll area */}
+        {!isLoading && (data?.totalHits ?? 0) > PAGE_SIZE && (
+          <div className="border-t px-6 py-2 shrink-0">
+            <PaginationControls
+              page={Math.floor((params.start ?? 0) / PAGE_SIZE)}
+              totalPages={Math.ceil((data?.totalHits ?? 0) / PAGE_SIZE)}
+              canPrev={(params.start ?? 0) > 0}
+              canNext={(params.start ?? 0) + PAGE_SIZE < (data?.totalHits ?? 0)}
+              onPrev={() => setParams((p) => ({ ...p, start: Math.max((p.start ?? 0) - PAGE_SIZE, 0) }))}
+              onNext={() => setParams((p) => ({ ...p, start: (p.start ?? 0) + PAGE_SIZE }))}
+              rangeLabel={`${(params.start ?? 0) + 1}\u2013${Math.min((params.start ?? 0) + PAGE_SIZE, data?.totalHits ?? 0)}`}
+              totalItems={data?.totalHits}
+            />
+          </div>
+        )}
       </Card>
 
       {/* Start workflow dialog */}
@@ -370,14 +305,4 @@ export default function Workflows() {
       />
     </div>
   );
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const variant =
-    status === "COMPLETED" ? "success"
-      : status === "RUNNING" ? "default"
-      : status === "FAILED" || status === "TIMED_OUT" ? "destructive"
-      : status === "PAUSED" ? "warning"
-      : "secondary";
-  return <Badge variant={variant as "default"}>{status}</Badge>;
 }

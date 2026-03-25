@@ -38,15 +38,9 @@ const themes: { id: UITheme; label: string; description: string; preview: string
   },
   {
     id: "pokemon",
-    label: "Pokémon",
+    label: "PokÃ©mon",
     description: "Gotta orchestrate 'em all!",
     preview: ["#1a1020", "#ef4444", "#eab308", "#3b82f6"],
-  },
-  {
-    id: "yugioh",
-    label: "Yu-Gi-Oh!",
-    description: "Mystical dark violet & gold foil",
-    preview: ["#12081e", "#daa520", "#9333ea", "#4a3070"],
   },
   {
     id: "chucknorris",
@@ -133,7 +127,7 @@ export function ThemeSwitcher() {
                   "w-full flex items-center gap-3 rounded-md px-2 py-2 text-left text-sm transition-colors",
                   uiTheme === theme.id
                     ? "bg-accent text-accent-foreground"
-                    : "text-popover-foreground hover:bg-accent/50"
+                    : "text-popover-foreground hover:bg-accent"
                 )}
               >
                 {/* Color preview dots */}
@@ -141,7 +135,7 @@ export function ThemeSwitcher() {
                   {theme.preview.map((color, i) => (
                     <div
                       key={i}
-                      className="w-3 h-3 rounded-full border border-border/50"
+                      className="w-3 h-3 rounded-full border border-border"
                       style={{ backgroundColor: color }}
                     />
                   ))}

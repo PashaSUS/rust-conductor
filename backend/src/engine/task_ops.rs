@@ -9,8 +9,8 @@ use crate::models::*;
 
 impl WorkflowEngine {
     pub async fn get_task(&self, task_id: &str) -> Result<TaskResult, EngineError> {
-        if let Some((_wf_id, db)) = self.resolve_task_shard(task_id).await? {
-            if let Some(r) = sqlx::query_as::<_, TaskRow>("SELECT * FROM task WHERE task_id = $1")
+        if let Some((_wf_id, db)) = self.resolve_task_shard(task_id).await?
+            && let Some(r) = sqlx::query_as::<_, TaskRow>("SELECT * FROM task WHERE task_id = $1")
                 .bind(task_id)
                 .fetch_optional(db)
                 .await
@@ -21,7 +21,6 @@ impl WorkflowEngine {
             {
                 return Ok(r.into());
             }
-        }
         tracing::error!(task_id = %task_id, "Task not found on any shard");
         Err(EngineError::NotFound(format!("Task not found: {task_id}")))
     }
@@ -34,8 +33,8 @@ impl WorkflowEngine {
 
         // Resolve shard via routing hash (O(1) Redis lookup, no fan-out)
         let result = async {
-            if let Some((wf_id, db)) = self.resolve_task_shard(&task_id).await? {
-                if let Some(r) = sqlx::query_as::<_, TaskRow>("SELECT * FROM task WHERE task_id = $1")
+            if let Some((wf_id, db)) = self.resolve_task_shard(&task_id).await?
+                && let Some(r) = sqlx::query_as::<_, TaskRow>("SELECT * FROM task WHERE task_id = $1")
                     .bind(&task_id)
                     .fetch_optional(db)
                     .await
@@ -76,7 +75,6 @@ impl WorkflowEngine {
                         env_vars: r.env_vars,
                     }));
                 }
-            }
             Ok::<Option<PollTask>, EngineError>(None)
         }
         .await;
@@ -116,12 +114,12 @@ impl WorkflowEngine {
         }
 
         // Validate output data against task definition's output schema
-        if matches!(update.status, TaskStatus::Completed | TaskStatus::CompletedWithErrors) {
-            if let Ok(task) = self.get_task(&update.task_id).await {
-                if let Ok(task_def) = self.get_task_def(&task.task_def_name).await {
-                    if task_def.enforce_schema {
-                        if let Some(schema) = &task_def.output_schema {
-                            if let Some(expected_keys) = &schema.data {
+        if matches!(update.status, TaskStatus::Completed | TaskStatus::CompletedWithErrors)
+            && let Ok(task) = self.get_task(&update.task_id).await
+                && let Ok(task_def) = self.get_task_def(&task.task_def_name).await
+                    && task_def.enforce_schema
+                        && let Some(schema) = &task_def.output_schema
+                            && let Some(expected_keys) = &schema.data {
                                 let output = &update.output_data;
                                 for key in expected_keys.keys() {
                                     if output.get(key).is_none() {
@@ -136,11 +134,6 @@ impl WorkflowEngine {
                                     }
                                 }
                             }
-                        }
-                    }
-                }
-            }
-        }
 
         let db = self.shards.shard_for(&update.workflow_instance_id);
 
@@ -177,10 +170,10 @@ impl WorkflowEngine {
             // Conditional retry: if the task_def specifies retry_on_errors,
             // only retry when the failure reason matches one of those patterns.
             // FailedWithTerminalError is never retried.
-            if update.status == TaskStatus::Failed {
-                if let Ok(task) = self.get_task(&update.task_id).await {
-                    if let Ok(task_def) = self.get_task_def(&task.task_def_name).await {
-                        if !task_def.retry_on_errors.is_empty() {
+            if update.status == TaskStatus::Failed
+                && let Ok(task) = self.get_task(&update.task_id).await
+                    && let Ok(task_def) = self.get_task_def(&task.task_def_name).await
+                        && !task_def.retry_on_errors.is_empty() {
                             let reason = update.reason_for_incompletion.as_deref().unwrap_or("");
                             let matches = task_def.retry_on_errors.iter().any(|pattern| {
                                 reason.contains(pattern.as_str())
@@ -201,9 +194,6 @@ impl WorkflowEngine {
                                 return Ok(update.task_id.clone());
                             }
                         }
-                    }
-                }
-            }
 
             let wf_status = if update.status == TaskStatus::TimedOut {
                 "TIMED_OUT"
@@ -255,8 +245,8 @@ impl WorkflowEngine {
         let mut tasks = Vec::with_capacity(task_ids.len());
         for task_id in &task_ids {
             let result = async {
-                if let Some((_wf_id, db)) = self.resolve_task_shard(task_id).await? {
-                    if let Some(r) = sqlx::query_as::<_, TaskRow>("SELECT * FROM task WHERE task_id = $1")
+                if let Some((_wf_id, db)) = self.resolve_task_shard(task_id).await?
+                    && let Some(r) = sqlx::query_as::<_, TaskRow>("SELECT * FROM task WHERE task_id = $1")
                         .bind(task_id)
                         .fetch_optional(db)
                         .await
@@ -291,7 +281,6 @@ impl WorkflowEngine {
                         env_vars: r.env_vars,
                     });
                 }
-            }
                 Ok::<(), EngineError>(())
             }
             .await;
@@ -368,20 +357,20 @@ impl WorkflowEngine {
             ));
         }
 
-        // If we know the workflow_id, route to the specific shard
+        // If we know the workflow_id, route to the specific read shard
         if let Some(wid) = workflow_id {
-            let db = self.shards.shard_for(wid);
+            let db = self.shards.read_shard_for(wid);
             return self.search_tasks_on_shard(db, &where_clause, start, size).await;
         }
 
-        // Parallel fan-out across all shards
+        // Parallel fan-out across all read shards
         let fetch_size = size + start;
         let count_query = format!("SELECT COUNT(*) FROM task{where_clause}");
         let data_query = format!(
             "SELECT task_id, workflow_instance_id, task_type, task_def_name, reference_task_name, status, scheduled_time, start_time, end_time, update_time FROM task{where_clause} ORDER BY scheduled_time DESC LIMIT {fetch_size} OFFSET 0"
         );
 
-        let futs: Vec<_> = self.shards.all_shards().iter().map(|shard| {
+        let futs: Vec<_> = self.shards.read_shards().iter().map(|shard| {
             let cq = count_query.clone();
             let dq = data_query.clone();
             async move {
@@ -418,6 +407,7 @@ impl WorkflowEngine {
         Ok(SearchResult {
             total_hits: total,
             results: paged,
+            next_cursor: None,
         })
     }
 
@@ -445,6 +435,7 @@ impl WorkflowEngine {
         Ok(SearchResult {
             total_hits: total,
             results: rows.into_iter().map(|r| self.task_summary_from_row(r)).collect(),
+            next_cursor: None,
         })
     }
 
@@ -474,8 +465,8 @@ impl WorkflowEngine {
     }
 
     pub async fn get_queue_sizes(&self) -> Result<std::collections::HashMap<String, i64>, EngineError> {
-        // Query all shards for SCHEDULED task counts grouped by task type
-        let futs: Vec<_> = self.shards.all_shards().iter().map(|shard| {
+        // Query all read shards for SCHEDULED task counts grouped by task type
+        let futs: Vec<_> = self.shards.read_shards().iter().map(|shard| {
             async move {
                 let rows: Vec<(String, i64)> = sqlx::query_as(
                     "SELECT task_def_name, COUNT(*) FROM task WHERE status = 'SCHEDULED' GROUP BY task_def_name",
@@ -558,7 +549,7 @@ impl WorkflowEngine {
     // ── In-progress tasks ──
 
     pub async fn get_in_progress_tasks(&self, task_type: &str) -> Result<Vec<TaskResult>, EngineError> {
-        let futs: Vec<_> = self.shards.all_shards().iter().map(|shard| {
+        let futs: Vec<_> = self.shards.read_shards().iter().map(|shard| {
             async move {
                 sqlx::query_as::<_, TaskRow>(
                     "SELECT * FROM task WHERE task_def_name = $1 AND status = 'IN_PROGRESS' ORDER BY start_time DESC",
@@ -603,7 +594,7 @@ impl WorkflowEngine {
     }
 
     pub async fn get_all_queue_details_verbose(&self) -> Result<std::collections::HashMap<String, std::collections::HashMap<String, i64>>, EngineError> {
-        let futs: Vec<_> = self.shards.all_shards().iter().map(|shard| {
+        let futs: Vec<_> = self.shards.read_shards().iter().map(|shard| {
             async move {
                 let rows: Vec<(String, String, i64)> = sqlx::query_as(
                     "SELECT task_def_name, status, COUNT(*) FROM task WHERE status IN ('SCHEDULED', 'IN_PROGRESS') GROUP BY task_def_name, status",
@@ -626,7 +617,7 @@ impl WorkflowEngine {
     }
 
     pub async fn get_poll_data(&self, task_type: &str) -> Result<Vec<PollData>, EngineError> {
-        let futs: Vec<_> = self.shards.all_shards().iter().map(|shard| {
+        let futs: Vec<_> = self.shards.read_shards().iter().map(|shard| {
             async move {
                 let rows: Vec<(Option<String>, Option<i64>)> = sqlx::query_as(
                     "SELECT worker_id, MAX(EXTRACT(EPOCH FROM update_time)::bigint * 1000) FROM task WHERE task_def_name = $1 AND status = 'IN_PROGRESS' GROUP BY worker_id",
@@ -655,7 +646,7 @@ impl WorkflowEngine {
     }
 
     pub async fn get_all_poll_data(&self) -> Result<Vec<PollData>, EngineError> {
-        let futs: Vec<_> = self.shards.all_shards().iter().map(|shard| {
+        let futs: Vec<_> = self.shards.read_shards().iter().map(|shard| {
             async move {
                 let rows: Vec<(String, Option<String>, Option<i64>)> = sqlx::query_as(
                     "SELECT task_def_name, worker_id, MAX(EXTRACT(EPOCH FROM update_time)::bigint * 1000) FROM task WHERE status = 'IN_PROGRESS' GROUP BY task_def_name, worker_id",

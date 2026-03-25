@@ -14,6 +14,7 @@ impl WorkflowEngine {
     /// non-terminal task with the same (workflow_id, reference_task_name) already
     /// existed. The unique partial index `idx_task_unique_ref` is the ultimate
     /// guard; the SELECT-first path is just an optimistic fast check.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn insert_task_record(
         &self,
         workflow_id: &str,
@@ -155,7 +156,7 @@ impl WorkflowEngine {
     }
 
     /// FORK_JOIN / FORK — auto-complete the fork task, then schedule the first
-    /// task of every parallel branch.
+    /// task of every parallel branch concurrently.
     pub(crate) async fn handle_fork_task(
         &self,
         workflow_id: &str,
@@ -173,12 +174,21 @@ impl WorkflowEngine {
             return Ok(());
         }
 
-        for (branch_idx, branch) in task_def.fork_tasks.iter().enumerate() {
-            if !branch.is_empty() {
+        // Schedule all fork branches concurrently
+        let branch_futs: Vec<_> = task_def
+            .fork_tasks
+            .iter()
+            .enumerate()
+            .filter(|(_, branch)| !branch.is_empty())
+            .map(|(branch_idx, branch)| {
                 let branch_seq = seq + 1 + branch_idx as i32;
                 Box::pin(self.schedule_tasks(workflow_id, branch, input, branch_seq))
-                    .await?;
-            }
+            })
+            .collect();
+
+        let results = futures::future::join_all(branch_futs).await;
+        for result in results {
+            result?;
         }
 
         tracing::info!(
@@ -310,14 +320,13 @@ impl WorkflowEngine {
                 };
             }
         }
-        if let Some(expr) = &task_def.case_expression {
-            if let Some(val) = input.get(expr.as_str()) {
+        if let Some(expr) = &task_def.case_expression
+            && let Some(val) = input.get(expr.as_str()) {
                 return match val {
                     Value::String(s) => s.clone(),
                     other => other.to_string(),
                 };
             }
-        }
         String::new()
     }
 
@@ -417,7 +426,7 @@ impl WorkflowEngine {
         )
         .bind(&task_id)
         .bind(&child_id)
-        .bind(&serde_json::json!({ "subWorkflowId": &child_id }))
+        .bind(serde_json::json!({ "subWorkflowId": &child_id }))
         .execute(parent_db)
         .await
         {
@@ -447,9 +456,9 @@ impl WorkflowEngine {
             .await?;
 
         // Inject env_vars from task definition into the task row
-        if is_new {
-            if let Ok(td) = self.get_task_def(&task_def.name).await {
-                if let Some(env) = &td.env_vars {
+        if is_new
+            && let Ok(td) = self.get_task_def(&task_def.name).await
+                && let Some(env) = &td.env_vars {
                     let db = self.shards.shard_for(workflow_id);
                     let _ = sqlx::query(
                         "UPDATE task SET env_vars = $2 WHERE task_id = $1",
@@ -459,8 +468,6 @@ impl WorkflowEngine {
                     .execute(db)
                     .await;
                 }
-            }
-        }
 
         if is_new {
             self.set_task_routing(&task_id, workflow_id).await?;
@@ -754,7 +761,7 @@ impl WorkflowEngine {
                     }
                 });
 
-                let task_status = if status_code >= 200 && status_code < 400 {
+                let task_status = if (200..400).contains(&status_code) {
                     "COMPLETED"
                 } else {
                     "FAILED"
@@ -878,7 +885,7 @@ impl WorkflowEngine {
                     "SELECT COUNT(*) FROM task WHERE workflow_instance_id = $1 AND reference_task_name = ANY($2) AND status NOT IN ('COMPLETED', 'SKIPPED', 'COMPLETED_WITH_ERRORS', 'FAILED', 'TIMED_OUT', 'CANCELED')",
                 )
                 .bind(workflow_id)
-                .bind(&iter_tasks.iter().map(|t| t.task_reference_name.clone()).collect::<Vec<_>>())
+                .bind(iter_tasks.iter().map(|t| t.task_reference_name.clone()).collect::<Vec<_>>())
                 .fetch_one(db)
                 .await
                 .map_err(|e| EngineError::Database(e.to_string()))?;
@@ -902,7 +909,7 @@ impl WorkflowEngine {
                 "SELECT COUNT(*) FROM task WHERE workflow_instance_id = $1 AND reference_task_name = ANY($2) AND status IN ('FAILED', 'TIMED_OUT')",
             )
             .bind(workflow_id)
-            .bind(&iter_tasks.iter().map(|t| t.task_reference_name.clone()).collect::<Vec<_>>())
+            .bind(iter_tasks.iter().map(|t| t.task_reference_name.clone()).collect::<Vec<_>>())
             .fetch_one(db)
             .await
             .map_err(|e| EngineError::Database(e.to_string()))?;
@@ -1010,6 +1017,70 @@ impl WorkflowEngine {
     /// The task's `script_expression` or `expression` field contains a simple
     /// JSON expression that is evaluated using the task input. The result is
     /// written as the task output and the task completes immediately.
+    // ── DYNAMIC ───────────────────────────────────────────────────────
+
+    /// DYNAMIC — resolve the actual task type at runtime from input parameters.
+    /// The `dynamic_task_name_param` field names the input parameter whose
+    /// resolved value is the task type to dispatch (e.g. "taskToExecute").
+    pub(crate) async fn handle_dynamic_task(
+        &self,
+        workflow_id: &str,
+        task_def: &WorkflowTask,
+        input: &Value,
+        seq: i32,
+    ) -> Result<(), EngineError> {
+        let param_name = task_def.dynamic_task_name_param.as_deref().unwrap_or("dynamicTaskName");
+
+        // Resolve inputParameters first so we can read the dynamic task name
+        let resolved_input = self.resolve_task_input(workflow_id, task_def, input).await?;
+
+        let resolved_task_name = resolved_input
+            .get(param_name)
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .ok_or_else(|| {
+                tracing::error!(
+                    workflow_id = %workflow_id,
+                    ref_name = %task_def.task_reference_name,
+                    param = %param_name,
+                    "DYNAMIC task: could not resolve task name from inputParameters"
+                );
+                EngineError::NotFound(format!(
+                    "DYNAMIC task '{}' could not resolve param '{}'",
+                    task_def.task_reference_name, param_name
+                ))
+            })?;
+
+        // Build a cloned WorkflowTask with the resolved name and type SIMPLE
+        let mut resolved_def = task_def.clone();
+        resolved_def.name = resolved_task_name.clone();
+        resolved_def.task_type = "SIMPLE".to_string();
+
+        // Remove the dynamic param from the input so it doesn't get passed to the worker
+        let worker_input = if let Value::Object(mut map) = resolved_input {
+            map.remove(param_name);
+            Value::Object(map)
+        } else {
+            resolved_input
+        };
+
+        // Override inputParameters to empty so insert_task_record uses our resolved worker_input directly
+        resolved_def.input_parameters = std::collections::HashMap::new();
+
+        self.create_and_queue_worker_task(workflow_id, &resolved_def, &worker_input, seq)
+            .await?;
+
+        tracing::info!(
+            workflow_id = %workflow_id,
+            ref_name = %task_def.task_reference_name,
+            resolved_task = %resolved_task_name,
+            "DYNAMIC task dispatched"
+        );
+        Ok(())
+    }
+
+    // ── LAMBDA / INLINE ──────────────────────────────────────────────────
+
     pub(crate) async fn handle_lambda_task(
         &self,
         workflow_id: &str,
@@ -1160,11 +1231,10 @@ pub(crate) fn resolve_string_value(
     let trimmed = s.trim();
     if trimmed.starts_with("${") && trimmed.ends_with('}') {
         let inner = &trimmed[2..trimmed.len() - 1];
-        if !inner.contains("${") {
-            if let Some(resolved) = resolve_expression(inner, workflow_input, task_outputs, workflow_id) {
+        if !inner.contains("${")
+            && let Some(resolved) = resolve_expression(inner, workflow_input, task_outputs, workflow_id) {
                 return resolved;
             }
-        }
     }
 
     if !s.contains("${") {
@@ -1226,14 +1296,13 @@ pub(crate) fn resolve_expression(
     }
 
     // Task reference: refName.output.field.path
-    if parts[1] == "output" {
-        if let Some(output) = task_outputs.get(parts[0]) {
+    if parts[1] == "output"
+        && let Some(output) = task_outputs.get(parts[0]) {
             if parts.len() == 2 {
                 return Some(output.clone());
             }
             return navigate_json(output, &parts[2..]);
         }
-    }
 
     None
 }
@@ -1263,16 +1332,14 @@ pub(crate) fn evaluate_loop_condition(condition: &str, last_output: &Value, iter
     // Simple "iteration < N" pattern
     if let Some(rest) = trimmed.strip_prefix("iteration") {
         let rest = rest.trim();
-        if let Some(n_str) = rest.strip_prefix('<') {
-            if let Ok(n) = n_str.trim().parse::<usize>() {
+        if let Some(n_str) = rest.strip_prefix('<')
+            && let Ok(n) = n_str.trim().parse::<usize>() {
                 return iteration < n;
             }
-        }
-        if let Some(n_str) = rest.strip_prefix("<=") {
-            if let Ok(n) = n_str.trim().parse::<usize>() {
+        if let Some(n_str) = rest.strip_prefix("<=")
+            && let Ok(n) = n_str.trim().parse::<usize>() {
                 return iteration <= n;
             }
-        }
     }
 
     // Check last task output for a truthy "result" field

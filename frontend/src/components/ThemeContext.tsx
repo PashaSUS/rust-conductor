@@ -1,4 +1,4 @@
-﻿import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
 import { themeTextMap, defaultText } from "./themes";
 export type { UITheme, ThemeText } from "./themes";
 import type { UITheme, ThemeText } from "./themes";
@@ -26,7 +26,7 @@ function getStoredUITheme(): UITheme {
 
 function applyUIThemeClass(theme: UITheme) {
   const root = document.documentElement;
-  root.classList.remove("theme-warcraft", "theme-cyberpunk", "theme-forest", "theme-ocean", "theme-pokemon", "theme-yugioh", "theme-chucknorris", "theme-lotr");
+  root.classList.remove("theme-warcraft", "theme-cyberpunk", "theme-forest", "theme-ocean", "theme-pokemon", "theme-chucknorris", "theme-lotr");
   if (theme !== "default") {
     root.classList.add(`theme-${theme}`);
   }

@@ -9,6 +9,10 @@ pub mod proto_conv;
 
 pub mod pb {
     tonic::include_proto!("conductor");
+
+    /// File descriptor set for gRPC reflection
+    #[cfg(feature = "grpc-reflection")]
+    pub const FILE_DESCRIPTOR_SET: &[u8] = tonic::include_file_descriptor_set!("conductor_descriptor");
 }
 
 use crate::engine::WorkflowEngine;
@@ -35,7 +39,13 @@ pub fn grpc_router(engine: Arc<WorkflowEngine>) -> tonic::transport::server::Rou
     use official::pb::task_service_server::TaskServiceServer as OfficialTaskServiceServer;
     use official::pb::event_service_server::EventServiceServer as OfficialEventServiceServer;
 
-    tonic::transport::Server::builder()
+    #[cfg(feature = "grpc-reflection")]
+    let reflection_service = tonic_reflection::server::Builder::configure()
+        .register_encoded_file_descriptor_set(pb::FILE_DESCRIPTOR_SET)
+        .build_v1()
+        .expect("Failed to build gRPC reflection service");
+
+    let server = tonic::transport::Server::builder()
         .tcp_nodelay(true)
         .initial_connection_window_size(Some(16 * 1024 * 1024))  // 16 MB connection window
         .initial_stream_window_size(Some(4 * 1024 * 1024))       // 4 MB per-stream window
@@ -95,5 +105,10 @@ pub fn grpc_router(engine: Arc<WorkflowEngine>) -> tonic::transport::server::Rou
             OfficialEventServiceServer::new(official::events::OfficialEventServiceImpl::new(engine))
                 .send_compressed(CompressionEncoding::Gzip)
                 .accept_compressed(CompressionEncoding::Gzip)
-        )
+        );
+    // gRPC reflection for dynamic client discovery (#164)
+    #[cfg(feature = "grpc-reflection")]
+    let server = server.add_service(reflection_service);
+
+    server
 }

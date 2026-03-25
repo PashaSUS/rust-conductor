@@ -1,0 +1,182 @@
+# ── Global ──
+nameOverride: ""
+fullnameOverride: ""
+
+# ── Backend ──
+backend:
+  replicaCount: 2
+  image:
+    repository: rust-conductor/backend
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    httpPort: 8090
+    grpcPort: 50055
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  env:
+    HOST: "0.0.0.0"
+    PORT: "8090"
+    GRPC_PORT: "50055"
+    NUM_SHARDS: "1"
+    RUST_LOG: "info"
+    SKIP_MIGRATIONS: "true"
+  # Extra env vars from Secrets / ConfigMaps
+  envFrom: []
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  # Liveness / Readiness
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 15
+    failureThreshold: 3
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    failureThreshold: 3
+  # Pod disruption budget
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+# ── Frontend ──
+frontend:
+  replicaCount: 2
+  image:
+    repository: rust-conductor/frontend
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 3170
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# ── Ingress ──
+ingress:
+  enabled: true
+  className: nginx
+  annotations: {}
+  hosts:
+    - host: conductor.example.com
+      paths:
+        - path: /api
+          pathType: Prefix
+          service: backend
+          port: 8090
+        - path: /
+          pathType: Prefix
+          service: frontend
+          port: 3170
+  tls: []
+
+# ── PostgreSQL (Bitnami sub-chart or external) ──
+postgresql:
+  enabled: true
+  auth:
+    username: conductor
+    password: conductor
+    database: conductor
+  primary:
+    persistence:
+      size: 20Gi
+  # Set to false and provide externalDatabase if using an external DB
+externalDatabase:
+  host: ""
+  port: 5432
+  user: conductor
+  password: conductor
+  database: conductor
+
+# ── Redis (Bitnami sub-chart or external) ──
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: false
+  master:
+    persistence:
+      size: 5Gi
+externalRedis:
+  host: ""
+  port: 6379
+
+# ── Kafka (Bitnami sub-chart or external) ──
+kafka:
+  enabled: true
+  listeners:
+    client:
+      protocol: PLAINTEXT
+  controller:
+    replicaCount: 1
+  broker:
+    replicaCount: 1
+externalKafka:
+  brokers: ""
+
+# ── Seq (optional structured logging) ──
+seq:
+  enabled: false
+  image:
+    repository: datalust/seq
+    tag: latest
+  service:
+    port: 80
+  persistence:
+    size: 10Gi
+  retentionDays: 14            # Auto-delete logs older than N days
+  maxStorageBytes: "5368709120" # 5 GB — discard oldest when exceeded
+
+# ── Canary Deployment ──
+canary:
+  enabled: false
+  replicas: 1
+  tag: ""          # Image tag for canary pods (defaults to backend.image.tag)
+  weight: 10       # Percentage of traffic routed to canary (0-100)
+  headerName: ""   # Optional: route by header instead of weight (e.g. "X-Canary")
+  headerValue: "always"
+
+# ── Backup ──
+backup:
+  s3Bucket: ""
+  s3Region: us-east-1
+  retentionDays: 30
+
+# ── Migration Job ──
+migration:
+  enabled: true
+  backoffLimit: 3

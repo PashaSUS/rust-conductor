@@ -96,7 +96,7 @@ export function ForkJoinFields({ task, onUpdate }: TypeFieldProps) {
       </div>
       <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.min(task.forkBranches.length, 3)}, 1fr)` }}>
         {task.forkBranches.map((branch, bi) => (
-          <div key={bi} className="border rounded-lg p-3 bg-muted/20 space-y-2">
+          <div key={bi} className="border rounded-lg p-3 bg-muted space-y-2">
             <div className="flex items-center justify-between">
               <Input
                 className="h-7 text-xs font-medium"
@@ -199,7 +199,7 @@ export function DecisionFields({ task, onUpdate }: TypeFieldProps) {
         </Button>
       </div>
       {task.decisionCases.map((c, ci) => (
-        <div key={ci} className="border rounded-lg p-3 bg-muted/20 space-y-2">
+        <div key={ci} className="border rounded-lg p-3 bg-muted space-y-2">
           <div className="flex items-center gap-2">
             <Input
               className="h-7 text-xs font-medium flex-1"
@@ -292,7 +292,7 @@ export function DoWhileFields({ task, onUpdate }: TypeFieldProps) {
         </Button>
       </div>
       {task.loopTasks.map((lt, ti) => (
-        <div key={ti} className="border rounded p-2 bg-muted/20">
+        <div key={ti} className="border rounded p-2 bg-muted">
           <div className="flex items-center gap-2">
             <Input
               className="h-7 text-xs flex-1"

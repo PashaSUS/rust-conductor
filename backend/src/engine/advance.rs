@@ -440,11 +440,9 @@ impl WorkflowEngine {
             .ok()
             .flatten()
             .flatten()
-            {
-                if let Ok(def) = serde_json::from_value::<WorkflowDef>(def_json) {
+                && let Ok(def) = serde_json::from_value::<WorkflowDef>(def_json) {
                     self.notify_webhooks(&def, workflow_id, terminal_status, &Value::Null);
                 }
-            }
         }
 
         tracing::warn!(workflow_id = %workflow_id, status = %terminal_status, "Workflow terminated");
@@ -562,18 +560,16 @@ impl WorkflowEngine {
 
         match status {
             "COMPLETED" => {
-                if let Some(url) = &def.on_complete_webhook {
-                    if !url.is_empty() {
+                if let Some(url) = &def.on_complete_webhook
+                    && !url.is_empty() {
                         Self::fire_webhook(url.clone(), payload);
                     }
-                }
             }
             "FAILED" | "TIMED_OUT" => {
-                if let Some(url) = &def.on_failure_webhook {
-                    if !url.is_empty() {
+                if let Some(url) = &def.on_failure_webhook
+                    && !url.is_empty() {
                         Self::fire_webhook(url.clone(), payload);
                     }
-                }
             }
             _ => {}
         }

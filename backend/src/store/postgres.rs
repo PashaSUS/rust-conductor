@@ -1,18 +1,69 @@
-use sqlx::postgres::{PgPool, PgPoolOptions};
+use sqlx::postgres::{PgPool, PgPoolOptions, PgConnectOptions};
+use sqlx::ConnectOptions;
 use std::time::Duration;
 
 pub type DbPool = PgPool;
 
 pub async fn create_pool(database_url: &str) -> DbPool {
+    create_pool_with_options(database_url, 500).await
+}
+
+pub async fn create_pool_with_options(database_url: &str, slow_query_threshold_ms: u64) -> DbPool {
+    let connect_opts: PgConnectOptions = database_url
+        .parse::<PgConnectOptions>()
+        .expect("Invalid database URL")
+        .log_slow_statements(
+            tracing::log::LevelFilter::Warn,
+            Duration::from_millis(slow_query_threshold_ms),
+        );
+
     PgPoolOptions::new()
         .max_connections(100)
         .min_connections(5)
         .acquire_timeout(Duration::from_secs(5))
         .idle_timeout(Duration::from_secs(300))
         .max_lifetime(Duration::from_secs(1800))
-        .connect(database_url)
+        .connect_with(connect_opts)
         .await
         .expect("Failed to create Postgres connection pool")
+}
+
+/// Create a read-replica pool with lower connection limits.
+pub async fn create_replica_pool(database_url: &str, slow_query_threshold_ms: u64) -> DbPool {
+    let connect_opts: PgConnectOptions = database_url
+        .parse::<PgConnectOptions>()
+        .expect("Invalid replica database URL")
+        .log_slow_statements(
+            tracing::log::LevelFilter::Warn,
+            Duration::from_millis(slow_query_threshold_ms),
+        );
+
+    PgPoolOptions::new()
+        .max_connections(50)
+        .min_connections(2)
+        .acquire_timeout(Duration::from_secs(5))
+        .idle_timeout(Duration::from_secs(300))
+        .max_lifetime(Duration::from_secs(1800))
+        .connect_with(connect_opts)
+        .await
+        .expect("Failed to create Postgres replica connection pool")
+}
+
+/// Pool metrics for observability.
+pub struct PoolMetrics {
+    pub size: u32,
+    pub num_idle: u32,
+    pub active: u32,
+}
+
+pub fn pool_metrics(pool: &DbPool) -> PoolMetrics {
+    let size = pool.size();
+    let idle = pool.num_idle() as u32;
+    PoolMetrics {
+        size,
+        num_idle: idle,
+        active: size.saturating_sub(idle),
+    }
 }
 
 pub async fn run_migrations(pool: &DbPool) {

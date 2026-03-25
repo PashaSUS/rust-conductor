@@ -5,8 +5,21 @@ echo ========================================
 echo  rust-conductor Setup - PROD Mode
 echo ========================================
 echo.
-echo Full production setup with connection pooling,
-echo load balancing, structured logging, and scaling.
+echo Full production setup with ALL features enabled:
+echo   - Kafka (event streaming)
+echo   - GraphQL API
+echo   - Server-Sent Events (SSE)
+echo   - WebSocket real-time feeds
+echo   - gRPC with reflection
+echo   - API v2 endpoints
+echo   - Structured logging (Seq)
+echo   - Connection pooling (PgBouncer)
+echo   - Load balancing (Nginx)
+echo   - Multi-shard scaling
+echo   - External storage (optional, RustFS/S3)
+echo.
+echo DEV mode uses only Redis Streams (no Kafka) and minimal features.
+echo PROD enables the full "feature-rich" Cargo build profile.
 echo.
 
 
@@ -433,6 +446,18 @@ if /i "!USE_MINIO!"=="y" (
 )
 
 
+REM -- Compute CARGO_FEATURES for PROD --
+REM PROD always builds with all features. If external storage (RustFS/S3) is
+REM enabled, we add the "external-storage" feature on top.
+if /i "!USE_MINIO!"=="y" (
+    set "CARGO_FEATURES=feature-rich"
+) else (
+    set "CARGO_FEATURES=kafka,graphql,sse,websocket,grpc-reflection,api-v2,seq"
+)
+echo.
+echo Cargo features: !CARGO_FEATURES!
+echo.
+
 REM -- Backend Migrator --
 REM Always connects directly to postgres (migrations use DDL/advisory locks
 REM which are incompatible with pgbouncer's transaction pooling mode).
@@ -440,6 +465,8 @@ REM which are incompatible with pgbouncer's transaction pooling mode).
 >> "%FILE%" echo     build:
 >> "%FILE%" echo       context: ./backend
 >> "%FILE%" echo       dockerfile: Dockerfile
+>> "%FILE%" echo       args:
+>> "%FILE%" echo         CARGO_FEATURES: "!CARGO_FEATURES!"
 >> "%FILE%" echo     environment:
 >> "%FILE%" echo       HOST: "0.0.0.0"
 >> "%FILE%" echo       PORT: "!BACKEND_PORT!"
@@ -485,6 +512,8 @@ REM PROD: connect via pgbouncer, expose to nginx-lb only
 >> "%FILE%" echo     build:
 >> "%FILE%" echo       context: ./backend
 >> "%FILE%" echo       dockerfile: Dockerfile
+>> "%FILE%" echo       args:
+>> "%FILE%" echo         CARGO_FEATURES: "!CARGO_FEATURES!"
 >> "%FILE%" echo     restart: unless-stopped
 >> "%FILE%" echo     expose:
 >> "%FILE%" echo       - "!BACKEND_PORT!"
@@ -587,6 +616,8 @@ echo    Public URL: !PUBLIC_URL!
 echo    API:        !PUBLIC_URL!/api
 echo    gRPC:       port !GRPC_PORT!
 echo    CORS:       !PUBLIC_URL!
+echo    Features:   ALL (Kafka, GraphQL, SSE, WebSocket, gRPC, API v2)
+echo    Cargo:      !CARGO_FEATURES!
 echo    PgBouncer:  ON  - connection pooling per shard
 echo    Nginx LB:   ON  - load balancing %NUM_REPLICAS% replicas
 echo    Seq:        http://localhost:!SEQ_PORT!

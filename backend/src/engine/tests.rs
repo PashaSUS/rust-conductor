@@ -621,6 +621,8 @@ fn poll_task_serde() {
         callback_after_seconds: 30,
         poll_count: 1,
         retry_count: 0,
+        priority: 0,
+        env_vars: None,
     };
     let json_str = serde_json::to_string(&poll).unwrap();
     let parsed: PollTask = serde_json::from_str(&json_str).unwrap();
@@ -1136,6 +1138,10 @@ fn contract_workflow_def_json_field_names() {
         metadata: None,
         cache_config: None,
         masked_fields: vec![],
+        on_complete_webhook: None,
+        on_failure_webhook: None,
+        tags: vec![],
+        sla_deadline_seconds: None,
     };
     let v = serde_json::to_value(&def).unwrap();
     // Verify camelCase field names match Conductor API
@@ -1348,6 +1354,8 @@ fn contract_poll_task_field_names() {
         callback_after_seconds: 0,
         poll_count: 1,
         retry_count: 0,
+        priority: 0,
+        env_vars: None,
     };
     let v = serde_json::to_value(&poll).unwrap();
     assert!(v.get("taskId").is_some());
@@ -1398,6 +1406,8 @@ fn contract_task_def_field_names() {
         input_schema: None,
         output_schema: None,
         enforce_schema: false,
+        env_vars: None,
+        retry_on_errors: vec![],
     };
     let v = serde_json::to_value(&def).unwrap();
     assert!(v.get("retryCount").is_some());

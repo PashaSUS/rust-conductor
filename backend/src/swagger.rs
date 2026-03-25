@@ -54,10 +54,12 @@ pub fn build_openapi() -> utoipa::openapi::OpenApi {
         .title("Rust Conductor API")
         .description(Some(
             "Netflix Conductor-compatible workflow orchestration engine built in Rust. \
-             Provides REST API endpoints for workflow definitions, task management, \
-             event handling, and administrative operations.",
+             Provides REST, GraphQL, gRPC, SSE, and WebSocket endpoints for workflow \
+             definitions, task management, event handling, and administrative operations. \
+             V1 API is fully Conductor-compatible; V2 API adds envelope format, \
+             long-polling, and request batching.",
         ))
-        .version("0.1.0")
+        .version("0.2.0")
         .build();
 
     let server = ServerBuilder::new().url("/").build();
@@ -1175,6 +1177,195 @@ pub fn build_openapi() -> utoipa::openapi::OpenApi {
                 )
                 .build(),
         )
+
+        // ── SSE Endpoints (#162) ──
+        .path(
+            "/api/sse/workflow/{workflowId}",
+            PathItemBuilder::new()
+                .operation(
+                    HttpMethod::Get,
+                    OperationBuilder::new()
+                        .tag("SSE")
+                        .summary(Some("Stream workflow status via SSE"))
+                        .description(Some("Server-Sent Events endpoint that streams real-time workflow status updates until the workflow reaches a terminal state."))
+                        .operation_id(Some("sseWorkflowStatus"))
+                        .parameter(path_param("workflowId", "Workflow execution ID"))
+                        .parameter(
+                            ParameterBuilder::new()
+                                .name("intervalMs")
+                                .parameter_in(ParameterIn::Query)
+                                .description(Some("Polling interval in milliseconds (default 2000, min 500)"))
+                                .schema(Some(i()))
+                                .build(),
+                        )
+                        .response("200", ResponseBuilder::new().description("SSE event stream (text/event-stream)").build())
+                        .build(),
+                )
+                .build(),
+        )
+        .path(
+            "/api/sse/queue/sizes",
+            PathItemBuilder::new()
+                .operation(
+                    HttpMethod::Get,
+                    OperationBuilder::new()
+                        .tag("SSE")
+                        .summary(Some("Stream queue sizes via SSE"))
+                        .description(Some("Server-Sent Events endpoint that streams queue size updates at a configurable interval."))
+                        .operation_id(Some("sseQueueSizes"))
+                        .response("200", ResponseBuilder::new().description("SSE event stream (text/event-stream)").build())
+                        .build(),
+                )
+                .build(),
+        )
+
+        // ── WebSocket Endpoints (#163) ──
+        .path(
+            "/api/ws/workflow/{workflowId}",
+            PathItemBuilder::new()
+                .operation(
+                    HttpMethod::Get,
+                    OperationBuilder::new()
+                        .tag("WebSocket")
+                        .summary(Some("WebSocket for bidirectional workflow communication"))
+                        .description(Some("Upgrade to WebSocket for real-time workflow status. Supports subscribe/unsubscribe/getStatus messages."))
+                        .operation_id(Some("wsWorkflow"))
+                        .parameter(path_param("workflowId", "Initial workflow ID to track"))
+                        .response("101", ResponseBuilder::new().description("WebSocket upgrade").build())
+                        .build(),
+                )
+                .build(),
+        )
+        .path(
+            "/api/ws/tasks/{taskType}",
+            PathItemBuilder::new()
+                .operation(
+                    HttpMethod::Get,
+                    OperationBuilder::new()
+                        .tag("WebSocket")
+                        .summary(Some("WebSocket for task worker feed"))
+                        .description(Some("Upgrade to WebSocket for bidirectional task communication. Tasks are pushed to the worker; worker sends task updates back."))
+                        .operation_id(Some("wsTaskFeed"))
+                        .parameter(path_param("taskType", "Task type to poll for"))
+                        .response("101", ResponseBuilder::new().description("WebSocket upgrade").build())
+                        .build(),
+                )
+                .build(),
+        )
+
+        // ── GraphQL Endpoint (#161) ──
+        .path(
+            "/api/graphql",
+            PathItemBuilder::new()
+                .operation(
+                    HttpMethod::Post,
+                    OperationBuilder::new()
+                        .tag("GraphQL")
+                        .summary(Some("GraphQL endpoint"))
+                        .description(Some("Execute GraphQL queries and mutations against the Conductor API. Visit GET /api/graphql for the interactive playground."))
+                        .operation_id(Some("graphql"))
+                        .request_body(Some(json_body()))
+                        .response("200", ok_json("GraphQL response"))
+                        .build(),
+                )
+                .operation(
+                    HttpMethod::Get,
+                    OperationBuilder::new()
+                        .tag("GraphQL")
+                        .summary(Some("GraphQL playground"))
+                        .description(Some("Interactive GraphQL playground for exploring the API."))
+                        .operation_id(Some("graphqlPlayground"))
+                        .response("200", ResponseBuilder::new().description("HTML playground").build())
+                        .build(),
+                )
+                .build(),
+        )
+
+        // ── Batch Endpoint (#166) ──
+        .path(
+            "/api/batch",
+            PathItemBuilder::new()
+                .operation(
+                    HttpMethod::Post,
+                    OperationBuilder::new()
+                        .tag("Batch")
+                        .summary(Some("Execute multiple API calls in a single request"))
+                        .description(Some("Request batching endpoint — execute multiple operations atomically in a single HTTP request."))
+                        .operation_id(Some("batchExecute"))
+                        .request_body(Some(json_body()))
+                        .response("200", ok_json("Array of operation results"))
+                        .build(),
+                )
+                .build(),
+        )
+
+        // ── V2 API Endpoints (#165) ──
+        .path(
+            "/api/v2/workflow",
+            PathItemBuilder::new()
+                .operation(
+                    HttpMethod::Post,
+                    OperationBuilder::new()
+                        .tag("V2 API")
+                        .summary(Some("Start workflow (V2 envelope)"))
+                        .description(Some("Start a new workflow execution. V2 returns an envelope with apiVersion and structured data."))
+                        .operation_id(Some("startWorkflowV2"))
+                        .request_body(Some(ref_body("StartWorkflowRequest")))
+                        .response("200", ok_json("V2 envelope with workflowId"))
+                        .build(),
+                )
+                .build(),
+        )
+        .path(
+            "/api/v2/workflow/{workflowId}",
+            PathItemBuilder::new()
+                .operation(
+                    HttpMethod::Get,
+                    OperationBuilder::new()
+                        .tag("V2 API")
+                        .summary(Some("Get workflow (V2 envelope)"))
+                        .description(Some("Retrieve workflow execution details. V2 returns an envelope with apiVersion."))
+                        .operation_id(Some("getWorkflowV2"))
+                        .parameter(path_param("workflowId", "Workflow execution ID"))
+                        .response("200", ok_json("V2 envelope with Workflow"))
+                        .build(),
+                )
+                .build(),
+        )
+        .path(
+            "/api/v2/tasks/poll/long/{taskType}",
+            PathItemBuilder::new()
+                .operation(
+                    HttpMethod::Get,
+                    OperationBuilder::new()
+                        .tag("V2 API")
+                        .summary(Some("Long-poll for tasks"))
+                        .description(Some("Long-polling endpoint for workers — waits server-side for a task to become available (up to timeoutMs). Returns 204 if timeout expires with no task."))
+                        .operation_id(Some("longPollTask"))
+                        .parameter(path_param("taskType", "Task type name"))
+                        .parameter(
+                            ParameterBuilder::new()
+                                .name("workerId")
+                                .parameter_in(ParameterIn::Query)
+                                .description(Some("Worker identification"))
+                                .schema(Some(s()))
+                                .build(),
+                        )
+                        .parameter(
+                            ParameterBuilder::new()
+                                .name("timeoutMs")
+                                .parameter_in(ParameterIn::Query)
+                                .description(Some("Maximum wait time in milliseconds (default 10000, max 30000)"))
+                                .schema(Some(i()))
+                                .build(),
+                        )
+                        .response("200", ok_json("V2 envelope with task"))
+                        .response("204", ResponseBuilder::new().description("No task available within timeout").build())
+                        .build(),
+                )
+                .build(),
+        )
+
         .build();
 
     let components = ComponentsBuilder::new()

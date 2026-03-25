@@ -194,6 +194,9 @@ export interface WorkflowTask {
   loopCondition?: string;
   loopOver?: WorkflowTask[];
   subWorkflowParam?: { name: string; version?: number };
+  dynamicTaskNameParam?: string;
+  sink?: string;
+  asyncComplete?: boolean;
 }
 
 export interface TaskDef {

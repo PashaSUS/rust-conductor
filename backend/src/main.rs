@@ -51,7 +51,7 @@ async fn main() -> std::io::Result<()> {
     // Create shard pools — one per database URL
     let mut shard_pools = Vec::with_capacity(cfg.shard_database_urls.len());
     for (i, url) in cfg.shard_database_urls.iter().enumerate() {
-        let pool = store::postgres::create_pool(url).await;
+        let pool = store::postgres::create_pool_with_options(url, cfg.slow_query_threshold_ms).await;
         if !skip_migrations {
             store::postgres::run_migrations(&pool).await;
             tracing::info!(shard = i, "Shard database connected and migrated");
@@ -67,6 +67,17 @@ async fn main() -> std::io::Result<()> {
         return Ok(());
     }
 
+    // Optional read-replica pools
+    let mut replica_pools = Vec::new();
+    if !cfg.replica_database_urls.is_empty() {
+        for (i, url) in cfg.replica_database_urls.iter().enumerate() {
+            let pool = store::postgres::create_replica_pool(url, cfg.slow_query_threshold_ms).await;
+            tracing::info!(shard = i, "Read replica connected");
+            replica_pools.push(pool);
+        }
+        tracing::info!(num_replicas = replica_pools.len(), "Read replicas initialized");
+    }
+
     // Initialize sharded Redis pool from comma-separated URLs
     let redis_urls: Vec<String> = cfg
         .redis_urls
@@ -78,7 +89,8 @@ async fn main() -> std::io::Result<()> {
         .await
         .expect("Failed to create sharded Redis pool");
 
-    let sharded_pool = engine::ShardedPool::new(shard_pools);
+    let sharded_pool = engine::ShardedPool::new(shard_pools)
+        .with_replicas(replica_pools);
 
     #[cfg(feature = "kafka")]
     let queue = store::kafka::KafkaTaskQueue::new(&cfg.kafka_brokers)
@@ -107,18 +119,24 @@ async fn main() -> std::io::Result<()> {
         None
     };
 
-    let engine = engine::WorkflowEngine::new(
+    let engine = engine::WorkflowEngine::with_cache_size(
         sharded_pool.clone(),
         redis_pool.clone(),
         queue,
         #[cfg(feature = "external-storage")]
         external_storage,
-    );
+        cfg.def_cache_max_entries,
+    )
+    .with_sweeper_config(cfg.sweeper_min_interval_secs, cfg.sweeper_max_interval_secs);
 
     // Start background sweeper for orphaned/stale tasks
     engine::WorkflowEngine::start_background_sweeper(std::sync::Arc::new(engine.clone()));
 
     let openapi = swagger::build_openapi();
+
+    // Build GraphQL schema (only when graphql feature is enabled)
+    #[cfg(feature = "graphql")]
+    let graphql_schema = api::graphql::build_schema(std::sync::Arc::new(engine.clone()));
 
     // ── gRPC server (dedicated multi-thread runtime) ──────────────────
     let grpc_engine = std::sync::Arc::new(engine.clone());
@@ -146,9 +164,22 @@ async fn main() -> std::io::Result<()> {
         cfg.host,
         cfg.port
     );
+    #[cfg(feature = "graphql")]
+    tracing::info!(
+        "GraphQL playground at http://{}:{}/api/graphql",
+        cfg.host,
+        cfg.port
+    );
 
     let cors_origin = cfg.cors_origin.clone();
     let rate_limit_redis = redis_pool.clone();
+    let rate_limit_enabled = cfg.rate_limit_enabled;
+    let rate_limit_max_requests = cfg.rate_limit_max_requests;
+    let rate_limit_window_secs = cfg.rate_limit_window_secs;
+
+    if !rate_limit_enabled {
+        tracing::info!("Rate limiting is DISABLED (RATE_LIMIT_ENABLED=false)");
+    }
 
     HttpServer::new(move || {
         let cors = if let Some(ref origin) = cors_origin {
@@ -167,20 +198,25 @@ async fn main() -> std::io::Result<()> {
 
         let json_cfg = web::JsonConfig::default().limit(10 * 1024 * 1024); // 10MB payload limit
 
-        // Rate limiter: 1000 requests per 60 seconds per client IP
         let rate_limiter = api::rate_limit::RateLimiter::new(
-            rate_limit_redis.clone(), 1000, 60,
+            rate_limit_redis.clone(), rate_limit_max_requests, rate_limit_window_secs,
         );
 
-        App::new()
+        let app = App::new()
             .wrap(cors)
             .wrap(TracingLogger::default())
             .wrap(middleware::Compress::default())
-            .wrap(rate_limiter)
+            .wrap(middleware::Condition::new(rate_limit_enabled, rate_limiter));
+
+        let app = app
             .app_data(json_cfg)
             .app_data(web::Data::new(redis_pool.clone()))
-            .app_data(web::Data::new(engine.clone()))
-            .configure(api::configure)
+            .app_data(web::Data::new(engine.clone()));
+
+        #[cfg(feature = "graphql")]
+        let app = app.app_data(web::Data::new(graphql_schema.clone()));
+
+        app.configure(api::configure)
             .service(
                 SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-docs/openapi.json", openapi.clone()),
             )

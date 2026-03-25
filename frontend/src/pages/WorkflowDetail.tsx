@@ -1,7 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, Fragment } from "react";
 import { useParams, useNavigate } from "react-router";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { useQuery } from "@tanstack/react-query";
 import { workflowApi, metadataApi, formatTs, type TaskResult } from "@/api/conductor";
 import WorkflowDiagram from "@/components/WorkflowDiagram";
 import { Card, CardContent } from "@/components/ui/card";
@@ -12,18 +11,25 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Pause, Play, XCircle, RotateCcw, RefreshCcw, ChevronDown, ChevronRight, ExternalLink, X, Clock, Repeat } from "lucide-react";
 import { CopyButton } from "@/components/CopyButton";
 import { ExecutionTimeline } from "@/components/ExecutionTimeline";
+import { FlameChart } from "@/components/FlameChart";
+import { TaskDependencyGraph } from "@/components/TaskDependencyGraph";
+import { DataExplorer } from "@/components/DataExplorer";
+import { ReplayPlayer } from "@/components/ReplayPlayer";
 import { JsonView } from "@/components/JsonView";
 import { StartWorkflowDialog } from "@/components/StartWorkflowDialog";
+import { StatusBadge, TaskStatusBadge } from "@/components/StatusBadge";
 import { useThemeText } from "@/components/ThemeContext";
+import { useWorkflowMutations } from "@/hooks/useWorkflowMutations";
 
 export default function WorkflowDetail() {
   const t = useThemeText();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const [selectedDiagramTask, setSelectedDiagramTask] = useState<TaskResult | null>(null);
   const [replayOpen, setReplayOpen] = useState(false);
+
+  const { pauseMut, resumeMut, terminateMut, restartMut, retryMut } = useWorkflowMutations([["workflow", id!]]);
 
   const toggleTask = (taskId: string) => {
     setExpandedTasks((prev) => {
@@ -50,14 +56,6 @@ export default function WorkflowDetail() {
     enabled: !!wf,
   });
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["workflow", id] });
-
-  const pauseMut = useMutation({ mutationFn: () => workflowApi.pause(id!), onSuccess: () => { toast.success(t.toastWorkflowPaused); invalidate(); } });
-  const resumeMut = useMutation({ mutationFn: () => workflowApi.resume(id!), onSuccess: () => { toast.success(t.toastWorkflowResumed); invalidate(); } });
-  const terminateMut = useMutation({ mutationFn: () => workflowApi.terminate(id!), onSuccess: () => { toast.success(t.toastWorkflowTerminated); invalidate(); } });
-  const restartMut = useMutation({ mutationFn: () => workflowApi.restart(id!), onSuccess: () => { toast.success(t.toastWorkflowRestarted); invalidate(); } });
-  const retryMut = useMutation({ mutationFn: () => workflowApi.retry(id!), onSuccess: () => { toast.success(t.toastWorkflowRetried); invalidate(); } });
-
   if (isLoading) return <p className="text-muted-foreground">{t.loading}</p>;
   if (!wf) return <p className="text-muted-foreground">{t.workflowNotFound}</p>;
 
@@ -74,18 +72,18 @@ export default function WorkflowDetail() {
           <div className="flex gap-1 ml-2">
             {wf.status === "RUNNING" && (
               <>
-                <Button variant="outline" size="sm" onClick={() => pauseMut.mutate()}><Pause className="h-3 w-3 mr-1" />{t.pause}</Button>
-                <Button variant="destructive" size="sm" onClick={() => terminateMut.mutate()}><XCircle className="h-3 w-3 mr-1" />{t.terminate}</Button>
+                <Button variant="outline" size="sm" onClick={() => pauseMut.mutate(id!)}><Pause className="h-3 w-3 mr-1" />{t.pause}</Button>
+                <Button variant="destructive" size="sm" onClick={() => terminateMut.mutate(id!)}><XCircle className="h-3 w-3 mr-1" />{t.terminate}</Button>
               </>
             )}
             {wf.status === "PAUSED" && (
-              <Button variant="outline" size="sm" onClick={() => resumeMut.mutate()}><Play className="h-3 w-3 mr-1" />{t.resume}</Button>
+              <Button variant="outline" size="sm" onClick={() => resumeMut.mutate(id!)}><Play className="h-3 w-3 mr-1" />{t.resume}</Button>
             )}
             {(wf.status === "FAILED" || wf.status === "TIMED_OUT") && (
-              <Button variant="outline" size="sm" onClick={() => retryMut.mutate()}><RefreshCcw className="h-3 w-3 mr-1" />{t.retry}</Button>
+              <Button variant="outline" size="sm" onClick={() => retryMut.mutate(id!)}><RefreshCcw className="h-3 w-3 mr-1" />{t.retry}</Button>
             )}
             {(wf.status === "FAILED" || wf.status === "TIMED_OUT" || wf.status === "TERMINATED" || wf.status === "COMPLETED") && (
-              <Button variant="outline" size="sm" onClick={() => restartMut.mutate()}><RotateCcw className="h-3 w-3 mr-1" />{t.restart}</Button>
+              <Button variant="outline" size="sm" onClick={() => restartMut.mutate(id!)}><RotateCcw className="h-3 w-3 mr-1" />{t.restart}</Button>
             )}
             <Button variant="outline" size="sm" onClick={() => setReplayOpen(true)}>
               <Repeat className="h-3 w-3 mr-1" />{t.replayExecution}
@@ -94,13 +92,22 @@ export default function WorkflowDetail() {
         </div>
       </div>
 
+      {/* Task completion progress bar */}
+      {wf.tasks.length > 0 && (
+        <TaskProgressBar tasks={wf.tasks} />
+      )}
+
       <Tabs defaultValue="tasks">
         <TabsList>
           <TabsTrigger value="tasks">{t.tasksTab} ({wf.tasks.length})</TabsTrigger>
           <TabsTrigger value="timeline">{t.timeline}</TabsTrigger>
+          <TabsTrigger value="flame">Flame Chart</TabsTrigger>
+          <TabsTrigger value="depgraph">Dependencies</TabsTrigger>
+          <TabsTrigger value="replay">Replay</TabsTrigger>
           <TabsTrigger value="diagram">{t.diagram}</TabsTrigger>
           <TabsTrigger value="input">{t.input}</TabsTrigger>
           <TabsTrigger value="output">{t.output}</TabsTrigger>
+          <TabsTrigger value="explorer">Data Explorer</TabsTrigger>
           <TabsTrigger value="info">{t.info}</TabsTrigger>
         </TabsList>
 
@@ -108,6 +115,49 @@ export default function WorkflowDetail() {
           <Card>
             <CardContent className="pt-6">
               <ExecutionTimeline
+                tasks={wf.tasks}
+                workflowStartTime={wf.startTime}
+                workflowEndTime={wf.endTime}
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="flame">
+          <Card>
+            <CardContent className="pt-6">
+              <FlameChart
+                tasks={wf.tasks}
+                workflowStartTime={wf.startTime}
+                workflowEndTime={wf.endTime}
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="depgraph">
+          <Card>
+            <CardContent className="pt-6">
+              {wfDef ? (
+                <TaskDependencyGraph
+                  definitionTasks={wfDef.tasks}
+                  runtimeTasks={wf.tasks}
+                  onTaskClick={(refName) => {
+                    const task = wf.tasks.find((t2) => t2.referenceTaskName === refName);
+                    setSelectedDiagramTask(task ?? null);
+                  }}
+                />
+              ) : (
+                <p className="text-muted-foreground text-sm">{t.loadingWorkflowDef}</p>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="replay">
+          <Card>
+            <CardContent className="pt-6">
+              <ReplayPlayer
                 tasks={wf.tasks}
                 workflowStartTime={wf.startTime}
                 workflowEndTime={wf.endTime}
@@ -134,8 +184,8 @@ export default function WorkflowDetail() {
                 </TableHeader>
                 <TableBody>
                   {wf.tasks.map((tk) => (
-                    <>
-                      <TableRow key={tk.taskId} className="cursor-pointer hover:bg-muted/50" onClick={() => toggleTask(tk.taskId)}>
+                    <Fragment key={tk.taskId}>
+                      <TableRow key={tk.taskId} className="cursor-pointer hover:bg-muted" onClick={() => toggleTask(tk.taskId)}>
                         <TableCell className="w-8 px-2">
                           {expandedTasks.has(tk.taskId) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                         </TableCell>
@@ -154,7 +204,7 @@ export default function WorkflowDetail() {
                       </TableRow>
                       {expandedTasks.has(tk.taskId) && (
                         <TableRow key={`${tk.taskId}-detail`}>
-                          <TableCell colSpan={8} className="bg-muted/30 p-4">
+                          <TableCell colSpan={8} className="bg-muted p-4">
                             <div className="grid grid-cols-2 gap-4">
                               <div>
                                 <p className="text-xs font-semibold mb-1 text-muted-foreground">{t.input}</p>
@@ -186,7 +236,7 @@ export default function WorkflowDetail() {
                           </TableCell>
                         </TableRow>
                       )}
-                    </>
+                    </Fragment>
                   ))}
                 </TableBody>
               </Table>
@@ -200,8 +250,8 @@ export default function WorkflowDetail() {
               <div className="flex gap-4">
                 {/* Task detail panel */}
                 {selectedDiagramTask && (
-                  <div className="w-80 shrink-0 border rounded-lg bg-muted/20 overflow-auto max-h-150">
-                    <div className="flex items-center justify-between p-3 border-b bg-muted/40">
+                  <div className="w-80 shrink-0 border rounded-lg bg-muted overflow-auto max-h-150">
+                    <div className="flex items-center justify-between p-3 border-b bg-muted">
                       <h4 className="font-semibold text-sm truncate">{selectedDiagramTask.referenceTaskName}</h4>
                       <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setSelectedDiagramTask(null)}>
                         <X className="h-3 w-3" />
@@ -308,6 +358,21 @@ export default function WorkflowDetail() {
           </Card>
         </TabsContent>
 
+        <TabsContent value="explorer">
+          <Card>
+            <CardContent className="pt-6 space-y-4">
+              <div>
+                <h4 className="text-xs font-semibold text-muted-foreground mb-2">Workflow Input</h4>
+                <DataExplorer data={wf.input} />
+              </div>
+              <div>
+                <h4 className="text-xs font-semibold text-muted-foreground mb-2">Workflow Output</h4>
+                <DataExplorer data={wf.output} />
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         <TabsContent value="info">
           <Card>
             <CardContent className="pt-6 space-y-2 text-sm">
@@ -363,16 +428,6 @@ function InfoRow({ label, value, copyable }: { label: string; value: string; cop
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const variant = status === "COMPLETED" ? "success" : status === "RUNNING" ? "default" : status === "FAILED" ? "destructive" : status === "TIMED_OUT" ? "destructive" : status === "PAUSED" ? "warning" : "secondary";
-  return <Badge variant={variant as "default"} className="text-sm">{status}</Badge>;
-}
-
-function TaskStatusBadge({ status }: { status: string }) {
-  const variant = status === "COMPLETED" ? "success" : status === "IN_PROGRESS" ? "default" : status === "FAILED" ? "destructive" : status === "TIMED_OUT" ? "destructive" : status === "SCHEDULED" ? "warning" : "secondary";
-  return <Badge variant={variant as "default"}>{status}</Badge>;
-}
-
 function DurationBadge({ startTime, endTime, status }: { startTime: number; endTime?: number; status: string }) {
   const [, setTick] = useState(0);
 
@@ -395,5 +450,29 @@ function DurationBadge({ startTime, endTime, status }: { startTime: number; endT
       <Clock className="h-3 w-3" />
       {formatted}
     </span>
+  );
+}
+
+function TaskProgressBar({ tasks }: { tasks: TaskResult[] }) {
+  const total = tasks.length;
+  const completed = tasks.filter((t) => t.status === "COMPLETED").length;
+  const failed = tasks.filter((t) => t.status === "FAILED" || t.status === "FAILED_WITH_TERMINAL_ERROR").length;
+  const inProgress = tasks.filter((t) => t.status === "IN_PROGRESS").length;
+  const pctComplete = Math.round((completed / total) * 100);
+  const pctFailed = Math.round((failed / total) * 100);
+  const pctInProgress = Math.round((inProgress / total) * 100);
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <span>{completed}/{total} tasks completed</span>
+        <span>{pctComplete}%</span>
+      </div>
+      <div className="flex h-2 rounded-full overflow-hidden bg-muted">
+        {pctComplete > 0 && <div className="bg-emerald-500 transition-all duration-500" style={{ width: `${pctComplete}%` }} />}
+        {pctInProgress > 0 && <div className="bg-blue-500 animate-pulse transition-all duration-500" style={{ width: `${pctInProgress}%` }} />}
+        {pctFailed > 0 && <div className="bg-red-500 transition-all duration-500" style={{ width: `${pctFailed}%` }} />}
+      </div>
+    </div>
   );
 }

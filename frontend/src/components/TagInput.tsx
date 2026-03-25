@@ -39,7 +39,7 @@ export function TagInput({ tags, onChange, placeholder, id }: TagInputProps) {
 
   return (
     <div
-      className="flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent px-3 py-1.5 text-sm shadow-sm ring-offset-background focus-within:ring-1 focus-within:ring-ring min-h-9 cursor-text"
+      className="flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-sm shadow-sm ring-offset-background focus-within:ring-1 focus-within:ring-ring min-h-9 cursor-text"
       onClick={() => inputRef.current?.focus()}
     >
       {tags.map((tag, i) => (
@@ -48,7 +48,7 @@ export function TagInput({ tags, onChange, placeholder, id }: TagInputProps) {
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); removeTag(i); }}
-            className="ml-0.5 rounded-full hover:bg-muted-foreground/20 p-0.5"
+            className="ml-0.5 rounded-full hover:bg-muted p-0.5"
           >
             <X className="h-3 w-3" />
           </button>

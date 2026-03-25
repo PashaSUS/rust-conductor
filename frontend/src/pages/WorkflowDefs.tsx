@@ -1,14 +1,17 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import { metadataApi, type WorkflowDef } from "@/api/conductor";
+import { usePagination } from "@/hooks/usePagination";
+import { PaginationControls } from "@/components/PaginationControls";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Plus, Trash2, Eye, Play, Copy, Search, History } from "lucide-react";
+import { Plus, Trash2, Eye, Play, Copy, Search, History, Pencil } from "lucide-react";
 import WorkflowBuilder from "@/components/WorkflowBuilder";
 import { StartWorkflowDialog } from "@/components/StartWorkflowDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -18,6 +21,7 @@ import { useThemeText } from "@/components/ThemeContext";
 
 export default function WorkflowDefs() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const t = useThemeText();
   const [viewDef, setViewDef] = useState<WorkflowDef | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -62,6 +66,11 @@ export default function WorkflowDefs() {
     setEditDef(cloned);
   };
 
+  /** Edit workflow — navigates to full-page editor, saves as next version */
+  const editAsNextVersion = (def: WorkflowDef) => {
+    navigate(`/definitions/create?clone=${encodeURIComponent(def.name)}&version=${def.version}`);
+  };
+
   const filteredDefs = (defs ?? []).filter(
     (d) =>
       !searchTerm ||
@@ -79,18 +88,20 @@ export default function WorkflowDefs() {
         }, {})
       );
 
+  const [pagedDefs, pagination] = usePagination(displayDefs);
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col gap-4 h-[calc(100vh-8rem)]">
+      <div className="flex items-center justify-between shrink-0">
         <h2 className="text-2xl font-bold tracking-tight">{t.workflowDefsTitle}</h2>
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
+        <Button size="sm" onClick={() => navigate("/definitions/create")}>
           <Plus className="h-4 w-4 mr-1" />
           {t.newDefinition}
         </Button>
       </div>
 
       {/* Search bar */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 shrink-0">
         <Search className="h-4 w-4 text-muted-foreground" />
         <Input
           placeholder={t.filterDefinitions}
@@ -103,7 +114,7 @@ export default function WorkflowDefs() {
             type="checkbox"
             checked={searchAllVersions}
             onChange={(e) => setSearchAllVersions(e.target.checked)}
-            className="rounded border-muted-foreground/30"
+            className="rounded border-muted-foreground"
           />
           {t.searchAllVersions}
         </label>
@@ -114,8 +125,8 @@ export default function WorkflowDefs() {
         )}
       </div>
 
-      <Card>
-        <CardContent className="pt-6">
+      <Card className="flex-1 min-h-0 flex flex-col">
+        <CardContent className="pt-6 flex-1 overflow-auto">
           {isLoading ? (
             <p className="text-muted-foreground text-sm">{t.loading}</p>
           ) : filteredDefs.length === 0 ? (
@@ -127,6 +138,7 @@ export default function WorkflowDefs() {
               </p>
             </div>
           ) : (
+            <>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -139,7 +151,7 @@ export default function WorkflowDefs() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {displayDefs.map((def) => (
+                {pagedDefs.map((def) => (
                   <TableRow key={`${def.name}-${def.version}`}>
                     <TableCell>
                       <div className="flex items-center gap-1">
@@ -163,6 +175,9 @@ export default function WorkflowDefs() {
                         <Button variant="ghost" size="icon" onClick={() => setViewDef(def)} title={t.viewJson}>
                           <Eye className="h-3 w-3" />
                         </Button>
+                        <Button variant="ghost" size="icon" onClick={() => editAsNextVersion(def)} title="Edit (save as v+1)">
+                          <Pencil className="h-3 w-3" />
+                        </Button>
                         <Button variant="ghost" size="icon" onClick={() => setHistoryTarget({ name: def.name, version: def.version })} title={t.versionHistory}>
                           <History className="h-3 w-3" />
                         </Button>
@@ -183,8 +198,21 @@ export default function WorkflowDefs() {
                 ))}
               </TableBody>
             </Table>
+            </>
           )}
         </CardContent>
+        <div className="border-t px-6 py-2 shrink-0">
+          <PaginationControls
+            page={pagination.page}
+            totalPages={pagination.totalPages}
+            canPrev={pagination.canPrev}
+            canNext={pagination.canNext}
+            onPrev={pagination.prev}
+            onNext={pagination.next}
+            rangeLabel={`${pagination.startIndex + 1}–${pagination.endIndex}`}
+            totalItems={pagination.totalItems}
+          />
+        </div>
       </Card>
 
       {/* Create workflow dialog (full-page builder) */}

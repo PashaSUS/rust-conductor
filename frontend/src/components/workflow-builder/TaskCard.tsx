@@ -153,7 +153,7 @@ function TaskCardHeader({
   const t = useThemeText();
   return (
     <div
-      className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-muted/50 transition-colors"
+      className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-muted transition-colors"
       onClick={onToggle}
     >
       <GripVertical className="h-4 w-4 text-muted-foreground" />

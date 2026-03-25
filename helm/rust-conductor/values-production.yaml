@@ -1,0 +1,65 @@
+# Production values overlay
+# Usage: helm install ... -f values.yaml -f values-production.yaml
+
+backend:
+  replicaCount: 3
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 15
+    targetCPUUtilizationPercentage: 65
+    targetMemoryUtilizationPercentage: 75
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 1Gi
+  env:
+    HOST: "0.0.0.0"
+    PORT: "8090"
+    GRPC_PORT: "50055"
+    NUM_SHARDS: "2"
+    RUST_LOG: "warn"
+    SKIP_MIGRATIONS: "true"
+    SLOW_QUERY_THRESHOLD_MS: "200"
+    DEF_CACHE_MAX_ENTRIES: "5000"
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 2
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/component: backend
+            topologyKey: topology.kubernetes.io/zone
+
+frontend:
+  replicaCount: 2
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 60
+  resources:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  tls:
+    - secretName: conductor-tls
+      hosts:
+        - conductor.example.com

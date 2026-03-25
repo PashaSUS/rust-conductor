@@ -1,10 +1,18 @@
 pub mod admin;
 pub mod bulk;
 pub mod event;
+#[cfg(feature = "graphql")]
+pub mod graphql;
 pub mod metadata;
 pub mod rate_limit;
 pub mod schedule;
+#[cfg(feature = "sse")]
+pub mod sse;
 pub mod tasks;
+#[cfg(feature = "api-v2")]
+pub mod v2;
+#[cfg(feature = "websocket")]
+pub mod websocket;
 pub mod workflow;
 
 use actix_web::web;
@@ -19,7 +27,20 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .configure(tasks::configure)
             .configure(event::configure)
             .configure(admin::configure)
-            .configure(schedule::configure),
+            .configure(schedule::configure)
+            .configure(|c| {
+                #[cfg(feature = "graphql")]
+                graphql::configure(c);
+                #[cfg(feature = "sse")]
+                sse::configure(c);
+                #[cfg(feature = "websocket")]
+                websocket::configure(c);
+                #[cfg(feature = "api-v2")]
+                {
+                    v2::configure_v2(c);
+                    v2::configure_batch(c);
+                }
+            }),
     )
     .route("/health", web::get().to(health));
 }

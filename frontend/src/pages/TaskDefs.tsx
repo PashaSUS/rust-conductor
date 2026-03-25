@@ -1,8 +1,11 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import { metadataApi, workflowApi, type TaskDef } from "@/api/conductor";
+import { buildInputFromFields } from "@/lib/field-parser";
+import { usePagination } from "@/hooks/usePagination";
+import { PaginationControls } from "@/components/PaginationControls";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -18,32 +21,6 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { CopyButton } from "@/components/CopyButton";
 import { useThemeText } from "@/components/ThemeContext";
 
-/** Try to parse a string value into a typed value */
-function parseFieldValue(raw: string): unknown {
-  const trimmed = raw.trim();
-  if (trimmed === "") return "";
-  if (trimmed === "true") return true;
-  if (trimmed === "false") return false;
-  if (trimmed === "null") return null;
-  const num = Number(trimmed);
-  if (!isNaN(num) && trimmed !== "") return num;
-  if (
-    (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
-    (trimmed.startsWith("[") && trimmed.endsWith("]"))
-  ) {
-    try { return JSON.parse(trimmed); } catch { /* fall through */ }
-  }
-  return raw;
-}
-
-function buildInputFromFields(fields: Record<string, string>): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  for (const [key, val] of Object.entries(fields)) {
-    result[key] = parseFieldValue(val);
-  }
-  return result;
-}
-
 export default function TaskDefs() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -56,6 +33,7 @@ export default function TaskDefs() {
   const [testInputMode, setTestInputMode] = useState<"fields" | "json">("fields");
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const jsonDraftRef = useRef<TaskDef[] | null>(null);
 
   const { data: defs, isLoading } = useQuery({
     queryKey: ["task-defs"],
@@ -82,37 +60,40 @@ export default function TaskDefs() {
 
   const testRunMut = useMutation({
     mutationFn: async ({ taskName, input }: { taskName: string; input: Record<string, unknown> }) => {
-      const wfName = `__test_run_${taskName}`;
-      const taskRef = `test_${taskName}`;
-      await metadataApi.registerWorkflowDef({
+      const wfName = "__test_run_task";
+
+      // Register the single dynamic wrapper workflow once (reused for all task types).
+      let needsRegister = false;
+      try {
+        await metadataApi.getWorkflowDef(wfName, 1);
+      } catch {
+        needsRegister = true;
+      }
+
+      if (needsRegister) {
+        await metadataApi.registerWorkflowDef({
+          name: wfName,
+          version: 1,
+          description: "Dynamic test-run wrapper — runs any task type via DYNAMIC dispatch",
+          tasks: [
+            {
+              name: "__dynamic_test",
+              taskReferenceName: "dynamic_test",
+              type: "DYNAMIC",
+              dynamicTaskNameParam: "taskToExecute",
+              inputParameters: {
+                taskToExecute: "${workflow.input.taskToExecute}",
+              },
+            },
+          ],
+        });
+      }
+
+      const workflowId = await workflowApi.start({
         name: wfName,
         version: 1,
-        description: `${t.testWorkflowDesc}: ${taskName}`,
-        tasks: [
-          {
-            name: "fork_test",
-            taskReferenceName: "fork_test",
-            type: "FORK_JOIN",
-            forkTasks: [
-              [
-                {
-                  name: taskName,
-                  taskReferenceName: taskRef,
-                  type: "SIMPLE",
-                  inputParameters: input,
-                },
-              ],
-            ],
-          },
-          {
-            name: "join_test",
-            taskReferenceName: "join_test",
-            type: "JOIN",
-            joinOn: [taskRef],
-          },
-        ],
+        input: { taskToExecute: taskName, ...input },
       });
-      const workflowId = await workflowApi.start({ name: wfName, version: 1, input });
       return workflowId;
     },
     onSuccess: (workflowId) => {
@@ -124,6 +105,27 @@ export default function TaskDefs() {
     onError: (e) => toast.error(e.message),
   });
 
+  const openTestRun = (def: TaskDef) => {
+    setTestRunDef(def);
+    setTestInput("{}");
+    const fields: Record<string, string> = {};
+    for (const k of def.inputKeys ?? []) fields[k] = "";
+    setTestFieldValues(fields);
+    setTestInputMode((def.inputKeys?.length ?? 0) > 0 ? "fields" : "json");
+  };
+
+  const submitTestRun = () => {
+    try {
+      const input =
+        testInputMode === "fields" && (testRunDef?.inputKeys?.length ?? 0) > 0
+          ? buildInputFromFields(testFieldValues)
+          : JSON.parse(testInput);
+      testRunMut.mutate({ taskName: testRunDef!.name, input });
+    } catch {
+      toast.error(t.toastInvalidJson);
+    }
+  };
+
   const filteredDefs = (defs ?? []).filter(
     (d) =>
       !searchTerm ||
@@ -132,18 +134,20 @@ export default function TaskDefs() {
       d.ownerEmail?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const [pagedDefs, pagination] = usePagination(filteredDefs);
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col gap-4 h-[calc(100vh-8rem)]">
+      <div className="flex items-center justify-between shrink-0">
         <h2 className="text-2xl font-bold tracking-tight">{t.taskDefsTitle}</h2>
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
+        <Button size="sm" onClick={() => navigate("/taskdefs/create")}>
           <Plus className="h-4 w-4 mr-1" />
           {t.newTaskDef}
         </Button>
       </div>
 
       {/* Search bar */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 shrink-0">
         <Search className="h-4 w-4 text-muted-foreground" />
         <Input
           placeholder={t.filterTaskDefs}
@@ -158,8 +162,8 @@ export default function TaskDefs() {
         )}
       </div>
 
-      <Card>
-        <CardContent className="pt-6">
+      <Card className="flex-1 min-h-0 flex flex-col">
+        <CardContent className="pt-6 flex-1 overflow-auto">
           {isLoading ? (
             <p className="text-muted-foreground text-sm">{t.loading}</p>
           ) : filteredDefs.length === 0 ? (
@@ -171,6 +175,7 @@ export default function TaskDefs() {
               </p>
             </div>
           ) : (
+            <>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -183,7 +188,7 @@ export default function TaskDefs() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredDefs.map((def) => (
+                {pagedDefs.map((def) => (
                   <TableRow key={def.name}>
                     <TableCell>
                       <div className="flex items-center gap-1">
@@ -197,14 +202,7 @@ export default function TaskDefs() {
                     <TableCell className="text-muted-foreground text-xs">{def.ownerEmail ?? "—"}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex gap-1 justify-end">
-                        <Button variant="ghost" size="icon" onClick={() => {
-                          setTestRunDef(def);
-                          setTestInput("{}");
-                          const fields: Record<string, string> = {};
-                          for (const k of def.inputKeys ?? []) fields[k] = "";
-                          setTestFieldValues(fields);
-                          setTestInputMode((def.inputKeys?.length ?? 0) > 0 ? "fields" : "json");
-                        }} title={t.testRun}>
+                        <Button variant="ghost" size="icon" onClick={() => openTestRun(def)} title={t.testRun}>
                           <Play className="h-3 w-3" />
                         </Button>
                         <Button variant="ghost" size="icon" onClick={() => setViewDef(def)} title={t.view}>
@@ -219,8 +217,21 @@ export default function TaskDefs() {
                 ))}
               </TableBody>
             </Table>
+            </>
           )}
         </CardContent>
+        <div className="border-t px-6 py-2 shrink-0">
+          <PaginationControls
+            page={pagination.page}
+            totalPages={pagination.totalPages}
+            canPrev={pagination.canPrev}
+            canNext={pagination.canNext}
+            onPrev={pagination.prev}
+            onNext={pagination.next}
+            rangeLabel={`${pagination.startIndex + 1}–${pagination.endIndex}`}
+            totalItems={pagination.totalItems}
+          />
+        </div>
       </Card>
 
       {/* Create dialog with form/JSON tabs */}
@@ -248,19 +259,16 @@ export default function TaskDefs() {
                 onChange={(e) => {
                   try {
                     const parsed = JSON.parse(e.target.value);
-                    const arr = Array.isArray(parsed) ? parsed : [parsed];
-                    // Store for submit — keep a ref so the button can use it
-                    (window as unknown as Record<string, unknown>).__taskJsonDraft = arr;
+                    jsonDraftRef.current = Array.isArray(parsed) ? parsed : [parsed];
                   } catch {
-                    // ignore
+                    jsonDraftRef.current = null;
                   }
                 }}
               />
               <Button
                 onClick={() => {
-                  const draft = (window as unknown as Record<string, unknown>).__taskJsonDraft as TaskDef[] | undefined;
-                  if (draft) {
-                    createMut.mutate(draft);
+                  if (jsonDraftRef.current) {
+                    createMut.mutate(jsonDraftRef.current);
                   } else {
                     toast.error(t.toastInvalidJson);
                   }
@@ -338,7 +346,7 @@ export default function TaskDefs() {
             </div>
 
             {testInputMode === "fields" && (testRunDef?.inputKeys?.length ?? 0) > 0 ? (
-              <div className="space-y-3 rounded-lg border p-3">
+              <div className="space-y-3 rounded-lg border p-3 max-h-[40vh] overflow-auto">
                 {(testRunDef?.inputKeys ?? []).map((k) => (
                   <div key={k} className="space-y-1">
                     <Label className="text-xs font-mono">{k}</Label>
@@ -368,17 +376,7 @@ export default function TaskDefs() {
           </div>
 
           <Button
-            onClick={() => {
-              try {
-                const input =
-                  testInputMode === "fields" && (testRunDef?.inputKeys?.length ?? 0) > 0
-                    ? buildInputFromFields(testFieldValues)
-                    : JSON.parse(testInput);
-                testRunMut.mutate({ taskName: testRunDef!.name, input });
-              } catch {
-                toast.error(t.toastInvalidJson);
-              }
-            }}
+            onClick={submitTestRun}
             disabled={testRunMut.isPending}
           >
             {testRunMut.isPending ? t.startingWorkflow : t.runTest}

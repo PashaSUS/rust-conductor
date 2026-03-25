@@ -211,7 +211,7 @@ impl WorkflowEngine {
     /// Supports standard 5-field cron: minute hour day-of-month month day-of-week.
     /// For simplicity, computes next aligned minute boundary.
     fn compute_next_run(cron_expr: &str) -> Result<Option<chrono::DateTime<Utc>>, EngineError> {
-        let parts: Vec<&str> = cron_expr.trim().split_whitespace().collect();
+        let parts: Vec<&str> = cron_expr.split_whitespace().collect();
         if parts.len() < 5 {
             return Err(EngineError::InvalidState(format!(
                 "Invalid cron expression (need 5 fields): {cron_expr}"
@@ -224,7 +224,7 @@ impl WorkflowEngine {
         // Truncate seconds
         candidate = candidate
             .date_naive()
-            .and_hms_opt(candidate.time().hour().into(), candidate.time().minute().into(), 0)
+            .and_hms_opt(candidate.time().hour(), candidate.time().minute(), 0)
             .map(|dt| dt.and_utc())
             .unwrap_or(candidate);
 
@@ -258,28 +258,25 @@ impl WorkflowEngine {
             return true;
         }
         // */N step
-        if let Some(step_str) = field.strip_prefix("*/") {
-            if let Ok(step) = step_str.parse::<u32>() {
-                return step > 0 && value % step == 0;
+        if let Some(step_str) = field.strip_prefix("*/")
+            && let Ok(step) = step_str.parse::<u32>() {
+                return step > 0 && value.is_multiple_of(step);
             }
-        }
         // Comma-separated values
         for part in field.split(',') {
             // Range: N-M
             if let Some((start_str, end_str)) = part.split_once('-') {
-                if let (Ok(start), Ok(end)) = (start_str.parse::<u32>(), end_str.parse::<u32>()) {
-                    if value >= start && value <= end {
+                if let (Ok(start), Ok(end)) = (start_str.parse::<u32>(), end_str.parse::<u32>())
+                    && value >= start && value <= end {
                         return true;
                     }
-                }
                 continue;
             }
             // Exact match
-            if let Ok(v) = part.trim().parse::<u32>() {
-                if v == value {
+            if let Ok(v) = part.trim().parse::<u32>()
+                && v == value {
                     return true;
                 }
-            }
         }
         false
     }

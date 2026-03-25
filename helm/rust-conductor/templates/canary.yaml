@@ -1,0 +1,120 @@
+{{- if .Values.canary.enabled }}
+# Canary Deployment: runs a small percentage of traffic against the new version
+# before rolling out fully. Uses a separate Deployment + weighted Service routing.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "rust-conductor.fullname" . }}-backend-canary
+  labels:
+    {{- include "rust-conductor.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend-canary
+    track: canary
+spec:
+  replicas: {{ .Values.canary.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "rust-conductor.name" . }}-backend
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      track: canary
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "rust-conductor.name" . }}-backend
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: backend
+        track: canary
+      annotations:
+        checksum/canary: {{ .Values.canary.tag | default "latest" | sha256sum }}
+    spec:
+      containers:
+        - name: backend
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.canary.tag | default .Values.backend.image.tag }}"
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.backend.service.httpPort }}
+              protocol: TCP
+            - name: grpc
+              containerPort: {{ .Values.backend.service.grpcPort }}
+              protocol: TCP
+          env:
+            {{- range $key, $val := .Values.backend.env }}
+            - name: {{ $key }}
+              value: {{ $val | quote }}
+            {{- end }}
+            - name: SHARD_DATABASE_URLS
+              value: {{ include "rust-conductor.postgresUrl" . | quote }}
+            - name: REDIS_URLS
+              value: {{ include "rust-conductor.redisUrl" . | quote }}
+            - name: KAFKA_BROKERS
+              value: {{ include "rust-conductor.kafkaBrokers" . | quote }}
+            - name: CANARY
+              value: "true"
+          {{- with .Values.backend.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.backend.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}
+---
+# Nginx Ingress canary annotations route a percentage of traffic to canary pods.
+# This Ingress is a duplicate of the main one with canary annotations.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "rust-conductor.fullname" . }}-canary
+  labels:
+    {{- include "rust-conductor.labels" . | nindent 4 }}
+  annotations:
+    nginx.ingress.kubernetes.io/canary: "true"
+    nginx.ingress.kubernetes.io/canary-weight: "{{ .Values.canary.weight | default 10 }}"
+    {{- if .Values.canary.headerName }}
+    nginx.ingress.kubernetes.io/canary-by-header: {{ .Values.canary.headerName | quote }}
+    nginx.ingress.kubernetes.io/canary-by-header-value: {{ .Values.canary.headerValue | default "always" | quote }}
+    {{- end }}
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  rules:
+    {{- range .Values.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "rust-conductor.fullname" $ }}-backend-canary
+                port:
+                  number: {{ $.Values.backend.service.httpPort }}
+    {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "rust-conductor.fullname" . }}-backend-canary
+  labels:
+    {{- include "rust-conductor.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend-canary
+    track: canary
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.backend.service.httpPort }}
+      targetPort: http
+      protocol: TCP
+    - name: grpc
+      port: {{ .Values.backend.service.grpcPort }}
+      targetPort: grpc
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: {{ include "rust-conductor.name" . }}-backend
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    track: canary
+{{- end }}

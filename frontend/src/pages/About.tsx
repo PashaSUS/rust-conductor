@@ -145,7 +145,7 @@ export default function About() {
         {highlights.map((h) => (
           <Card key={h.label} className="group hover:shadow-md transition-shadow">
             <CardContent className="p-4 flex items-start gap-3">
-              <div className="rounded-lg bg-primary/10 p-2 shrink-0 group-hover:bg-primary/20 transition-colors">
+              <div className="rounded-lg bg-muted p-2 shrink-0 group-hover:bg-accent transition-colors">
                 <h.icon className="h-5 w-5 text-primary" />
               </div>
               <div className="min-w-0">

@@ -7,7 +7,6 @@ import { cyberpunkText } from "./cyberpunk";
 import { forestText } from "./forest";
 import { oceanText } from "./ocean";
 import { pokemonText } from "./pokemon";
-import { yugiohText } from "./yugioh";
 import { chucknorrisText } from "./chucknorris";
 import { lotrText } from "./lotr";
 
@@ -20,7 +19,6 @@ export const themeTextMap: Record<UITheme, ThemeText> = {
   forest: forestText,
   ocean: oceanText,
   pokemon: pokemonText,
-  yugioh: yugiohText,
   chucknorris: chucknorrisText,
   lotr: lotrText,
 };

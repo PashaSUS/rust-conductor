@@ -1,0 +1,88 @@
+{{- if .Values.seq.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "rust-conductor.fullname" . }}-seq
+  labels:
+    {{- include "rust-conductor.labels" . | nindent 4 }}
+    app.kubernetes.io/component: seq
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "rust-conductor.name" . }}-seq
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "rust-conductor.name" . }}-seq
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: seq
+    spec:
+      containers:
+        - name: seq
+          image: "{{ .Values.seq.image.repository }}:{{ .Values.seq.image.tag }}"
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+            - name: ingest
+              containerPort: 5341
+              protocol: TCP
+          env:
+            - name: ACCEPT_EULA
+              value: "Y"
+            # Retention policy: auto-delete logs older than retentionDays
+            - name: SEQ_RETENTION_PERIOD
+              value: {{ .Values.seq.retentionDays | default 14 | quote }}d
+            # Storage quota in bytes — Seq will discard oldest events when exceeded
+            - name: SEQ_STORAGE_MAXIMUMSTORAGEBYTES
+              value: {{ .Values.seq.maxStorageBytes | default "5368709120" | quote }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "rust-conductor.fullname" . }}-seq
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "rust-conductor.fullname" . }}-seq
+  labels:
+    {{- include "rust-conductor.labels" . | nindent 4 }}
+    app.kubernetes.io/component: seq
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: {{ .Values.seq.persistence.size | default "10Gi" }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "rust-conductor.fullname" . }}-seq
+  labels:
+    {{- include "rust-conductor.labels" . | nindent 4 }}
+    app.kubernetes.io/component: seq
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.seq.service.port }}
+      targetPort: http
+    - name: ingest
+      port: 5341
+      targetPort: ingest
+  selector:
+    app.kubernetes.io/name: {{ include "rust-conductor.name" . }}-seq
+    app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}

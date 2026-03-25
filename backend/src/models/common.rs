@@ -55,11 +55,14 @@ pub struct RateLimitConfig {
 
 // ── Search / Bulk ──
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchResult<T> {
     pub total_hits: i64,
     pub results: Vec<T>,
+    /// Opaque cursor for cursor-based pagination.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

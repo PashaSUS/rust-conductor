@@ -228,7 +228,7 @@ export function CommandPalette() {
                     className={`flex items-center gap-3 w-full rounded-md px-2 py-2 text-sm text-left transition-colors ${
                       idx === selectedIndex
                         ? "bg-accent text-accent-foreground"
-                        : "hover:bg-accent/50"
+                        : "hover:bg-accent"
                     }`}
                     onClick={item.action}
                     onMouseEnter={() => setSelectedIndex(idx)}

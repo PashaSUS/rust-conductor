@@ -119,6 +119,10 @@ impl WorkflowEngine {
                 self.handle_lambda_task(workflow_id, task_def, input, start_seq)
                     .await?;
             }
+            "DYNAMIC" => {
+                self.handle_dynamic_task(workflow_id, task_def, input, start_seq)
+                    .await?;
+            }
             _ => {
                 if task_type != "SIMPLE" {
                     tracing::warn!(

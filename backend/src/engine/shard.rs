@@ -13,6 +13,9 @@ use crate::store::postgres::DbPool;
 #[derive(Clone)]
 pub struct ShardedPool {
     shards: Vec<DbPool>,
+    /// Optional read replicas — one per shard. If present, read-only queries
+    /// (search, stats, get) can be routed here to offload the primary.
+    replicas: Vec<DbPool>,
 }
 
 impl ShardedPool {
@@ -20,7 +23,23 @@ impl ShardedPool {
     /// The order of pools defines shard indices (0, 1, 2, ...).
     pub fn new(shards: Vec<DbPool>) -> Self {
         assert!(!shards.is_empty(), "At least one shard is required");
-        Self { shards }
+        Self {
+            shards,
+            replicas: Vec::new(),
+        }
+    }
+
+    /// Set optional read-replica pools (must match shard count).
+    pub fn with_replicas(mut self, replicas: Vec<DbPool>) -> Self {
+        if !replicas.is_empty() {
+            assert_eq!(
+                replicas.len(),
+                self.shards.len(),
+                "Replica count must match shard count"
+            );
+        }
+        self.replicas = replicas;
+        self
     }
 
     /// Number of shards.
@@ -49,6 +68,40 @@ impl ShardedPool {
     /// Iterate over all shard pools (for fan-out queries like search/stats).
     pub fn all_shards(&self) -> &[DbPool] {
         &self.shards
+    }
+
+    /// Read-replica pool for a given workflow_id. Falls back to the primary
+    /// shard if no replica is configured.
+    pub fn read_shard_for(&self, workflow_id: &str) -> &DbPool {
+        if self.replicas.is_empty() {
+            return self.shard_for(workflow_id);
+        }
+        let idx = self.shard_index(workflow_id);
+        &self.replicas[idx]
+    }
+
+    /// Read-replica pools for fan-out queries. Falls back to primary shards
+    /// if no replicas configured.
+    pub fn read_shards(&self) -> &[DbPool] {
+        if self.replicas.is_empty() {
+            &self.shards
+        } else {
+            &self.replicas
+        }
+    }
+
+    /// Read-replica for the primary shard (index 0). Falls back to primary.
+    pub fn read_primary(&self) -> &DbPool {
+        if self.replicas.is_empty() {
+            &self.shards[0]
+        } else {
+            &self.replicas[0]
+        }
+    }
+
+    /// Whether read replicas are configured.
+    pub fn has_replicas(&self) -> bool {
+        !self.replicas.is_empty()
     }
 }
 

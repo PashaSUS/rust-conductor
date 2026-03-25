@@ -1,5 +1,5 @@
 use deadpool_redis::{Config, Pool, Runtime};
-use rand::{seq::SliceRandom, thread_rng};
+use rand::seq::IndexedRandom;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
@@ -65,15 +65,37 @@ impl ShardedRedis {
     /// Randomly pick a pool for operations that don't need deterministic routing.
     pub fn random_pool(&self) -> &RedisPool {
         let pools = &self.pools;
-        let mut rng = thread_rng();
+        let mut rng = rand::rng();
         pools.choose(&mut rng).unwrap_or(&pools[0])
     }
 
-    /// For polling: return all pools in random order (to balance pop load).
-    pub fn all_pools_shuffled(&self) -> Vec<&RedisPool> {
-        let mut idxs: Vec<_> = (0..self.pools.len()).collect();
-        let mut rng = thread_rng();
-        idxs.shuffle(&mut rng);
-        idxs.into_iter().map(|i| &self.pools[i]).collect()
+    /// Number of Redis shards.
+    pub fn num_shards(&self) -> usize {
+        self.pools.len()
     }
+
+    /// Pool metrics for each shard.
+    pub fn pool_metrics(&self) -> Vec<RedisPoolMetrics> {
+        self.pools
+            .iter()
+            .enumerate()
+            .map(|(i, pool)| {
+                let status = pool.status();
+                RedisPoolMetrics {
+                    shard: i,
+                    size: status.size,
+                    available: status.available,
+                    max_size: status.max_size,
+                }
+            })
+            .collect()
+    }
+}
+
+/// Pool metrics for a single Redis shard.
+pub struct RedisPoolMetrics {
+    pub shard: usize,
+    pub size: usize,
+    pub available: usize,
+    pub max_size: usize,
 }

@@ -82,11 +82,10 @@ impl WorkflowEngine {
                 // and either fails the workflow or proceeds (if the task was optional).
                 let mut seen = std::collections::HashSet::new();
                 for (wf_id,) in &timed_out_workflows {
-                    if seen.insert(wf_id.clone()) {
-                        if let Err(e) = self.advance_workflow(wf_id).await {
+                    if seen.insert(wf_id.clone())
+                        && let Err(e) = self.advance_workflow(wf_id).await {
                             tracing::error!(workflow_id = %wf_id, error = %e, "Sweep advance after timeout failed");
                         }
-                    }
                 }
             }
 
@@ -178,26 +177,48 @@ impl WorkflowEngine {
     }
 
     /// Starts a background loop that periodically sweeps for orphaned tasks.
+    /// Uses adaptive intervals: decreases when work is found, increases when idle.
     pub fn start_background_sweeper(engine: std::sync::Arc<Self>) {
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+            let min_interval = engine.sweeper_min_interval_secs;
+            let max_interval = engine.sweeper_max_interval_secs;
+            let mut current_interval = 30u64.clamp(min_interval, max_interval);
+
             loop {
-                interval.tick().await;
+                tokio::time::sleep(std::time::Duration::from_secs(current_interval)).await;
+
+                let mut work_done = false;
+
                 match engine.sweep_orphaned_tasks().await {
+                    Ok(recovered) if recovered > 0 => { work_done = true; }
                     Ok(_) => {}
                     Err(e) => tracing::error!(error = %e, "Background sweep failed"),
                 }
                 // Run due CRON schedules
                 match engine.run_due_schedules().await {
-                    Ok(n) if n > 0 => tracing::info!(count = n, "CRON schedules triggered"),
+                    Ok(n) if n > 0 => {
+                        tracing::info!(count = n, "CRON schedules triggered");
+                        work_done = true;
+                    }
                     Err(e) => tracing::error!(error = %e, "CRON scheduler check failed"),
                     _ => {}
                 }
                 // Check SLA breaches
                 match engine.check_sla_breaches().await {
-                    Ok(n) if n > 0 => tracing::warn!(count = n, "SLA breaches detected"),
+                    Ok(n) if n > 0 => {
+                        tracing::warn!(count = n, "SLA breaches detected");
+                        work_done = true;
+                    }
                     Err(e) => tracing::error!(error = %e, "SLA breach check failed"),
                     _ => {}
+                }
+
+                // Adaptive interval: if work was done, speed up; if idle, slow down
+                if work_done {
+                    current_interval = (current_interval / 2).max(min_interval);
+                    tracing::debug!(interval_secs = current_interval, "Sweeper found work, decreasing interval");
+                } else {
+                    current_interval = (current_interval + 5).min(max_interval);
                 }
             }
         });

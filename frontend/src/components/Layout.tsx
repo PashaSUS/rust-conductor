@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Outlet, Link, useNavigate, useLocation } from "react-router";
 import {
   LayoutDashboard,
@@ -14,6 +14,12 @@ import {
   PanelLeftOpen,
   GitBranch,
   Calendar,
+  GitCompare,
+  Diff,
+  BookTemplate,
+  PencilRuler,
+  Menu,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -29,24 +35,38 @@ import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { CommandPalette } from "@/components/CommandPalette";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { useThemeText } from "@/components/ThemeContext";
+import { NotificationBell } from "@/components/NotificationBell";
 
 export default function Layout() {
   const t = useThemeText();
   const [startOpen, setStartOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem("sidebar-collapsed") === "true",
   );
   const navigate = useNavigate();
   const { pathname } = useLocation();
 
+  // Close mobile drawer on route change
+  useEffect(() => { setMobileOpen(false); }, [pathname]);
+
   const navItems = useMemo(() => [
+    // Core
     { to: "/", label: t.dashboard, icon: LayoutDashboard, shortcut: "1" },
     { to: "/executions", label: t.executions, icon: Play, shortcut: "2" },
     { to: "/definitions", label: t.workflowDefs, icon: FileCode2, shortcut: "3" },
     { to: "/taskdefs", label: t.taskDefs, icon: ListChecks, shortcut: "4" },
     { to: "/queues", label: t.taskQueues, icon: Layers, shortcut: "5" },
-    { to: "/dependencies", label: t.dependencyGraph, icon: GitBranch, shortcut: "6" },
-    { to: "/schedules", label: t.schedules, icon: Calendar, shortcut: "7" },
+    { to: "/schedules", label: t.schedules, icon: Calendar, shortcut: "6" },
+    // Analysis & Visualization
+    { to: "---", label: "divider", icon: null as never, shortcut: "" },
+    { to: "/dependencies", label: t.dependencyGraph, icon: GitBranch, shortcut: "7" },
+    { to: "/compare", label: "Compare", icon: GitCompare, shortcut: "" },
+    { to: "/diff", label: "Diff", icon: Diff, shortcut: "" },
+    // Tools
+    { to: "---2", label: "divider", icon: null as never, shortcut: "" },
+    { to: "/designer", label: "Designer", icon: PencilRuler, shortcut: "" },
+    { to: "/templates", label: "Templates", icon: BookTemplate, shortcut: "" },
     { to: "/about", label: t.about, icon: Info, shortcut: "8" },
   ], [t]);
 
@@ -85,11 +105,11 @@ export default function Layout() {
             break;
           case "6":
             e.preventDefault();
-            navigate("/dependencies");
+            navigate("/schedules");
             break;
           case "7":
             e.preventDefault();
-            navigate("/schedules");
+            navigate("/dependencies");
             break;
           case "8":
             e.preventDefault();
@@ -117,10 +137,56 @@ export default function Layout() {
   return (
     <TooltipProvider delayDuration={0}>
       <div className="flex h-screen bg-background">
+        {/* Mobile hamburger */}
+        <div className="md:hidden fixed top-0 left-0 right-0 z-40 flex items-center gap-2 border-b bg-sidebar px-4 py-3">
+          <Button variant="ghost" size="icon" onClick={() => setMobileOpen(true)}>
+            <Menu className="h-5 w-5" />
+          </Button>
+          <Zap className="h-5 w-5 text-chart-1" />
+          <span className="font-bold text-sm">{t.appName}</span>
+        </div>
+
+        {/* Mobile drawer overlay */}
+        {mobileOpen && (
+          <div className="md:hidden fixed inset-0 z-50 flex">
+            <div className="fixed inset-0 bg-black/80" onClick={() => setMobileOpen(false)} />
+            <aside className="relative w-64 bg-sidebar flex flex-col animate-in slide-in-from-left duration-200 max-h-screen overflow-y-auto">
+              <div className="flex items-center justify-between px-4 py-4 border-b">
+                <div className="flex items-center gap-2">
+                  <Zap className="h-5 w-5 text-chart-1" />
+                  <span className="font-bold">{t.appName}</span>
+                </div>
+                <Button variant="ghost" size="icon" onClick={() => setMobileOpen(false)}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+              <nav className="py-3 px-3 space-y-0.5 flex-1">
+                {navItems.map(({ to, label, icon: Icon }) => {
+                  if (to.startsWith("---")) return <div key={to} className="my-2 border-t border-border" />;
+                  const isActive = to === "/" ? pathname === "/" : pathname.startsWith(to);
+                  return (
+                    <Link
+                      key={to}
+                      to={to}
+                      className={cn(
+                        "flex h-9 items-center rounded-md text-sm font-medium px-3 transition-colors",
+                        isActive ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground",
+                      )}
+                    >
+                      <Icon className="h-4 w-4 mr-3" />
+                      <span className="truncate">{label}</span>
+                    </Link>
+                  );
+                })}
+              </nav>
+            </aside>
+          </div>
+        )}
+
         {/* Sidebar */}
         <aside
           className={cn(
-            "border-r bg-sidebar flex flex-col transition-all duration-200",
+            "hidden md:flex border-r bg-sidebar flex-col transition-all duration-200",
             collapsed ? "w-16" : "w-64",
           )}
         >
@@ -137,8 +203,13 @@ export default function Layout() {
               </h1>
             )}
           </div>
-          <nav className={cn("py-3 space-y-0.5", collapsed ? "px-2" : "px-3")}>
+          <nav className={cn("py-3 space-y-0.5 overflow-y-auto", collapsed ? "px-2" : "px-3")}>
             {navItems.map(({ to, label, icon: Icon, shortcut }) => {
+              // Divider separator between groups
+              if (to.startsWith("---")) {
+                return <div key={to} className="my-2 border-t border-border" />;
+              }
+
               const isActive = to === "/" ? pathname === "/" : pathname.startsWith(to);
               return (
                 <Tooltip key={to}>
@@ -150,7 +221,7 @@ export default function Layout() {
                         collapsed ? "justify-center w-full" : "px-3",
                         isActive
                           ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                          : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
+                          : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground",
                       )}
                     >
                       <span className={cn("flex items-center justify-center", collapsed ? "w-full" : "w-5 mr-3")}>
@@ -159,9 +230,11 @@ export default function Layout() {
                       {!collapsed && (
                         <>
                           <span className="flex-1 truncate">{label}</span>
-                          <kbd className="ml-auto hidden sm:inline-flex h-5 min-w-10 items-center justify-center rounded border bg-muted/50 px-1 font-mono text-[10px] font-medium text-muted-foreground/60">
-                            Alt+{shortcut}
+                          {shortcut && (
+                            <kbd className="ml-auto hidden sm:inline-flex h-5 min-w-10 items-center justify-center rounded border bg-muted px-1 font-mono text-[10px] font-medium text-muted-foreground">
+                              Alt+{shortcut}
                           </kbd>
+                          )}
                         </>
                       )}
                     </Link>
@@ -169,10 +242,12 @@ export default function Layout() {
                   {collapsed && (
                     <TooltipContent side="right">
                       <p>
-                        {label}{" "}
-                        <span className="text-muted-foreground ml-1">
-                          Alt+{shortcut}
-                        </span>
+                        {label}
+                        {shortcut && (
+                          <span className="text-muted-foreground ml-1">
+                            Alt+{shortcut}
+                          </span>
+                        )}
                       </p>
                     </TooltipContent>
                   )}
@@ -275,6 +350,7 @@ export default function Layout() {
               )}
             >
               <ThemeSwitcher />
+              <NotificationBell />
               <ThemeToggle />
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -300,10 +376,12 @@ export default function Layout() {
         </aside>
 
         {/* Main content */}
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto pt-14 md:pt-0">
           <div className="p-6">
             <Breadcrumbs />
-            <Outlet />
+            <PageTransition locationKey={pathname}>
+              <Outlet />
+            </PageTransition>
           </div>
         </main>
 
@@ -311,5 +389,34 @@ export default function Layout() {
         <CommandPalette />
       </div>
     </TooltipProvider>
+  );
+}
+
+function PageTransition({ locationKey, children }: { locationKey: string; children: React.ReactNode }) {
+  const [displayChildren, setDisplayChildren] = useState(children);
+  const [transitioning, setTransitioning] = useState(false);
+  const prevKey = useRef(locationKey);
+
+  useEffect(() => {
+    if (locationKey !== prevKey.current) {
+      prevKey.current = locationKey;
+      setTransitioning(true);
+      const timer = setTimeout(() => {
+        setDisplayChildren(children);
+        setTransitioning(false);
+      }, 150);
+      return () => clearTimeout(timer);
+    } else {
+      setDisplayChildren(children);
+    }
+  }, [locationKey, children]);
+
+  return (
+    <div
+      className="transition-all duration-150 ease-in-out"
+      style={{ opacity: transitioning ? 0 : 1, transform: transitioning ? "translateY(4px)" : "translateY(0)" }}
+    >
+      {displayChildren}
+    </div>
   );
 }

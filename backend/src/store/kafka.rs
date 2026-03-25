@@ -9,6 +9,8 @@ use tokio::sync::Mutex;
 
 const CONSUMER_POOL_SIZE: usize = 1;
 
+type ConsumerPoolMap = Arc<std::sync::RwLock<HashMap<String, Arc<Vec<Arc<Mutex<StreamConsumer>>>>>>>;
+
 /// Kafka-backed task queue. Each task type maps to a Kafka topic
 /// (`conductor.task.{task_type}`). Provides durable, at-least-once delivery
 /// with automatic redelivery on consumer failure.
@@ -20,7 +22,7 @@ pub struct KafkaTaskQueue {
     producer: FutureProducer,
     /// Per-task-type pool of consumers. Each entry is a Vec of mutex-wrapped
     /// consumers; callers round-robin across them to reduce contention.
-    consumer_pools: Arc<std::sync::RwLock<HashMap<String, Arc<Vec<Arc<Mutex<StreamConsumer>>>>>>>,
+    consumer_pools: ConsumerPoolMap,
     brokers: String,
     next_idx: Arc<std::sync::atomic::AtomicUsize>,
 }
@@ -76,7 +78,7 @@ impl KafkaTaskQueue {
         for i in 0..CONSUMER_POOL_SIZE {
             let consumer: StreamConsumer = ClientConfig::new()
                 .set("bootstrap.servers", &self.brokers)
-                .set("group.id", &format!("conductor-workers-{task_type}"))
+                .set("group.id", format!("conductor-workers-{task_type}"))
                 .set("enable.auto.commit", "false")
                 .set("auto.offset.reset", "earliest")
                 .set("session.timeout.ms", "10000")

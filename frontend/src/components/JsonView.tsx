@@ -1,109 +1,146 @@
-import { useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { CopyButton } from "@/components/CopyButton";
+import { ChevronRight, ChevronDown } from "lucide-react";
 
 interface JsonViewProps {
   data: unknown;
   className?: string;
   maxHeight?: string;
   copyable?: boolean;
+  defaultExpanded?: number; // depth to auto-expand, default 2
 }
 
-interface Token {
-  type: "key" | "string" | "number" | "boolean" | "null" | "brace" | "bracket" | "colon" | "comma";
-  value: string;
-}
-
-function tokenize(json: string): Token[] {
-  const tokens: Token[] = [];
-  let i = 0;
-  let expectKey = false;
-
-  while (i < json.length) {
-    const ch = json[i];
-
-    if (ch === " " || ch === "\n" || ch === "\r" || ch === "\t") {
-      // preserve whitespace as-is
-      let ws = "";
-      while (i < json.length && (json[i] === " " || json[i] === "\n" || json[i] === "\r" || json[i] === "\t")) {
-        ws += json[i++];
-      }
-      tokens.push({ type: "string", value: ws }); // whitespace uses no special class
-      continue;
-    }
-
-    if (ch === "{" || ch === "}") {
-      tokens.push({ type: "brace", value: ch });
-      expectKey = ch === "{";
-      i++;
-      continue;
-    }
-
-    if (ch === "[" || ch === "]") {
-      tokens.push({ type: "bracket", value: ch });
-      i++;
-      continue;
-    }
-
-    if (ch === ":") {
-      tokens.push({ type: "colon", value: ": " });
-      expectKey = false;
-      i++;
-      // skip space after colon
-      if (i < json.length && json[i] === " ") i++;
-      continue;
-    }
-
-    if (ch === ",") {
-      tokens.push({ type: "comma", value: "," });
-      expectKey = true;
-      i++;
-      continue;
-    }
-
-    if (ch === '"') {
-      let str = '"';
-      i++;
-      while (i < json.length && json[i] !== '"') {
-        if (json[i] === "\\") { str += json[i++]; }
-        str += json[i++];
-      }
-      str += '"';
-      i++;
-      tokens.push({ type: expectKey ? "key" : "string", value: str });
-      continue;
-    }
-
-    // Numbers, booleans, null
-    let word = "";
-    while (i < json.length && !/[\s,\]\}]/.test(json[i])) {
-      word += json[i++];
-    }
-    if (word === "true" || word === "false") {
-      tokens.push({ type: "boolean", value: word });
-    } else if (word === "null") {
-      tokens.push({ type: "null", value: word });
-    } else {
-      tokens.push({ type: "number", value: word });
-    }
-  }
-
-  return tokens;
-}
-
-const TOKEN_CLASSES: Record<Token["type"], string> = {
+// VS Code-style color classes
+const COLORS = {
   key: "text-blue-600 dark:text-blue-400",
   string: "text-emerald-600 dark:text-emerald-400",
   number: "text-amber-600 dark:text-amber-400",
   boolean: "text-purple-600 dark:text-purple-400",
   null: "text-red-500 dark:text-red-400",
-  brace: "text-foreground/60",
-  bracket: "text-foreground/60",
-  colon: "text-foreground/40",
-  comma: "text-foreground/40",
+  brace: "text-muted-foreground",
+  count: "text-muted-foreground",
 };
 
-export function JsonView({ data, className, maxHeight = "24rem", copyable = true }: JsonViewProps) {
+function CollapsibleNode({
+  keyName,
+  value,
+  depth,
+  defaultExpanded,
+  isLast,
+}: {
+  keyName?: string;
+  value: unknown;
+  depth: number;
+  defaultExpanded: number;
+  isLast: boolean;
+}) {
+  const isObject = value !== null && typeof value === "object" && !Array.isArray(value);
+  const isArray = Array.isArray(value);
+  const isExpandable = isObject || isArray;
+  const [expanded, setExpanded] = useState(depth < defaultExpanded);
+  const indent = depth * 16;
+
+  const toggle = useCallback(() => setExpanded((e) => !e), []);
+  const comma = isLast ? "" : ",";
+
+  if (!isExpandable) {
+    // Primitive value
+    return (
+      <div className="flex items-start" style={{ paddingLeft: indent }}>
+        <span className="w-4 shrink-0" />
+        {keyName !== undefined && (
+          <>
+            <span className={COLORS.key}>"{keyName}"</span>
+            <span className={COLORS.brace}>:&nbsp;</span>
+          </>
+        )}
+        <PrimitiveValue value={value} />
+        <span className={COLORS.brace}>{comma}</span>
+      </div>
+    );
+  }
+
+  const entries = isArray
+    ? (value as unknown[]).map((v, i) => ({ key: String(i), value: v }))
+    : Object.entries(value as Record<string, unknown>).map(([k, v]) => ({ key: k, value: v }));
+
+  const openBrace = isArray ? "[" : "{";
+  const closeBrace = isArray ? "]" : "}";
+  const countLabel = isArray
+    ? `${entries.length} item${entries.length !== 1 ? "s" : ""}`
+    : `${entries.length} key${entries.length !== 1 ? "s" : ""}`;
+
+  if (!expanded) {
+    return (
+      <div
+        className="flex items-center cursor-pointer hover:bg-muted rounded-sm"
+        style={{ paddingLeft: indent }}
+        onClick={toggle}
+      >
+        <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        {keyName !== undefined && (
+          <>
+            <span className={COLORS.key}>"{keyName}"</span>
+            <span className={COLORS.brace}>:&nbsp;</span>
+          </>
+        )}
+        <span className={COLORS.brace}>{openBrace}</span>
+        <span className={cn(COLORS.count, "text-[10px] mx-1 italic")}>{countLabel}</span>
+        <span className={COLORS.brace}>{closeBrace}</span>
+        <span className={COLORS.brace}>{comma}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div
+        className="flex items-center cursor-pointer hover:bg-muted rounded-sm"
+        style={{ paddingLeft: indent }}
+        onClick={toggle}
+      >
+        <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        {keyName !== undefined && (
+          <>
+            <span className={COLORS.key}>"{keyName}"</span>
+            <span className={COLORS.brace}>:&nbsp;</span>
+          </>
+        )}
+        <span className={COLORS.brace}>{openBrace}</span>
+      </div>
+      {entries.map((entry, i) => (
+        <CollapsibleNode
+          key={entry.key}
+          keyName={isArray ? undefined : entry.key}
+          value={entry.value}
+          depth={depth + 1}
+          defaultExpanded={defaultExpanded}
+          isLast={i === entries.length - 1}
+        />
+      ))}
+      <div style={{ paddingLeft: indent }}>
+        <span className="w-4 inline-block" />
+        <span className={COLORS.brace}>{closeBrace}</span>
+        <span className={COLORS.brace}>{comma}</span>
+      </div>
+    </div>
+  );
+}
+
+function PrimitiveValue({ value }: { value: unknown }) {
+  if (value === null) return <span className={COLORS.null}>null</span>;
+  if (typeof value === "boolean") return <span className={COLORS.boolean}>{String(value)}</span>;
+  if (typeof value === "number") return <span className={COLORS.number}>{String(value)}</span>;
+  if (typeof value === "string") {
+    // Truncate very long strings in the display
+    const display = value.length > 200 ? value.slice(0, 200) + "..." : value;
+    return <span className={COLORS.string}>"{display}"</span>;
+  }
+  return <span>{String(value)}</span>;
+}
+
+export function JsonView({ data, className, maxHeight = "24rem", copyable = true, defaultExpanded = 2 }: JsonViewProps) {
   const jsonStr = useMemo(() => {
     try {
       return JSON.stringify(data, null, 2);
@@ -112,8 +149,6 @@ export function JsonView({ data, className, maxHeight = "24rem", copyable = true
     }
   }, [data]);
 
-  const tokens = useMemo(() => tokenize(jsonStr), [jsonStr]);
-
   if (data === undefined || data === null) {
     return <span className="text-xs text-muted-foreground italic">null</span>;
   }
@@ -121,27 +156,21 @@ export function JsonView({ data, className, maxHeight = "24rem", copyable = true
   return (
     <div className={cn("relative group rounded-lg bg-muted", className)}>
       {copyable && (
-        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
           <CopyButton value={jsonStr} />
         </div>
       )}
-      <pre
-        className="text-xs p-3 overflow-auto font-mono leading-relaxed"
+      <div
+        className="text-xs p-3 overflow-auto font-mono leading-relaxed select-text"
         style={{ maxHeight }}
       >
-        {tokens.map((token, i) => {
-          const cls = TOKEN_CLASSES[token.type];
-          // Whitespace tokens don't need styling
-          if (!cls || token.value.trim() === "") {
-            return <span key={i}>{token.value}</span>;
-          }
-          return (
-            <span key={i} className={cls}>
-              {token.value}
-            </span>
-          );
-        })}
-      </pre>
+        <CollapsibleNode
+          value={data}
+          depth={0}
+          defaultExpanded={defaultExpanded}
+          isLast
+        />
+      </div>
     </div>
   );
 }

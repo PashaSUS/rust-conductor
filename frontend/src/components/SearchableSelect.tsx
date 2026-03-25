@@ -74,15 +74,15 @@ export function SearchableSelect({
       </button>
 
       {open && (
-        <div className="absolute z-50 mt-1 w-full min-w-50 rounded-md border bg-popover shadow-md animate-in fade-in-0 zoom-in-95">
-          <div className="flex items-center border-b px-2">
+        <div className="absolute z-50 mt-1 w-full min-w-50 rounded-md border bg-popover text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95">
+          <div className="flex items-center border-b px-2 bg-popover">
             <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
             <input
               ref={inputRef}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={searchPlaceholder}
-              className="flex-1 bg-transparent py-2 px-2 text-sm outline-none placeholder:text-muted-foreground"
+              className="flex-1 py-2 px-2 text-sm outline-none bg-transparent text-popover-foreground placeholder:text-muted-foreground"
             />
           </div>
           <div className="max-h-60 overflow-y-auto p-1">

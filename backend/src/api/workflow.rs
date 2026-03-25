@@ -105,13 +105,14 @@ async fn search_workflows(
         t.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
     });
     let result = engine
-        .search_workflows(
+        .search_workflows_with_cursor(
             query.status.as_deref(),
             query.workflow_type.as_deref(),
             query.free_text.as_deref(),
             query.start.unwrap_or(0),
             query.size.unwrap_or(100),
             tags.as_deref(),
+            query.cursor.as_deref(),
         )
         .await?;
     Ok(HttpResponse::Ok().json(result))
@@ -131,6 +132,7 @@ struct SearchQuery {
     start: Option<i64>,
     size: Option<i64>,
     tags: Option<String>,
+    cursor: Option<String>,
 }
 
 async fn rerun_workflow(

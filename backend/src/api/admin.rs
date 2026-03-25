@@ -16,6 +16,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .route("/resume/{queueName}", web::put().to(resume_queue))
             .route("/status/{queueName}", web::get().to(queue_status)),
     );
+    cfg.route("/metrics", web::get().to(pool_metrics));
 }
 
 async fn get_all_config(
@@ -71,4 +72,10 @@ async fn requeue_pending_tasks(
 ) -> Result<HttpResponse, crate::engine::EngineError> {
     let count = engine.requeue_pending_tasks(&path.into_inner()).await?;
     Ok(HttpResponse::Ok().json(count))
+}
+
+async fn pool_metrics(
+    engine: web::Data<WorkflowEngine>,
+) -> HttpResponse {
+    HttpResponse::Ok().json(engine.pool_metrics())
 }

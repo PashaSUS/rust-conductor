@@ -68,7 +68,7 @@ export function ExecutionTimeline({ tasks, workflowStartTime, workflowEndTime }:
                   <span className="text-[11px] text-muted-foreground w-28 truncate text-right shrink-0 group-hover:text-foreground transition-colors">
                     {task.referenceTaskName}
                   </span>
-                  <div className="flex-1 h-6 relative bg-muted/50 rounded-sm overflow-hidden">
+                  <div className="flex-1 h-6 relative bg-muted rounded-sm overflow-hidden">
                     {/* Grid lines */}
                     <div className="absolute inset-0 flex">
                       {[25, 50, 75].map((pct) => (
@@ -81,7 +81,7 @@ export function ExecutionTimeline({ tasks, workflowStartTime, workflowEndTime }:
                     </div>
                     {/* Task bar */}
                     <div
-                      className={`absolute top-0.5 bottom-0.5 rounded-sm ${statusColor(task.status)} opacity-90 hover:opacity-100 transition-opacity cursor-pointer`}
+                      className={`absolute top-0.5 bottom-0.5 rounded-sm ${statusColor(task.status)} hover:ring-2 hover:ring-primary transition-all cursor-pointer`}
                       style={{
                         left: `${leftPct}%`,
                         width: `${Math.min(widthPct, 100 - leftPct)}%`,

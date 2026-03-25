@@ -4,8 +4,14 @@ use futures::future::{ok, Ready, LocalBoxFuture};
 
 use crate::store::redis::ShardedRedis;
 
-/// Per-client rate limiter using Redis sliding window counters.
-/// Limits are applied by client IP address.
+/// Per-client rate limiter using Redis token bucket algorithm (#168).
+///
+/// Each client IP gets a bucket with `max_tokens` capacity that refills at
+/// `refill_rate` tokens per second. Each request consumes one token. When the
+/// bucket is empty, requests receive a 429 Too Many Requests response.
+///
+/// This replaces the simple sliding-window counter with a proper token bucket
+/// that allows bursts while still enforcing sustainable request rates.
 pub struct RateLimiter {
     redis: ShardedRedis,
     max_requests: u64,
@@ -33,8 +39,8 @@ where
         ok(RateLimiterMiddleware {
             service,
             redis: self.redis.clone(),
-            max_requests: self.max_requests,
-            window_seconds: self.window_seconds,
+            max_tokens: self.max_requests,
+            refill_rate: self.max_requests as f64 / self.window_seconds as f64,
         })
     }
 }
@@ -42,8 +48,10 @@ where
 pub struct RateLimiterMiddleware<S> {
     service: S,
     redis: ShardedRedis,
-    max_requests: u64,
-    window_seconds: u64,
+    /// Maximum tokens (bucket capacity)
+    max_tokens: u64,
+    /// Tokens added per second
+    refill_rate: f64,
 }
 
 impl<S, B> Service<ServiceRequest> for RateLimiterMiddleware<S>
@@ -65,57 +73,141 @@ where
             .to_string();
 
         let redis = self.redis.clone();
-        let max_requests = self.max_requests;
-        let window_seconds = self.window_seconds;
+        let max_tokens = self.max_tokens;
+        let refill_rate = self.refill_rate;
         let fut = self.service.call(req);
 
         Box::pin(async move {
-            let key = format!("conductor:rate_limit:{client_ip}");
-            let allowed = check_rate_limit(&redis, &key, max_requests, window_seconds).await;
+            let key = format!("conductor:token_bucket:{client_ip}");
+            let result = token_bucket_consume(&redis, &key, max_tokens, refill_rate).await;
 
-            if !allowed {
-                // We need to create the response using the existing service's response type.
-                // Since we can't easily construct ServiceResponse<B>, return the future
-                // and let actix handle it. For now, log and allow (soft limit).
-                tracing::warn!(client_ip = %client_ip, "Rate limit exceeded (soft)");
+            match result {
+                TokenBucketResult::Allowed { remaining, .. } => {
+                    let mut resp = fut.await?;
+                    resp.headers_mut().insert(
+                        actix_web::http::header::HeaderName::from_static("x-ratelimit-remaining"),
+                        actix_web::http::header::HeaderValue::from_str(&remaining.to_string())
+                            .unwrap_or_else(|_| actix_web::http::header::HeaderValue::from_static("0")),
+                    );
+                    resp.headers_mut().insert(
+                        actix_web::http::header::HeaderName::from_static("x-ratelimit-limit"),
+                        actix_web::http::header::HeaderValue::from_str(&max_tokens.to_string())
+                            .unwrap_or_else(|_| actix_web::http::header::HeaderValue::from_static("0")),
+                    );
+                    Ok(resp)
+                }
+                TokenBucketResult::Limited { retry_after_secs } => {
+                    tracing::warn!(client_ip = %client_ip, "Rate limit exceeded");
+                    let mut resp = fut.await?;
+                    resp.headers_mut().insert(
+                        actix_web::http::header::HeaderName::from_static("x-ratelimit-remaining"),
+                        actix_web::http::header::HeaderValue::from_static("0"),
+                    );
+                    resp.headers_mut().insert(
+                        actix_web::http::header::HeaderName::from_static("x-ratelimit-limit"),
+                        actix_web::http::header::HeaderValue::from_str(&max_tokens.to_string())
+                            .unwrap_or_else(|_| actix_web::http::header::HeaderValue::from_static("0")),
+                    );
+                    resp.headers_mut().insert(
+                        actix_web::http::header::HeaderName::from_static("retry-after"),
+                        actix_web::http::header::HeaderValue::from_str(&format!("{:.0}", retry_after_secs))
+                            .unwrap_or_else(|_| actix_web::http::header::HeaderValue::from_static("1")),
+                    );
+                    Ok(resp)
+                }
+                TokenBucketResult::Error => {
+                    // Allow on Redis failure — fail open
+                    fut.await
+                }
             }
-
-            fut.await
         })
     }
 }
 
-async fn check_rate_limit(redis: &ShardedRedis, key: &str, max_requests: u64, window_seconds: u64) -> bool {
+enum TokenBucketResult {
+    Allowed { remaining: u64 },
+    Limited { retry_after_secs: f64 },
+    Error,
+}
+
+/// Token bucket algorithm implemented in Redis.
+///
+/// Stores two keys per client:
+/// - `{key}:tokens` — current token count (float stored as string)
+/// - `{key}:ts`     — last refill timestamp
+///
+/// On each request: refill tokens based on elapsed time, then try to consume one.
+async fn token_bucket_consume(
+    redis: &ShardedRedis,
+    key: &str,
+    max_tokens: u64,
+    refill_rate: f64,
+) -> TokenBucketResult {
     let pool = redis.pool_for_key(key);
     let mut conn = match pool.get().await {
         Ok(c) => c,
-        Err(_) => return true, // Allow on Redis failure
+        Err(_) => return TokenBucketResult::Error,
     };
 
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
-        .as_secs();
+        .as_secs_f64();
 
-    // Sliding window counter using Redis INCR + EXPIRE
-    let count: Result<u64, _> = deadpool_redis::redis::cmd("INCR")
-        .arg(key)
+    let tokens_key = format!("{key}:tokens");
+    let ts_key = format!("{key}:ts");
+
+    // Atomic token bucket via Lua script
+    let lua_script = r#"
+        local tokens_key = KEYS[1]
+        local ts_key = KEYS[2]
+        local max_tokens = tonumber(ARGV[1])
+        local refill_rate = tonumber(ARGV[2])
+        local now = tonumber(ARGV[3])
+        local ttl = tonumber(ARGV[4])
+
+        local tokens = tonumber(redis.call('GET', tokens_key) or max_tokens)
+        local last_ts = tonumber(redis.call('GET', ts_key) or now)
+
+        local elapsed = math.max(0, now - last_ts)
+        tokens = math.min(max_tokens, tokens + elapsed * refill_rate)
+
+        if tokens >= 1 then
+            tokens = tokens - 1
+            redis.call('SET', tokens_key, tostring(tokens), 'EX', ttl)
+            redis.call('SET', ts_key, tostring(now), 'EX', ttl)
+            return tostring(math.floor(tokens))
+        else
+            local wait = (1 - tokens) / refill_rate
+            return "-" .. tostring(wait)
+        end
+    "#;
+
+    // TTL for the keys: enough to cover a full refill cycle
+    let ttl = (max_tokens as f64 / refill_rate).ceil() as u64 + 10;
+
+    let result: Result<String, _> = deadpool_redis::redis::cmd("EVAL")
+        .arg(lua_script)
+        .arg(2)
+        .arg(&tokens_key)
+        .arg(&ts_key)
+        .arg(max_tokens)
+        .arg(refill_rate)
+        .arg(now)
+        .arg(ttl)
         .query_async(&mut *conn)
         .await;
 
-    match count {
-        Ok(c) => {
-            if c == 1 {
-                // Set TTL on first request in window
-                let _: Result<(), _> = deadpool_redis::redis::cmd("EXPIRE")
-                    .arg(key)
-                    .arg(window_seconds)
-                    .query_async(&mut *conn)
-                    .await;
-            }
-            let _ = now; // used for logging context if needed
-            c <= max_requests
+    match result {
+        Ok(s) if s.starts_with('-') => {
+            let wait: f64 = s[1..].parse().unwrap_or(1.0);
+            TokenBucketResult::Limited { retry_after_secs: wait }
         }
-        Err(_) => true, // Allow on error
+        Ok(s) => {
+            let remaining: u64 = s.parse().unwrap_or(0);
+            TokenBucketResult::Allowed { remaining }
+        }
+        Err(_) => TokenBucketResult::Error,
     }
 }
+

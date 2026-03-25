@@ -2,6 +2,9 @@ import { useState, useEffect, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { scheduleApi, metadataApi, type ScheduledWorkflow } from "@/api/conductor";
+import { buildInputFromFields } from "@/lib/field-parser";
+import { usePagination } from "@/hooks/usePagination";
+import { PaginationControls } from "@/components/PaginationControls";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -64,9 +67,11 @@ export default function Schedules() {
     },
   });
 
+  const [pagedSchedules, pagination] = usePagination(schedules ?? []);
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col gap-4 h-[calc(100vh-8rem)]">
+      <div className="flex items-center justify-between shrink-0">
         <h2 className="text-2xl font-bold tracking-tight">{t.schedulesTitle}</h2>
         <Button size="sm" onClick={() => setCreateOpen(true)}>
           <Plus className="h-4 w-4 mr-1" />
@@ -74,8 +79,8 @@ export default function Schedules() {
         </Button>
       </div>
 
-      <Card>
-        <CardContent className="pt-6">
+      <Card className="flex-1 min-h-0 flex flex-col">
+        <CardContent className="pt-6 flex-1 overflow-auto">
           {isLoading ? (
             <p className="text-muted-foreground text-sm">{t.loading}</p>
           ) : !schedules?.length ? (
@@ -84,6 +89,7 @@ export default function Schedules() {
               <p className="text-sm">{t.noSchedules}</p>
             </div>
           ) : (
+            <>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -99,7 +105,7 @@ export default function Schedules() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {schedules.map((s) => (
+                {pagedSchedules.map((s) => (
                   <TableRow key={s.scheduleId}>
                     <TableCell className="font-medium">{s.name}</TableCell>
                     <TableCell className="font-mono text-xs">{s.cronExpression}</TableCell>
@@ -119,10 +125,10 @@ export default function Schedules() {
                     </TableCell>
                     <TableCell className="text-xs"><RelativeTime value={s.lastRunAt} /></TableCell>
                     <TableCell className="text-xs"><RelativeTime value={s.nextRunAt} /></TableCell>
-                    <TableCell className="text-xs max-w-[200px]">
+                    <TableCell className="text-xs max-w-50">
                       {s.lastError ? (
                         <span className="flex items-center gap-1 text-destructive" title={s.lastError}>
-                          <AlertTriangle className="h-3 w-3 flex-shrink-0" />
+                          <AlertTriangle className="h-3 w-3 shrink-0" />
                           <span className="truncate">{s.lastError}</span>
                         </span>
                       ) : (
@@ -143,8 +149,21 @@ export default function Schedules() {
                 ))}
               </TableBody>
             </Table>
+            </>
           )}
         </CardContent>
+        <div className="border-t px-6 py-2 shrink-0">
+          <PaginationControls
+            page={pagination.page}
+            totalPages={pagination.totalPages}
+            canPrev={pagination.canPrev}
+            canNext={pagination.canNext}
+            onPrev={pagination.prev}
+            onNext={pagination.next}
+            rangeLabel={`${pagination.startIndex + 1}–${pagination.endIndex}`}
+            totalItems={pagination.totalItems}
+          />
+        </div>
       </Card>
 
       <CreateScheduleDialog
@@ -166,31 +185,6 @@ export default function Schedules() {
       />
     </div>
   );
-}
-
-function parseFieldValue(raw: string): unknown {
-  const trimmed = raw.trim();
-  if (trimmed === "") return "";
-  if (trimmed === "true") return true;
-  if (trimmed === "false") return false;
-  if (trimmed === "null") return null;
-  const num = Number(trimmed);
-  if (!isNaN(num) && trimmed !== "") return num;
-  if (
-    (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
-    (trimmed.startsWith("[") && trimmed.endsWith("]"))
-  ) {
-    try { return JSON.parse(trimmed); } catch { /* fall through */ }
-  }
-  return raw;
-}
-
-function buildInputFromFields(fields: Record<string, string>): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  for (const [key, val] of Object.entries(fields)) {
-    result[key] = parseFieldValue(val);
-  }
-  return result;
 }
 
 function CreateScheduleDialog({
@@ -422,7 +416,7 @@ function CreateScheduleDialog({
             </div>
 
             {inputMode === "fields" && hasParams ? (
-              <div className="space-y-3 rounded-lg border p-3">
+              <div className="space-y-3 rounded-lg border p-3 max-h-[40vh] overflow-y-auto">
                 {params.map((p) => {
                   if (typeof p !== "string") return null;
                   return (

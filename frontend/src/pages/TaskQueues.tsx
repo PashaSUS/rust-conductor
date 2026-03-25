@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Layers, Search, Inbox, Bell, BellOff, AlertTriangle, X } from "lucide-react";
 import { useThemeText } from "@/components/ThemeContext";
+import { usePagination } from "@/hooks/usePagination";
+import { PaginationControls } from "@/components/PaginationControls";
 
 function loadThresholds(): Record<string, number> {
   try {
@@ -59,9 +61,11 @@ export default function TaskQueues() {
     ? allEntries.filter(([name]) => name.toLowerCase().includes(filter.toLowerCase()))
     : allEntries;
 
+  const [pagedEntries, pagination] = usePagination(entries);
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col gap-4 h-[calc(100vh-8rem)]">
+      <div className="flex items-center justify-between shrink-0">
         <h2 className="text-2xl font-bold tracking-tight">{t.taskQueuesTitle}</h2>
         <div className="flex items-center gap-3">
           <Button variant="outline" size="sm" onClick={() => setAlertsOpen((o) => !o)}>
@@ -79,7 +83,7 @@ export default function TaskQueues() {
         </div>
       </div>
 
-      <div className="relative">
+      <div className="relative shrink-0">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
           placeholder={t.filterQueues}
@@ -89,13 +93,41 @@ export default function TaskQueues() {
         />
       </div>
 
-      <Card>
-        <CardHeader>
+      {/* Queue utilization gauges — top 5 */}
+      {allEntries.length > 0 && (
+        <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-5 shrink-0">
+          {allEntries.slice(0, 5).map(([name, count]) => {
+            const pct = maxCount > 0 ? Math.round((count / maxCount) * 100) : 0;
+            const threshold = thresholds[name];
+            const exceeded = threshold !== undefined && count >= threshold;
+            return (
+              <Card key={name} className={exceeded ? "border-destructive" : ""}>
+                <CardContent className="pt-3 pb-3 px-4">
+                  <p className="text-xs font-medium truncate mb-1" title={name}>{name}</p>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${exceeded ? "bg-destructive" : pct > 75 ? "bg-amber-500" : "bg-chart-1"}`}
+                        style={{ width: `${Math.max(pct, 2)}%` }}
+                      />
+                    </div>
+                    <span className="text-xs font-mono text-muted-foreground w-8 text-right">{pct}%</span>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-1">{count} tasks</p>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      <Card className="flex-1 min-h-0 flex flex-col">
+        <CardHeader className="shrink-0">
           <CardTitle className="text-sm font-medium">
             {t.activeQueues} {filter && <span className="text-muted-foreground font-normal">({entries.length} {t.of} {allEntries.length})</span>}
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex-1 overflow-auto">
           {isLoading ? (
             <p className="text-muted-foreground text-sm">{t.loading}</p>
           ) : entries.length === 0 ? (
@@ -107,12 +139,12 @@ export default function TaskQueues() {
             </div>
           ) : (
             <div className="space-y-2">
-              {entries.map(([name, count]) => {
+              {pagedEntries.map(([name, count]) => {
                 const pct = Math.max((count / maxCount) * 100, 2);
                 const threshold = thresholds[name];
                 const exceeded = threshold !== undefined && count >= threshold;
                 return (
-                  <div key={name} className={`group rounded-lg border p-3 transition-colors ${exceeded ? "border-destructive/50 bg-destructive/5" : "hover:bg-muted/30"}`}>
+                  <div key={name} className={`group rounded-lg border p-3 transition-colors ${exceeded ? "border-destructive bg-muted" : "hover:bg-muted"}`}>
                     <div className="flex items-center justify-between mb-1.5">
                       <div className="flex items-center gap-2">
                         <span className="font-medium text-sm">{name}</span>
@@ -190,6 +222,18 @@ export default function TaskQueues() {
             </div>
           )}
         </CardContent>
+        <div className="border-t px-6 py-2 shrink-0">
+          <PaginationControls
+            page={pagination.page}
+            totalPages={pagination.totalPages}
+            canPrev={pagination.canPrev}
+            canNext={pagination.canNext}
+            onPrev={pagination.prev}
+            onNext={pagination.next}
+            rangeLabel={`${pagination.startIndex + 1}–${pagination.endIndex}`}
+            totalItems={pagination.totalItems}
+          />
+        </div>
       </Card>
     </div>
   );

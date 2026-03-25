@@ -4,7 +4,7 @@ import { metadataApi, type WorkflowTask } from "@/api/conductor";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useThemeText } from "@/components/ThemeContext";
-import { GitBranch, ArrowRight, Inbox } from "lucide-react";
+import { GitBranch, ArrowDown, Inbox } from "lucide-react";
 
 /** Recursively collect all sub-workflow references from a task list */
 function collectSubWorkflows(tasks: WorkflowTask[]): { name: string; version?: number }[] {
@@ -141,20 +141,18 @@ export default function WorkflowDependencyGraph() {
                   </div>
                 )}
 
-                {/* Dependency tree */}
-                <div className="space-y-2">
+                {/* Dependency tree — vertical layout */}
+                <div className="space-y-3">
                   {Object.entries(edgesBySource)
                     .sort(([a], [b]) => a.localeCompare(b))
                     .map(([source, deps]) => (
-                      <div key={source} className="rounded-lg border p-3">
-                        <div className="flex items-start gap-3">
-                          <div className="shrink-0">
-                            <Badge variant="secondary" className="font-mono text-xs">
-                              {source}
-                            </Badge>
-                          </div>
-                          <ArrowRight className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
-                          <div className="flex flex-wrap gap-2">
+                      <div key={source} className="rounded-lg border p-3 max-w-md">
+                        <div className="flex flex-col items-center gap-2">
+                          <Badge variant="secondary" className="font-mono text-xs">
+                            {source}
+                          </Badge>
+                          <ArrowDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                          <div className="flex flex-col items-center gap-1.5">
                             {deps.map((dep) => (
                               <Badge
                                 key={`${dep.from}-${dep.to}`}

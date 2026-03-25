@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import { metadataApi, workflowApi, type WorkflowDef } from "@/api/conductor";
+import { buildInputFromFields } from "@/lib/field-parser";
 import { cn } from "@/lib/utils";
 import {
   Dialog,
@@ -25,37 +26,6 @@ import {
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { Code, FormInput } from "lucide-react";
 import { useThemeText } from "@/components/ThemeContext";
-
-/** Try to parse a string value into a typed value (number, boolean, object/array, or string) */
-function parseFieldValue(raw: string): unknown {
-  const trimmed = raw.trim();
-  if (trimmed === "") return "";
-  if (trimmed === "true") return true;
-  if (trimmed === "false") return false;
-  if (trimmed === "null") return null;
-  const num = Number(trimmed);
-  if (!isNaN(num) && trimmed !== "") return num;
-  if (
-    (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
-    (trimmed.startsWith("[") && trimmed.endsWith("]"))
-  ) {
-    try {
-      return JSON.parse(trimmed);
-    } catch {
-      // fall through to string
-    }
-  }
-  return raw;
-}
-
-/** Build an input object from field values, parsing each to its inferred type */
-function buildInputFromFields(fields: Record<string, string>): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  for (const [key, val] of Object.entries(fields)) {
-    result[key] = parseFieldValue(val);
-  }
-  return result;
-}
 
 interface StartWorkflowDialogProps {
   open: boolean;
@@ -306,7 +276,7 @@ export function StartWorkflowDialog({
             </div>
 
             {inputMode === "fields" && hasParams ? (
-              <div className="space-y-3 rounded-lg border p-3">
+              <div className="space-y-3 rounded-lg border p-3 max-h-[40vh] overflow-y-auto">
                 {params.map((p) => {
                   if (typeof p !== "string") return null;
                   return (

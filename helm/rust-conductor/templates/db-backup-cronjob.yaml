@@ -1,0 +1,103 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "rust-conductor.fullname" . }}-db-backup
+  labels:
+    {{- include "rust-conductor.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+spec:
+  schedule: "0 2 * * *"  # Daily at 2:00 AM UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            {{- include "rust-conductor.labels" . | nindent 12 }}
+            app.kubernetes.io/component: backup
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: pg-backup
+              image: postgres:16-alpine
+              env:
+                - name: PGHOST
+                  {{- if .Values.postgresql.enabled }}
+                  value: {{ include "rust-conductor.fullname" . }}-postgresql
+                  {{- else }}
+                  value: {{ .Values.externalDatabase.host | quote }}
+                  {{- end }}
+                - name: PGPORT
+                  value: "5432"
+                - name: PGUSER
+                  {{- if .Values.postgresql.enabled }}
+                  value: {{ .Values.postgresql.auth.username | quote }}
+                  {{- else }}
+                  value: {{ .Values.externalDatabase.user | quote }}
+                  {{- end }}
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "rust-conductor.fullname" . }}-db-credentials
+                      key: password
+                - name: PGDATABASE
+                  {{- if .Values.postgresql.enabled }}
+                  value: {{ .Values.postgresql.auth.database | quote }}
+                  {{- else }}
+                  value: {{ .Values.externalDatabase.database | quote }}
+                  {{- end }}
+                - name: BACKUP_BUCKET
+                  value: {{ .Values.backup.s3Bucket | default "conductor-backups" | quote }}
+                - name: AWS_DEFAULT_REGION
+                  value: {{ .Values.backup.s3Region | default "us-east-1" | quote }}
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -euo pipefail
+                  TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+                  BACKUP_FILE="/tmp/conductor_${TIMESTAMP}.sql.gz"
+
+                  echo "[$(date)] Starting backup of ${PGDATABASE}@${PGHOST}..."
+                  pg_dump --format=custom --compress=6 \
+                    --no-owner --no-privileges \
+                    --file="${BACKUP_FILE}"
+
+                  BACKUP_SIZE=$(stat -c%s "${BACKUP_FILE}" 2>/dev/null || stat -f%z "${BACKUP_FILE}")
+                  echo "[$(date)] Backup complete: ${BACKUP_FILE} (${BACKUP_SIZE} bytes)"
+
+                  # Upload to S3 if bucket is configured
+                  if [ -n "${BACKUP_BUCKET}" ]; then
+                    apk add --no-cache aws-cli 2>/dev/null || true
+                    if command -v aws >/dev/null 2>&1; then
+                      aws s3 cp "${BACKUP_FILE}" "s3://${BACKUP_BUCKET}/daily/${TIMESTAMP}.sql.gz"
+                      echo "[$(date)] Uploaded to s3://${BACKUP_BUCKET}/daily/${TIMESTAMP}.sql.gz"
+
+                      # Prune backups older than retention days
+                      RETENTION_DAYS={{ .Values.backup.retentionDays | default 30 }}
+                      CUTOFF=$(date -d "-${RETENTION_DAYS} days" +%Y%m%d 2>/dev/null || date -v-${RETENTION_DAYS}d +%Y%m%d)
+                      echo "[$(date)] Pruning backups older than ${RETENTION_DAYS} days (before ${CUTOFF})..."
+                      aws s3 ls "s3://${BACKUP_BUCKET}/daily/" | while read -r line; do
+                        FILE_DATE=$(echo "$line" | grep -oP '\d{8}' | head -1)
+                        if [ -n "${FILE_DATE}" ] && [ "${FILE_DATE}" -lt "${CUTOFF}" ]; then
+                          FILE_NAME=$(echo "$line" | awk '{print $4}')
+                          aws s3 rm "s3://${BACKUP_BUCKET}/daily/${FILE_NAME}"
+                          echo "  Deleted: ${FILE_NAME}"
+                        fi
+                      done
+                    else
+                      echo "[WARN] aws CLI not available, backup saved locally only"
+                    fi
+                  fi
+
+                  echo "[$(date)] Backup job finished successfully"
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir:
+                sizeLimit: 5Gi

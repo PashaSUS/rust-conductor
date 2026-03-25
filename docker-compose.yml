@@ -135,6 +135,8 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        CARGO_FEATURES: "feature-rich"
     environment:
       HOST: "0.0.0.0"
       PORT: "8090"
@@ -166,6 +168,8 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        CARGO_FEATURES: "feature-rich"
     restart: unless-stopped
     expose:
       - "8090"
