@@ -83,7 +83,7 @@ Backend → PgBouncer (:6432) → PostgreSQL (:5432)
 
 ```yaml
 postgres-shard-0:
-  image: postgres:16-alpine
+  image: postgres:17-alpine
   environment:
     POSTGRES_DB: conductor
     POSTGRES_USER: conductor

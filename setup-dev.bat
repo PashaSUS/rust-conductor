@@ -10,6 +10,18 @@ echo Single shard, no PgBouncer, no Nginx LB.
 echo Saves ~1-2GB RAM while keeping full functionality.
 echo.
 
+echo   B. BUILD - Build images locally from source (for development)
+echo   P. PULL  - Pull pre-built images from GHCR (faster startup)
+echo.
+:ask_build_mode
+set /p "BUILD_MODE=Build or Pull? (B/P): "
+if /i "!BUILD_MODE!"=="b" set "BUILD_MODE=build" & goto build_mode_set
+if /i "!BUILD_MODE!"=="p" set "BUILD_MODE=pull" & goto build_mode_set
+echo Invalid input. Please enter B or P.
+goto ask_build_mode
+:build_mode_set
+echo.
+
 REM -- Fixed defaults --
 set "NUM_SHARDS=1"
 set "NUM_REPLICAS=1"
@@ -199,7 +211,7 @@ set "FILE=docker-compose.yml"
 REM -- Postgres (single shard, low memory) --
 >> "%FILE%" echo   # Postgres Shard 0 - DEV low memory
 >> "%FILE%" echo   postgres-shard-0:
->> "%FILE%" echo     image: postgres:16-alpine
+>> "%FILE%" echo     image: postgres:17-alpine
 >> "%FILE%" echo     restart: unless-stopped
 >> "%FILE%" echo     command: ^>
 >> "%FILE%" echo       postgres
@@ -225,7 +237,7 @@ REM -- Postgres (single shard, low memory) --
 
 REM -- Redis (single) --
 >> "%FILE%" echo   redis-0:
->> "%FILE%" echo     image: redis:7-alpine
+>> "%FILE%" echo     image: redis:8-alpine
 >> "%FILE%" echo     restart: unless-stopped
 >> "%FILE%" echo     ports:
 >> "%FILE%" echo       - "6379:6379"
@@ -260,11 +272,15 @@ if /i "!USE_MINIO!"=="y" (
 
 REM -- Backend Migrator --
 >> "%FILE%" echo   backend-migrate:
->> "%FILE%" echo     build:
->> "%FILE%" echo       context: ./backend
->> "%FILE%" echo       dockerfile: Dockerfile
->> "%FILE%" echo       args:
->> "%FILE%" echo         CARGO_FEATURES: "!CARGO_FEATURES!"
+if /i "!BUILD_MODE!"=="build" (
+    >> "%FILE%" echo     build:
+    >> "%FILE%" echo       context: ./backend
+    >> "%FILE%" echo       dockerfile: Dockerfile
+    >> "%FILE%" echo       args:
+    >> "%FILE%" echo         CARGO_FEATURES: "!CARGO_FEATURES!"
+) else (
+    >> "%FILE%" echo     image: ghcr.io/pashasus/rust-conductor/backend:latest
+)
 >> "%FILE%" echo     environment:
 >> "%FILE%" echo       HOST: "0.0.0.0"
 >> "%FILE%" echo       PORT: "!BACKEND_PORT!"
@@ -293,11 +309,15 @@ if /i "!USE_MINIO!"=="y" (
 
 REM -- Backend --
 >> "%FILE%" echo   backend:
->> "%FILE%" echo     build:
->> "%FILE%" echo       context: ./backend
->> "%FILE%" echo       dockerfile: Dockerfile
->> "%FILE%" echo       args:
->> "%FILE%" echo         CARGO_FEATURES: "!CARGO_FEATURES!"
+if /i "!BUILD_MODE!"=="build" (
+    >> "%FILE%" echo     build:
+    >> "%FILE%" echo       context: ./backend
+    >> "%FILE%" echo       dockerfile: Dockerfile
+    >> "%FILE%" echo       args:
+    >> "%FILE%" echo         CARGO_FEATURES: "!CARGO_FEATURES!"
+) else (
+    >> "%FILE%" echo     image: ghcr.io/pashasus/rust-conductor/backend:latest
+)
 >> "%FILE%" echo     restart: unless-stopped
 >> "%FILE%" echo     ports:
 >> "%FILE%" echo       - "!BACKEND_PORT!:!BACKEND_PORT!"
@@ -336,11 +356,15 @@ if /i "!USE_MINIO!"=="y" (
 
 REM -- Frontend --
 >> "%FILE%" echo   frontend:
->> "%FILE%" echo     build:
->> "%FILE%" echo       context: ./frontend
->> "%FILE%" echo       dockerfile: Dockerfile
->> "%FILE%" echo       args:
->> "%FILE%" echo         VITE_API_BASE: "http://localhost:!BACKEND_PORT!"
+if /i "!BUILD_MODE!"=="build" (
+    >> "%FILE%" echo     build:
+    >> "%FILE%" echo       context: ./frontend
+    >> "%FILE%" echo       dockerfile: Dockerfile
+    >> "%FILE%" echo       args:
+    >> "%FILE%" echo         VITE_API_BASE: "http://localhost:!BACKEND_PORT!"
+) else (
+    >> "%FILE%" echo     image: ghcr.io/pashasus/rust-conductor/frontend:latest
+)
 >> "%FILE%" echo     restart: unless-stopped
 >> "%FILE%" echo     ports:
 >> "%FILE%" echo       - "!FRONTEND_PORT!:3170"
@@ -418,15 +442,19 @@ echo       To force a full clean, run: docker system prune -af
 
 echo.
 echo ========================================
-echo  Docker cleaned. Starting build...
+echo  Docker cleaned. Starting...
 echo ========================================
 echo.
 
-docker compose up --build -d
+if /i "!BUILD_MODE!"=="build" (
+    docker compose up --build -d
+) else (
+    docker compose up -d
+)
 
 echo.
 echo ========================================
-echo  Build complete! [DEV mode]
+echo  Setup complete! [DEV mode]
 echo ========================================
 echo    Public URL: !PUBLIC_URL!
 echo    API:        !PUBLIC_URL!/api

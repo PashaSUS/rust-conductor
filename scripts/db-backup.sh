@@ -154,7 +154,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: pitr
-          image: postgres:16-alpine
+          image: postgres:17-alpine
           env:
             - name: PGHOST
               value: "${PGHOST}"

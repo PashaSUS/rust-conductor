@@ -1,5 +1,5 @@
 # Build stage
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
@@ -9,7 +9,7 @@ ENV VITE_API_BASE=$VITE_API_BASE
 RUN npm run build
 
 # Production stage — serve static files
-FROM node:20-alpine
+FROM node:24-alpine
 RUN npm install -g serve@latest
 WORKDIR /app
 COPY --from=builder /app/dist ./dist

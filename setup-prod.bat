@@ -22,6 +22,18 @@ echo DEV mode uses only Redis Streams (no Kafka) and minimal features.
 echo PROD enables the full "feature-rich" Cargo build profile.
 echo.
 
+echo   B. BUILD - Build images locally from source (for development)
+echo   P. PULL  - Pull pre-built images from GHCR (faster startup)
+echo.
+:ask_build_mode
+set /p "BUILD_MODE=Build or Pull? (B/P): "
+if /i "!BUILD_MODE!"=="b" set "BUILD_MODE=build" & goto build_mode_set
+if /i "!BUILD_MODE!"=="p" set "BUILD_MODE=pull" & goto build_mode_set
+echo Invalid input. Please enter B or P.
+goto ask_build_mode
+:build_mode_set
+echo.
+
 
 REM -- Shard configuration --
 :ask_shards
@@ -214,7 +226,7 @@ for /l %%i in (0,1,%LAST_SHARD%) do (
     set /a PG_PORT=5432+%%i
     >> "%FILE%" echo   # -- Postgres Shard %%i --
     >> "%FILE%" echo   postgres-shard-%%i:
-    >> "%FILE%" echo     image: postgres:16-alpine
+    >> "%FILE%" echo     image: postgres:17-alpine
     >> "%FILE%" echo     restart: unless-stopped
     >> "%FILE%" echo     command: ^>
     >> "%FILE%" echo       postgres
@@ -280,7 +292,7 @@ set "REDIS_URLS="
 for /l %%r in (0,1,%LAST_REDIS_SHARD%) do (
     set /a REDIS_PORT=6379+%%r
     >> "%FILE%" echo   redis-%%r:
-    >> "%FILE%" echo     image: redis:7-alpine
+    >> "%FILE%" echo     image: redis:8-alpine
     >> "%FILE%" echo     restart: unless-stopped
     >> "%FILE%" echo     ports:
     >> "%FILE%" echo       - "!REDIS_PORT!:6379"
@@ -355,7 +367,7 @@ for /l %%k in (0,1,%LAST_KAFKA%) do (
     )
     >> "%FILE%" echo   # -- Kafka Broker %%k --
     >> "%FILE%" echo   kafka-%%k:
-    >> "%FILE%" echo     image: apache/kafka:3.8.0
+    >> "%FILE%" echo     image: apache/kafka:4.0.0
     >> "%FILE%" echo     restart: unless-stopped
     >> "%FILE%" echo     ports:
     >> "%FILE%" echo       - "!KAFKA_PORT!:9092"
@@ -425,11 +437,15 @@ REM -- Backend Migrator --
 REM Always connects directly to postgres (migrations use DDL/advisory locks
 REM which are incompatible with pgbouncer's transaction pooling mode).
 >> "%FILE%" echo   backend-migrate:
->> "%FILE%" echo     build:
->> "%FILE%" echo       context: ./backend
->> "%FILE%" echo       dockerfile: Dockerfile
->> "%FILE%" echo       args:
->> "%FILE%" echo         CARGO_FEATURES: "!CARGO_FEATURES!"
+if /i "!BUILD_MODE!"=="build" (
+    >> "%FILE%" echo     build:
+    >> "%FILE%" echo       context: ./backend
+    >> "%FILE%" echo       dockerfile: Dockerfile
+    >> "%FILE%" echo       args:
+    >> "%FILE%" echo         CARGO_FEATURES: "!CARGO_FEATURES!"
+) else (
+    >> "%FILE%" echo     image: ghcr.io/pashasus/rust-conductor/backend:latest
+)
 >> "%FILE%" echo     environment:
 >> "%FILE%" echo       HOST: "0.0.0.0"
 >> "%FILE%" echo       PORT: "!BACKEND_PORT!"
@@ -472,11 +488,15 @@ if /i "!USE_MINIO!"=="y" (
 REM -- Backend --
 REM PROD: connect via pgbouncer, expose to nginx-lb only
 >> "%FILE%" echo   backend:
->> "%FILE%" echo     build:
->> "%FILE%" echo       context: ./backend
->> "%FILE%" echo       dockerfile: Dockerfile
->> "%FILE%" echo       args:
->> "%FILE%" echo         CARGO_FEATURES: "!CARGO_FEATURES!"
+if /i "!BUILD_MODE!"=="build" (
+    >> "%FILE%" echo     build:
+    >> "%FILE%" echo       context: ./backend
+    >> "%FILE%" echo       dockerfile: Dockerfile
+    >> "%FILE%" echo       args:
+    >> "%FILE%" echo         CARGO_FEATURES: "!CARGO_FEATURES!"
+) else (
+    >> "%FILE%" echo     image: ghcr.io/pashasus/rust-conductor/backend:latest
+)
 >> "%FILE%" echo     restart: unless-stopped
 >> "%FILE%" echo     expose:
 >> "%FILE%" echo       - "!BACKEND_PORT!"
@@ -540,11 +560,15 @@ REM -- Nginx Load Balancer --
 
 REM -- Frontend --
 >> "%FILE%" echo   frontend:
->> "%FILE%" echo     build:
->> "%FILE%" echo       context: ./frontend
->> "%FILE%" echo       dockerfile: Dockerfile
->> "%FILE%" echo       args:
->> "%FILE%" echo         VITE_API_BASE: "http://localhost:!BACKEND_PORT!"
+if /i "!BUILD_MODE!"=="build" (
+    >> "%FILE%" echo     build:
+    >> "%FILE%" echo       context: ./frontend
+    >> "%FILE%" echo       dockerfile: Dockerfile
+    >> "%FILE%" echo       args:
+    >> "%FILE%" echo         VITE_API_BASE: "http://localhost:!BACKEND_PORT!"
+) else (
+    >> "%FILE%" echo     image: ghcr.io/pashasus/rust-conductor/frontend:latest
+)
 >> "%FILE%" echo     restart: unless-stopped
 >> "%FILE%" echo     ports:
 >> "%FILE%" echo       - "!FRONTEND_PORT!:3170"
@@ -642,11 +666,15 @@ echo       To force a full clean, run: docker system prune -af
 
 echo.
 echo ========================================
-echo  Docker cleaned. Starting build...
+echo  Docker cleaned. Starting...
 echo ========================================
 echo.
 
-docker compose up --build --scale backend=%NUM_REPLICAS% -d
+if /i "!BUILD_MODE!"=="build" (
+    docker compose up --build --scale backend=%NUM_REPLICAS% -d
+) else (
+    docker compose up --scale backend=%NUM_REPLICAS% -d
+)
 
 set /a LAST_PG_PORT=5432+%LAST_SHARD%
 set /a LAST_PGB_PORT=6432+%LAST_SHARD%
@@ -654,7 +682,7 @@ set /a LAST_KAFKA_PORT=9092+%LAST_KAFKA%
 
 echo.
 echo ========================================
-echo  Build complete! [PROD mode]
+echo  Setup complete! [PROD mode]
 echo ========================================
 echo    Public URL: !PUBLIC_URL!
 echo    API:        !PUBLIC_URL!/api

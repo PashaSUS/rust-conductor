@@ -100,7 +100,7 @@ REDIS_URLS=redis://redis-0:6379,redis://redis-1:6379,redis://redis-2:6379
 
 ```yaml
 redis-0:
-  image: redis:7-alpine
+  image: redis:8-alpine
   ports:
     - "6379:6379"
   command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru

@@ -156,10 +156,10 @@ Compile-time feature flags in `Cargo.toml`:
 
 | Service             | Image                  | Role                  | Ports       |
 | ------------------- | ---------------------- | --------------------- | ----------- |
-| `postgres-shard-0`  | `postgres:16-alpine`   | Database shard 0      | 5432        |
+| `postgres-shard-0`  | `postgres:17-alpine`   | Database shard 0      | 5432        |
 | `pgbouncer-shard-0` | `edoburu/pgbouncer`    | Connection pooler     | 6432        |
-| `redis-0`           | `redis:7-alpine`       | Task routing, locks   | 6379        |
-| `kafka-0`           | `apache/kafka:3.8.0`   | Task queue (KRaft)    | 9092        |
+| `redis-0`           | `redis:8-alpine`       | Task routing, locks   | 6379        |
+| `kafka-0`           | `apache/kafka:4.0.0`   | Task queue (KRaft)    | 9092        |
 | `seq`               | `datalust/seq:latest`  | Log aggregation       | 9321        |
 | `rustfs`            | `rustfs/rustfs:latest` | S3-compatible storage | 9000, 9001  |
 | `backend-migrate`   | _(Dockerfile)_         | Rust backend          | 8090, 50055 |
@@ -168,4 +168,4 @@ Compile-time feature flags in `Cargo.toml`:
 
 **Backend** (`backend/Dockerfile`): Multi-stage build `rust:1.94-slim` → `debian:trixie-slim`. Exposes 8090 (REST) + 50055 (gRPC).
 
-**Frontend** (`frontend/Dockerfile`): Multi-stage build `node:20` → `nginx:alpine`. Exposes 3170.
+**Frontend** (`frontend/Dockerfile`): Multi-stage build `node:24` → `serve`. Exposes 3170.

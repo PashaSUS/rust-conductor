@@ -41,7 +41,7 @@ async fn start_infra() -> (
 
     let pg_port = pg.get_host_port_ipv4(5432).await.expect("Postgres port");
     let redis_port = redis.get_host_port_ipv4(6379).await.expect("Redis port");
-    let kafka_port = kafka.get_host_port_ipv4(9093).await.expect("Kafka port");
+    let kafka_port = kafka.get_host_port_ipv4(9092).await.expect("Kafka port");
 
     let pg_url = format!("postgres://postgres:postgres@127.0.0.1:{pg_port}/postgres");
     let redis_url = format!("redis://127.0.0.1:{redis_port}");

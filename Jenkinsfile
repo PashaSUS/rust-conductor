@@ -46,7 +46,7 @@ pipeline {
                 stage('Frontend Lint') {
                     agent {
                         docker {
-                            image 'node:20-alpine'
+                            image 'node:24-alpine'
                         }
                     }
                     steps {
@@ -73,7 +73,7 @@ pipeline {
             steps {
                 sh 'apt-get update && apt-get install -y protobuf-compiler pkg-config libssl-dev'
                 dir('backend') {
-                    sh 'cargo test --lib --bins 2>&1 | tee test-results.txt'
+                    sh 'cargo test --bins 2>&1 | tee test-results.txt'
                 }
             }
             post {

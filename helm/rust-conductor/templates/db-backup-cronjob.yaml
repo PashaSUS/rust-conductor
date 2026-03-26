@@ -22,7 +22,7 @@ spec:
           restartPolicy: OnFailure
           containers:
             - name: pg-backup
-              image: postgres:16-alpine
+              image: postgres:17-alpine
               env:
                 - name: PGHOST
                   {{- if .Values.postgresql.enabled }}

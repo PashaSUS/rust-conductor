@@ -173,7 +173,7 @@ npm run build   # Output to dist/
 ```
 
 The `Dockerfile` uses a multi-stage build:
-1. `node:20` — install dependencies, run Vite build
+1. `node:24` — install dependencies, run Vite build
 2. `nginx:alpine` — serve static assets, proxy `/api` to the backend
 
 ### Nginx Configuration

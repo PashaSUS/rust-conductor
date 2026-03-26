@@ -75,7 +75,7 @@ The included `docker-compose.yml` runs a single Kafka broker in **KRaft mode** (
 
 ```yaml
 kafka:
-  image: apache/kafka:3.8.0
+  image: apache/kafka:4.0.0
   environment:
     KAFKA_NODE_ID: "1"
     KAFKA_PROCESS_ROLES: "broker,controller"
