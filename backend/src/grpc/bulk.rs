@@ -1,9 +1,9 @@
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
-use crate::engine::WorkflowEngine;
-use super::pb;
 use super::metadata::engine_err_to_status;
+use super::pb;
+use crate::engine::WorkflowEngine;
 
 pub struct BulkServiceImpl {
     engine: Arc<WorkflowEngine>,
@@ -81,7 +81,11 @@ impl pb::bulk_service_server::BulkService for BulkServiceImpl {
         request: Request<pb::BulkTerminateRequest>,
     ) -> Result<Response<pb::BulkResponseProto>, Status> {
         let req = request.into_inner();
-        let reason = if req.reason.is_empty() { None } else { Some(req.reason.as_str()) };
+        let reason = if req.reason.is_empty() {
+            None
+        } else {
+            Some(req.reason.as_str())
+        };
         let resp = self
             .engine
             .bulk_terminate(&req.workflow_ids, reason)

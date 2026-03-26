@@ -15,8 +15,8 @@ pub mod v2;
 pub mod websocket;
 pub mod workflow;
 
-use actix_web::web;
 use crate::engine::WorkflowEngine;
+use actix_web::web;
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(
@@ -45,9 +45,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
     .route("/health", web::get().to(health));
 }
 
-async fn health(
-    engine: web::Data<WorkflowEngine>,
-) -> actix_web::HttpResponse {
+async fn health(engine: web::Data<WorkflowEngine>) -> actix_web::HttpResponse {
     match engine.health_check().await {
         Ok(status) => actix_web::HttpResponse::Ok().json(status),
         Err(_) => actix_web::HttpResponse::ServiceUnavailable().json(serde_json::json!({

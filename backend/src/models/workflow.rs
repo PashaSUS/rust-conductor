@@ -5,13 +5,19 @@ use std::collections::HashMap;
 use super::common::{CacheConfig, IdempotencyStrategy, RateLimitConfig, SchemaDef};
 use super::task::TaskResult;
 
-//  Defaults 
+//  Defaults
 
-pub(crate) fn default_version() -> i32 { 1 }
-fn default_schema_version() -> i32 { 2 }
-pub(crate) fn default_true() -> bool { true }
+pub(crate) fn default_version() -> i32 {
+    1
+}
+fn default_schema_version() -> i32 {
+    2
+}
+pub(crate) fn default_true() -> bool {
+    true
+}
 
-//  Workflow Definition 
+//  Workflow Definition
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -84,7 +90,7 @@ pub struct WorkflowDef {
     pub sla_deadline_seconds: Option<i64>,
 }
 
-//  Workflow Task 
+//  Workflow Task
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -155,7 +161,9 @@ pub struct WorkflowTask {
     pub permissive: Option<bool>,
 }
 
-fn default_task_type_str() -> String { "SIMPLE".to_string() }
+fn default_task_type_str() -> String {
+    "SIMPLE".to_string()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -192,7 +200,7 @@ pub struct SubWorkflowParams {
     pub workflow_definition: Option<Value>,
 }
 
-//  Runtime Workflow 
+//  Runtime Workflow
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -281,7 +289,7 @@ impl std::fmt::Display for WorkflowStatus {
     }
 }
 
-//  Requests 
+//  Requests
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -336,7 +344,7 @@ pub struct SkipTaskRequest {
     pub task_output: Option<HashMap<String, Value>>,
 }
 
-//  CRON Scheduled Workflow 
+//  CRON Scheduled Workflow
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -362,9 +370,11 @@ pub struct ScheduledWorkflow {
     pub last_error: Option<String>,
 }
 
-fn default_utc() -> String { "UTC".to_string() }
+fn default_utc() -> String {
+    "UTC".to_string()
+}
 
-//  Workflow Template 
+//  Workflow Template
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -11,7 +11,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .is_ok_and(|o| o.status.success());
 
     if std::env::var("SKIP_PROTO").is_ok() || !has_protoc {
-        println!("cargo:warning=Skipping protobuf compilation (protoc not found or SKIP_PROTO set)");
+        println!(
+            "cargo:warning=Skipping protobuf compilation (protoc not found or SKIP_PROTO set)"
+        );
         let out_dir = std::env::var("OUT_DIR").unwrap();
         let out_path = std::path::Path::new(&out_dir);
         for name in ["conductor", "conductor_official"] {

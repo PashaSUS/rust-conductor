@@ -2,8 +2,8 @@ use chrono::Utc;
 use serde_json::Value;
 use uuid::Uuid;
 
-use super::error::EngineError;
 use super::WorkflowEngine;
+use super::error::EngineError;
 use crate::models::*;
 
 impl WorkflowEngine {
@@ -14,7 +14,9 @@ impl WorkflowEngine {
         let db = self.shards.shard_for(&workflow_id);
 
         let tags_json = serde_json::to_value(&req.tags).unwrap_or(Value::Array(vec![]));
-        let sla_deadline = def.sla_deadline_seconds.map(|secs| now + chrono::Duration::seconds(secs));
+        let sla_deadline = def
+            .sla_deadline_seconds
+            .map(|secs| now + chrono::Duration::seconds(secs));
 
         sqlx::query(
             "INSERT INTO workflow (workflow_id, workflow_name, workflow_version, status, input, correlation_id, start_time, update_time, priority, workflow_def, tags, sla_deadline)
@@ -37,7 +39,8 @@ impl WorkflowEngine {
             EngineError::Database(e.to_string())
         })?;
 
-        if let Err(e) = Box::pin(self.schedule_tasks(&workflow_id, &def.tasks, &req.input, 0)).await {
+        if let Err(e) = Box::pin(self.schedule_tasks(&workflow_id, &def.tasks, &req.input, 0)).await
+        {
             tracing::error!(workflow_id = %workflow_id, error = %e, "Failed to schedule initial tasks, marking workflow FAILED");
             let _ = sqlx::query(
                 "UPDATE workflow SET status = 'FAILED', end_time = NOW(), update_time = NOW(), reason_for_incompletion = $2 WHERE workflow_id = $1",

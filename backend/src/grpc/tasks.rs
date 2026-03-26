@@ -1,10 +1,10 @@
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
-use crate::engine::WorkflowEngine;
-use super::pb;
 use super::metadata::engine_err_to_status;
+use super::pb;
 use super::proto_conv;
+use crate::engine::WorkflowEngine;
 
 pub struct TaskServiceImpl {
     engine: Arc<WorkflowEngine>,
@@ -85,7 +85,10 @@ impl pb::task_service_server::TaskService for TaskServiceImpl {
             .await
             .map_err(engine_err_to_status)?;
         Ok(Response::new(pb::BatchPollTasksResponse {
-            tasks: tasks.into_iter().map(proto_conv::poll_task_to_proto).collect(),
+            tasks: tasks
+                .into_iter()
+                .map(proto_conv::poll_task_to_proto)
+                .collect(),
         }))
     }
 
@@ -99,7 +102,9 @@ impl pb::task_service_server::TaskService for TaskServiceImpl {
             .ack_task(&req.task_id, opt(&req.worker_id))
             .await
             .map_err(engine_err_to_status)?;
-        Ok(Response::new(pb::AckTaskResponse { acknowledged: acked }))
+        Ok(Response::new(pb::AckTaskResponse {
+            acknowledged: acked,
+        }))
     }
 
     async fn get_task_logs(
@@ -153,7 +158,11 @@ impl pb::task_service_server::TaskService for TaskServiceImpl {
             .map_err(engine_err_to_status)?;
         Ok(Response::new(pb::TaskSearchResponse {
             total_hits: result.total_hits,
-            results: result.results.iter().map(proto_conv::task_summary_to_proto).collect(),
+            results: result
+                .results
+                .iter()
+                .map(proto_conv::task_summary_to_proto)
+                .collect(),
         }))
     }
 

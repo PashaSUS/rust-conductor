@@ -414,7 +414,7 @@ export default function WorkflowDetail() {
       <StartWorkflowDialog
         open={replayOpen}
         onOpenChange={setReplayOpen}
-        preselectedDef={{ name: wf.workflowName, version: wf.workflowVersion } as any}
+        preselectedDef={{ name: wf.workflowName, version: wf.workflowVersion }}
         prefilledInput={wf.input as Record<string, unknown> | undefined}
       />
     </div>

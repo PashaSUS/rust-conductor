@@ -1,4 +1,4 @@
-use actix_web::{web, HttpResponse};
+use actix_web::{HttpResponse, web};
 use async_graphql::*;
 use async_graphql_actix_web::{GraphQLRequest, GraphQLResponse};
 use serde_json::Value;
@@ -308,6 +308,7 @@ pub(crate) struct MutationRoot;
 #[Object]
 impl MutationRoot {
     /// Start a new workflow execution
+    #[allow(clippy::too_many_arguments)]
     async fn start_workflow(
         &self,
         ctx: &Context<'_>,
@@ -380,6 +381,7 @@ impl MutationRoot {
     }
 
     /// Update a task result
+    #[allow(clippy::too_many_arguments)]
     async fn update_task(
         &self,
         ctx: &Context<'_>,

@@ -90,7 +90,7 @@ function randUrl() {
   return `${randPick(protos)}://${randWord()}.${randPick(tlds)}/api/${randWord()}`;
 }
 
-type ValueType = "string" | "number" | "boolean" | "email" | "uuid" | "ip" | "url" | "name" | "json_object" | "json_array";
+type ValueType = "string" | "number" | "boolean" | "email" | "uuid" | "ip" | "url" | "name" | "json_object" | "json_array" | "regex";
 
 const VALUE_TYPES: { value: ValueType; label: string }[] = [
   { value: "string", label: "Random String" },
@@ -103,6 +103,7 @@ const VALUE_TYPES: { value: ValueType; label: string }[] = [
   { value: "name", label: "Random Name" },
   { value: "json_object", label: "Random JSON Object" },
   { value: "json_array", label: "Random JSON Array" },
+  { value: "regex", label: "Regex Pattern" },
 ];
 
 function generateValue(type: ValueType): unknown {
@@ -130,11 +131,147 @@ function generateValue(type: ValueType): unknown {
   }
 }
 
+// ── Simple regex-to-string generator ──
+// Supports: literal chars, [a-z] [A-Z] [0-9] char classes, \d \w \s shortcuts,
+// {n} {n,m} quantifiers, + * ?, (group), | alternation, . wildcard
+function generateFromRegex(pattern: string): string {
+  let pos = 0;
+  const src = pattern;
+
+  function peek() { return src[pos]; }
+  function next() { return src[pos++]; }
+  function hasMore() { return pos < src.length; }
+
+  function charRange(a: string, b: string): string[] {
+    const result: string[] = [];
+    for (let c = a.charCodeAt(0); c <= b.charCodeAt(0); c++) result.push(String.fromCharCode(c));
+    return result;
+  }
+
+  const DIGITS = charRange("0", "9");
+  const LOWER = charRange("a", "z");
+  const UPPER = charRange("A", "Z");
+  const WORD = [...LOWER, ...UPPER, ...DIGITS, "_"];
+  const PRINTABLE = [...WORD, " ", "!", "@", "#", "$", "%", "&", "*", "-", "+", "=", ".", ",", ";", ":" ];
+
+  function parseCharClass(): string[] {
+    const chars: string[] = [];
+    const negated = peek() === "^";
+    if (negated) next();
+    while (hasMore() && peek() !== "]") {
+      const c = next()!;
+      if (c === "\\" && hasMore()) {
+        const esc = next()!;
+        if (esc === "d") chars.push(...DIGITS);
+        else if (esc === "w") chars.push(...WORD);
+        else if (esc === "s") chars.push(" ", "\t");
+        else chars.push(esc);
+      } else if (peek() === "-" && pos + 1 < src.length && src[pos + 1] !== "]") {
+        next(); // consume -
+        const end = next()!;
+        chars.push(...charRange(c, end));
+      } else {
+        chars.push(c);
+      }
+    }
+    if (peek() === "]") next();
+    if (negated) {
+      const set = new Set(chars);
+      return PRINTABLE.filter((c) => !set.has(c));
+    }
+    return chars.length > 0 ? chars : ["a"];
+  }
+
+  function parseAtom(): () => string {
+    if (!hasMore()) return () => "";
+    const c = peek()!;
+    if (c === "(") {
+      next();
+      const inner = parseAlternation();
+      if (peek() === ")") next();
+      return inner;
+    }
+    if (c === "[") {
+      next();
+      const chars = parseCharClass();
+      return () => randPick(chars);
+    }
+    if (c === "\\") {
+      next();
+      const esc = next()!;
+      if (esc === "d") return () => randPick(DIGITS);
+      if (esc === "w") return () => randPick(WORD);
+      if (esc === "s") return () => randPick([" ", "\t"]);
+      return () => esc;
+    }
+    if (c === ".") {
+      next();
+      return () => randPick(PRINTABLE);
+    }
+    next();
+    return () => c;
+  }
+
+  function parseQuantifier(atom: () => string): () => string {
+    if (!hasMore()) return atom;
+    const c = peek();
+    if (c === "*") { next(); const n = randInt(0, 5); return () => Array.from({ length: n }, () => atom()).join(""); }
+    if (c === "+") { next(); const n = randInt(1, 5); return () => Array.from({ length: n }, () => atom()).join(""); }
+    if (c === "?") { next(); return () => (randBool() ? atom() : ""); }
+    if (c === "{") {
+      const saved = pos;
+      next();
+      let numStr = "";
+      while (hasMore() && /\d/.test(peek()!)) numStr += next();
+      if (peek() === "}") {
+        next();
+        const n = parseInt(numStr, 10) || 1;
+        return () => Array.from({ length: n }, () => atom()).join("");
+      }
+      if (peek() === ",") {
+        next();
+        let maxStr = "";
+        while (hasMore() && /\d/.test(peek()!)) maxStr += next();
+        if (peek() === "}") {
+          next();
+          const min = parseInt(numStr, 10) || 0;
+          const max = maxStr ? parseInt(maxStr, 10) : min + 5;
+          return () => { const n = randInt(min, max); return Array.from({ length: n }, () => atom()).join(""); };
+        }
+      }
+      pos = saved;
+    }
+    return atom;
+  }
+
+  function parseSequence(): () => string {
+    const parts: (() => string)[] = [];
+    while (hasMore() && peek() !== ")" && peek() !== "|") {
+      const atom = parseAtom();
+      parts.push(parseQuantifier(atom));
+    }
+    return () => parts.map((p) => p()).join("");
+  }
+
+  function parseAlternation(): () => string {
+    const alternatives: (() => string)[] = [parseSequence()];
+    while (hasMore() && peek() === "|") {
+      next();
+      alternatives.push(parseSequence());
+    }
+    return () => randPick(alternatives)();
+  }
+
+  const gen = parseAlternation();
+  return gen();
+}
+
 // ── Parameter config for stress test ──
 interface ParamConfig {
   key: string;
   type: ValueType;
   fixedValue?: string;
+  regexPattern?: string;
   useFixed: boolean;
 }
 
@@ -224,7 +361,13 @@ function generateRandomWorkflowDef(taskDefs: TaskDef[], taskCount: number): Work
 function generateRandomInput(paramConfigs: ParamConfig[]): Record<string, unknown> {
   const input: Record<string, unknown> = {};
   for (const p of paramConfigs) {
-    input[p.key] = p.useFixed ? tryParse(p.fixedValue ?? "") : generateValue(p.type);
+    if (p.useFixed) {
+      input[p.key] = tryParse(p.fixedValue ?? "");
+    } else if (p.type === "regex") {
+      input[p.key] = p.regexPattern ? generateFromRegex(p.regexPattern) : randString(8);
+    } else {
+      input[p.key] = generateValue(p.type);
+    }
   }
   return input;
 }
@@ -710,18 +853,29 @@ export default function WorkflowStresser() {
                         className="h-7 text-xs flex-1"
                       />
                     ) : (
-                      <Select
-                        value={param.type}
-                        onValueChange={(v) => updateParam(idx, { type: v as ValueType })}
-                        disabled={running}
-                      >
-                        <SelectTrigger className="h-7 text-xs flex-1"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {VALUE_TYPES.map((vt) => (
-                            <SelectItem key={vt.value} value={vt.value}>{vt.label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <div className="flex gap-1.5 flex-1 items-center">
+                        <Select
+                          value={param.type}
+                          onValueChange={(v) => updateParam(idx, { type: v as ValueType })}
+                          disabled={running}
+                        >
+                          <SelectTrigger className="h-7 text-xs w-36 shrink-0"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {VALUE_TYPES.map((vt) => (
+                              <SelectItem key={vt.value} value={vt.value}>{vt.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {param.type === "regex" && (
+                          <Input
+                            placeholder="e.g. [A-Z]{3}-\d{4}"
+                            value={param.regexPattern ?? ""}
+                            onChange={(e) => updateParam(idx, { regexPattern: e.target.value })}
+                            disabled={running}
+                            className="h-7 text-xs flex-1 font-mono"
+                          />
+                        )}
+                      </div>
                     )}
                     <Button
                       variant="ghost" size="sm" className="h-7 px-1.5 text-muted-foreground hover:text-destructive"
@@ -835,7 +989,7 @@ export default function WorkflowStresser() {
                 <h3 className="text-sm font-semibold">Recent Results</h3>
                 <Badge variant="outline" className="text-[10px]">{results.length} total</Badge>
               </div>
-              <div className="max-h-[400px] overflow-y-auto space-y-1">
+              <div className="max-h-100 overflow-y-auto space-y-1">
                 {results.slice(-50).reverse().map((r) => (
                   <div
                     key={r.index}

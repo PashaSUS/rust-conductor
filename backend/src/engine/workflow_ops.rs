@@ -5,9 +5,9 @@ use futures::future::join_all;
 use serde_json::Value;
 use uuid::Uuid;
 
+use super::WorkflowEngine;
 use super::error::EngineError;
 use super::rows::{TaskRow, WorkflowRow, WorkflowSummaryRow};
-use super::WorkflowEngine;
 use crate::models::*;
 
 /// Simple base64 encode (no padding, URL-safe).
@@ -47,7 +47,9 @@ fn base64_decode(data: &[u8]) -> Option<Vec<u8>> {
     let mut buf: u32 = 0;
     let mut bits: u32 = 0;
     for &b in data {
-        if b == b'=' { continue; }
+        if b == b'=' {
+            continue;
+        }
         buf = (buf << 6) | val(b)?;
         bits += 6;
         if bits >= 8 {
@@ -289,9 +291,11 @@ impl WorkflowEngine {
         size: i64,
         tags: Option<&[String]>,
     ) -> Result<SearchResult<WorkflowSummary>, EngineError> {
-        self.search_workflows_with_cursor(status, name, free_text, start, size, tags, None).await
+        self.search_workflows_with_cursor(status, name, free_text, start, size, tags, None)
+            .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn search_workflows_with_cursor(
         &self,
         status: Option<&str>,
@@ -324,9 +328,7 @@ impl WorkflowEngine {
 
         // Cursor-based keyset pagination: decode (start_time_ms, workflow_id) from cursor
         let cursor_decoded = cursor.and_then(|c| {
-            let decoded = String::from_utf8(
-                base64_decode(c.as_bytes())?
-            ).ok()?;
+            let decoded = String::from_utf8(base64_decode(c.as_bytes())?).ok()?;
             let v: serde_json::Value = serde_json::from_str(&decoded).ok()?;
             let t = v.get("t")?.as_i64()?;
             let id = v.get("id")?.as_str()?.to_string();
@@ -354,23 +356,28 @@ impl WorkflowEngine {
         let effective_offset = if cursor_decoded.is_some() { 0 } else { start };
         let fetch_size = size + effective_offset;
         let count_query = format!("SELECT COUNT(*) FROM workflow{where_clause}");
-        let data_query = format!("{select_cols}{where_clause} ORDER BY start_time DESC, workflow_id DESC LIMIT {fetch_size} OFFSET 0");
+        let data_query = format!(
+            "{select_cols}{where_clause} ORDER BY start_time DESC, workflow_id DESC LIMIT {fetch_size} OFFSET 0"
+        );
 
-        let futs: Vec<_> = read_shards.iter().map(|shard| {
-            let cq = count_query.clone();
-            let dq = data_query.clone();
-            async move {
-                let count: i64 = sqlx::query_scalar(&cq)
-                    .fetch_one(shard)
-                    .await
-                    .map_err(|e| EngineError::Database(e.to_string()))?;
-                let rows = sqlx::query_as::<_, WorkflowSummaryRow>(&dq)
-                    .fetch_all(shard)
-                    .await
-                    .map_err(|e| EngineError::Database(e.to_string()))?;
-                Ok::<_, EngineError>((count, rows))
-            }
-        }).collect();
+        let futs: Vec<_> = read_shards
+            .iter()
+            .map(|shard| {
+                let cq = count_query.clone();
+                let dq = data_query.clone();
+                async move {
+                    let count: i64 = sqlx::query_scalar(&cq)
+                        .fetch_one(shard)
+                        .await
+                        .map_err(|e| EngineError::Database(e.to_string()))?;
+                    let rows = sqlx::query_as::<_, WorkflowSummaryRow>(&dq)
+                        .fetch_all(shard)
+                        .await
+                        .map_err(|e| EngineError::Database(e.to_string()))?;
+                    Ok::<_, EngineError>((count, rows))
+                }
+            })
+            .collect();
 
         let results = join_all(futs).await;
         let mut total: i64 = 0;
@@ -383,10 +390,15 @@ impl WorkflowEngine {
 
         // Sort merged results and apply pagination
         all_results.sort_by(|a, b| {
-            b.start_time.cmp(&a.start_time)
+            b.start_time
+                .cmp(&a.start_time)
                 .then_with(|| b.workflow_id.cmp(&a.workflow_id))
         });
-        let skip = if cursor_decoded.is_some() { 0 } else { start as usize };
+        let skip = if cursor_decoded.is_some() {
+            0
+        } else {
+            start as usize
+        };
         let paged: Vec<WorkflowSummary> = all_results
             .into_iter()
             .skip(skip)
@@ -408,12 +420,17 @@ impl WorkflowEngine {
     }
 
     pub async fn workflow_stats(&self) -> Result<HashMap<String, i64>, EngineError> {
-        let futs: Vec<_> = self.shards.read_shards().iter().map(|shard| {
-            sqlx::query_as::<_, (String, i64)>(
-                "SELECT status, COUNT(*) FROM workflow GROUP BY status",
-            )
-            .fetch_all(shard)
-        }).collect();
+        let futs: Vec<_> = self
+            .shards
+            .read_shards()
+            .iter()
+            .map(|shard| {
+                sqlx::query_as::<_, (String, i64)>(
+                    "SELECT status, COUNT(*) FROM workflow GROUP BY status",
+                )
+                .fetch_all(shard)
+            })
+            .collect();
 
         let results = join_all(futs).await;
         let mut stats: HashMap<String, i64> = HashMap::new();
@@ -437,18 +454,22 @@ impl WorkflowEngine {
         "#;
 
         let read_shards = self.shards.read_shards();
-        let futs: Vec<_> = read_shards.iter().map(|shard| {
-            async move {
-                sqlx::query_as::<_, (String, chrono::DateTime<Utc>, Option<chrono::DateTime<Utc>>)>(query)
-                    .bind(name)
-                    .fetch_all(shard)
-                    .await
-                    .map_err(|e| EngineError::Database(e.to_string()))
-            }
-        }).collect();
+        let futs: Vec<_> = read_shards
+            .iter()
+            .map(|shard| async move {
+                sqlx::query_as::<_, (String, chrono::DateTime<Utc>, Option<chrono::DateTime<Utc>>)>(
+                    query,
+                )
+                .bind(name)
+                .fetch_all(shard)
+                .await
+                .map_err(|e| EngineError::Database(e.to_string()))
+            })
+            .collect();
 
         let results = join_all(futs).await;
-        let mut all_rows: Vec<(String, chrono::DateTime<Utc>, Option<chrono::DateTime<Utc>>)> = Vec::new();
+        let mut all_rows: Vec<(String, chrono::DateTime<Utc>, Option<chrono::DateTime<Utc>>)> =
+            Vec::new();
         for result in results {
             all_rows.extend(result?);
         }
@@ -495,16 +516,24 @@ impl WorkflowEngine {
 
         durations.sort();
 
-        let avg = if durations.is_empty() { None } else {
+        let avg = if durations.is_empty() {
+            None
+        } else {
             Some(durations.iter().sum::<i64>() / durations.len() as i64)
         };
         let min_d = durations.first().copied();
         let max_d = durations.last().copied();
-        let p50 = if durations.is_empty() { None } else {
+        let p50 = if durations.is_empty() {
+            None
+        } else {
             Some(durations[durations.len() / 2])
         };
-        let p95 = if durations.is_empty() { None } else {
-            Some(durations[(durations.len() as f64 * 0.95) as usize].min(*durations.last().unwrap()))
+        let p95 = if durations.is_empty() {
+            None
+        } else {
+            Some(
+                durations[(durations.len() as f64 * 0.95) as usize].min(*durations.last().unwrap()),
+            )
         };
 
         Ok(WorkflowMetrics {
@@ -546,7 +575,10 @@ impl WorkflowEngine {
 
             for (wf_id,) in &rows {
                 tracing::warn!(workflow_id = %wf_id, "SLA breach detected, failing workflow");
-                if let Err(e) = self.fail_workflow(wf_id, Some("SLA deadline breached"), "TIMED_OUT").await {
+                if let Err(e) = self
+                    .fail_workflow(wf_id, Some("SLA deadline breached"), "TIMED_OUT")
+                    .await
+                {
                     tracing::error!(workflow_id = %wf_id, error = %e, "Failed to fail SLA-breached workflow");
                 } else {
                     breached += 1;
@@ -557,15 +589,24 @@ impl WorkflowEngine {
         Ok(breached)
     }
 
-    pub async fn rerun_workflow(&self, workflow_id: &str, req: &RerunWorkflowRequest) -> Result<String, EngineError> {
+    pub async fn rerun_workflow(
+        &self,
+        workflow_id: &str,
+        req: &RerunWorkflowRequest,
+    ) -> Result<String, EngineError> {
         let wf = self.get_workflow(workflow_id).await?;
-        let new_id = req.re_run_from_workflow_id.clone().unwrap_or_else(|| Uuid::new_v4().to_string());
+        let new_id = req
+            .re_run_from_workflow_id
+            .clone()
+            .unwrap_or_else(|| Uuid::new_v4().to_string());
 
         let input = match &req.workflow_input {
             Some(m) => serde_json::to_value(m).unwrap_or(wf.input.clone()),
             None => wf.input.clone(),
         };
-        let def = self.get_workflow_def(&wf.workflow_name, Some(wf.workflow_version)).await?;
+        let def = self
+            .get_workflow_def(&wf.workflow_name, Some(wf.workflow_version))
+            .await?;
         let now = Utc::now();
         let db = self.shards.shard_for(&new_id);
 
@@ -587,21 +628,32 @@ impl WorkflowEngine {
 
         let from_task = req.re_run_from_task_id.as_deref();
         let start_seq = if let Some(task_ref) = from_task {
-            def.tasks.iter().position(|t| t.task_reference_name == task_ref).unwrap_or(0) as i32
+            def.tasks
+                .iter()
+                .position(|t| t.task_reference_name == task_ref)
+                .unwrap_or(0) as i32
         } else {
             0
         };
 
-        self.schedule_tasks(&new_id, &def.tasks[start_seq as usize..], &input, start_seq).await?;
+        self.schedule_tasks(&new_id, &def.tasks[start_seq as usize..], &input, start_seq)
+            .await?;
 
         Ok(new_id)
     }
 
-    pub async fn skip_task(&self, workflow_id: &str, task_reference_name: &str, req: &SkipTaskRequest) -> Result<(), EngineError> {
+    pub async fn skip_task(
+        &self,
+        workflow_id: &str,
+        task_reference_name: &str,
+        req: &SkipTaskRequest,
+    ) -> Result<(), EngineError> {
         let task_id = Uuid::new_v4().to_string();
         let now = Utc::now();
         let output = match &req.task_output {
-            Some(m) => serde_json::to_value(m).unwrap_or_else(|_| Value::Object(Default::default())),
+            Some(m) => {
+                serde_json::to_value(m).unwrap_or_else(|_| Value::Object(Default::default()))
+            }
             None => Value::Object(Default::default()),
         };
         let db = self.shards.shard_for(workflow_id);
@@ -643,16 +695,21 @@ impl WorkflowEngine {
         }
         base_query.push_str(" ORDER BY start_time DESC");
 
-        let futs: Vec<_> = self.shards.read_shards().iter().map(|shard| {
-            let q = base_query.clone();
-            async move {
-                sqlx::query_scalar::<_, String>(&q)
-                    .bind(name)
-                    .fetch_all(shard)
-                    .await
-                    .map_err(|e| EngineError::Database(e.to_string()))
-            }
-        }).collect();
+        let futs: Vec<_> = self
+            .shards
+            .read_shards()
+            .iter()
+            .map(|shard| {
+                let q = base_query.clone();
+                async move {
+                    sqlx::query_scalar::<_, String>(&q)
+                        .bind(name)
+                        .fetch_all(shard)
+                        .await
+                        .map_err(|e| EngineError::Database(e.to_string()))
+                }
+            })
+            .collect();
 
         let results = join_all(futs).await;
         let mut all_ids = Vec::new();
@@ -662,7 +719,11 @@ impl WorkflowEngine {
         Ok(all_ids)
     }
 
-    pub async fn delete_workflow(&self, workflow_id: &str, archive: bool) -> Result<(), EngineError> {
+    pub async fn delete_workflow(
+        &self,
+        workflow_id: &str,
+        archive: bool,
+    ) -> Result<(), EngineError> {
         let db = self.shards.shard_for(workflow_id);
 
         if archive {
@@ -678,7 +739,9 @@ impl WorkflowEngine {
                 .await
                 .map_err(|e| EngineError::Database(e.to_string()))?;
             if result.rows_affected() == 0 {
-                return Err(EngineError::NotFound(format!("Workflow not found: {workflow_id}")));
+                return Err(EngineError::NotFound(format!(
+                    "Workflow not found: {workflow_id}"
+                )));
             }
         }
         Ok(())
@@ -687,66 +750,90 @@ impl WorkflowEngine {
     // ── Bulk Operations ──
 
     pub async fn bulk_pause(&self, workflow_ids: &[String]) -> Result<BulkResponse, EngineError> {
-        let futs: Vec<_> = workflow_ids.iter().map(|id| {
-            let id = id.clone();
-            async move { (id.clone(), self.pause_workflow(&id).await) }
-        }).collect();
+        let futs: Vec<_> = workflow_ids
+            .iter()
+            .map(|id| {
+                let id = id.clone();
+                async move { (id.clone(), self.pause_workflow(&id).await) }
+            })
+            .collect();
         Ok(collect_bulk_results(join_all(futs).await))
     }
 
     pub async fn bulk_resume(&self, workflow_ids: &[String]) -> Result<BulkResponse, EngineError> {
-        let futs: Vec<_> = workflow_ids.iter().map(|id| {
-            let id = id.clone();
-            async move { (id.clone(), self.resume_workflow(&id).await) }
-        }).collect();
+        let futs: Vec<_> = workflow_ids
+            .iter()
+            .map(|id| {
+                let id = id.clone();
+                async move { (id.clone(), self.resume_workflow(&id).await) }
+            })
+            .collect();
         Ok(collect_bulk_results(join_all(futs).await))
     }
 
     pub async fn bulk_retry(&self, workflow_ids: &[String]) -> Result<BulkResponse, EngineError> {
-        let futs: Vec<_> = workflow_ids.iter().map(|id| {
-            let id = id.clone();
-            async move {
-                let result = self.retry_workflow(&id).await.map(|_| ());
-                (id, result)
-            }
-        }).collect();
+        let futs: Vec<_> = workflow_ids
+            .iter()
+            .map(|id| {
+                let id = id.clone();
+                async move {
+                    let result = self.retry_workflow(&id).await.map(|_| ());
+                    (id, result)
+                }
+            })
+            .collect();
         Ok(collect_bulk_results(join_all(futs).await))
     }
 
     pub async fn bulk_restart(&self, workflow_ids: &[String]) -> Result<BulkResponse, EngineError> {
-        let futs: Vec<_> = workflow_ids.iter().map(|id| {
-            let id = id.clone();
-            async move {
-                let result = self.restart_workflow(&id).await.map(|_| ());
-                (id, result)
-            }
-        }).collect();
+        let futs: Vec<_> = workflow_ids
+            .iter()
+            .map(|id| {
+                let id = id.clone();
+                async move {
+                    let result = self.restart_workflow(&id).await.map(|_| ());
+                    (id, result)
+                }
+            })
+            .collect();
         Ok(collect_bulk_results(join_all(futs).await))
     }
 
-    pub async fn bulk_terminate(&self, workflow_ids: &[String], reason: Option<&str>) -> Result<BulkResponse, EngineError> {
-        let futs: Vec<_> = workflow_ids.iter().map(|id| {
-            let id = id.clone();
-            async move { (id.clone(), self.terminate_workflow(&id, reason).await) }
-        }).collect();
+    pub async fn bulk_terminate(
+        &self,
+        workflow_ids: &[String],
+        reason: Option<&str>,
+    ) -> Result<BulkResponse, EngineError> {
+        let futs: Vec<_> = workflow_ids
+            .iter()
+            .map(|id| {
+                let id = id.clone();
+                async move { (id.clone(), self.terminate_workflow(&id, reason).await) }
+            })
+            .collect();
         Ok(collect_bulk_results(join_all(futs).await))
     }
 
     // ── Workflow Status ──
 
-    pub async fn get_workflow_status(&self, workflow_id: &str, include_tasks: bool) -> Result<Workflow, EngineError> {
+    pub async fn get_workflow_status(
+        &self,
+        workflow_id: &str,
+        include_tasks: bool,
+    ) -> Result<Workflow, EngineError> {
         if include_tasks {
             self.get_workflow(workflow_id).await
         } else {
             let db = self.shards.shard_for(workflow_id);
-            let wf_row = sqlx::query_as::<_, WorkflowRow>(
-                "SELECT * FROM workflow WHERE workflow_id = $1",
-            )
-            .bind(workflow_id)
-            .fetch_optional(db)
-            .await
-            .map_err(|e| EngineError::Database(e.to_string()))?
-            .ok_or_else(|| EngineError::NotFound(format!("Workflow not found: {workflow_id}")))?;
+            let wf_row =
+                sqlx::query_as::<_, WorkflowRow>("SELECT * FROM workflow WHERE workflow_id = $1")
+                    .bind(workflow_id)
+                    .fetch_optional(db)
+                    .await
+                    .map_err(|e| EngineError::Database(e.to_string()))?
+                    .ok_or_else(|| {
+                        EngineError::NotFound(format!("Workflow not found: {workflow_id}"))
+                    })?;
 
             Ok(Workflow {
                 workflow_id: wf_row.workflow_id,
@@ -764,9 +851,17 @@ impl WorkflowEngine {
                 created_by: wf_row.created_by,
                 updated_by: None,
                 reason_for_incompletion: wf_row.reason_for_incompletion,
-                workflow_definition: wf_row.workflow_def.and_then(|v| serde_json::from_value(v).ok()),
+                workflow_definition: wf_row
+                    .workflow_def
+                    .and_then(|v| serde_json::from_value(v).ok()),
                 priority: wf_row.priority,
-                variables: wf_row.variables.as_object().cloned().unwrap_or_default().into_iter().collect(),
+                variables: wf_row
+                    .variables
+                    .as_object()
+                    .cloned()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .collect(),
                 failed_reference_task_names: vec![],
                 owner_app: None,
                 parent_workflow_id: None,
@@ -794,7 +889,8 @@ impl WorkflowEngine {
         variables: &HashMap<String, Value>,
     ) -> Result<Workflow, EngineError> {
         let db = self.shards.shard_for(workflow_id);
-        let vars_json = serde_json::to_value(variables).unwrap_or(Value::Object(Default::default()));
+        let vars_json =
+            serde_json::to_value(variables).unwrap_or(Value::Object(Default::default()));
 
         sqlx::query(
             "UPDATE workflow SET variables = variables || $2, update_time = NOW() WHERE workflow_id = $1",
@@ -815,8 +911,13 @@ fn collect_bulk_results(results: Vec<(String, Result<(), EngineError>)>) -> Bulk
     for (id, result) in results {
         match result {
             Ok(()) => successful.push(id),
-            Err(e) => { errors.insert(id, e.to_string()); }
+            Err(e) => {
+                errors.insert(id, e.to_string());
+            }
         }
     }
-    BulkResponse { bulk_successful_results: successful, bulk_error_results: errors }
+    BulkResponse {
+        bulk_successful_results: successful,
+        bulk_error_results: errors,
+    }
 }

@@ -14,9 +14,9 @@
 //!   S3_SECRET_KEY=minioadmin
 //!   EXTERNAL_PAYLOAD_THRESHOLD=32768  (bytes, default 32KB)
 
+use s3::Region;
 use s3::bucket::Bucket;
 use s3::creds::Credentials;
-use s3::Region;
 use serde_json::Value;
 
 /// Threshold in bytes above which payloads are externalized.
@@ -25,35 +25,27 @@ const DEFAULT_THRESHOLD: usize = 32 * 1024; // 32KB
 #[derive(Clone)]
 pub struct ExternalPayloadStorage {
     bucket: Box<Bucket>,
+    #[allow(dead_code)]
     threshold: usize,
 }
 
 impl ExternalPayloadStorage {
     /// Create from environment variables.
     pub fn from_env() -> Result<Self, String> {
-        let endpoint = std::env::var("S3_ENDPOINT")
-            .map_err(|_| "S3_ENDPOINT not set")?;
-        let bucket_name = std::env::var("S3_BUCKET")
-            .unwrap_or_else(|_| "conductor-payloads".into());
-        let region_name = std::env::var("S3_REGION")
-            .unwrap_or_else(|_| "us-east-1".into());
-        let access_key = std::env::var("S3_ACCESS_KEY")
-            .map_err(|_| "S3_ACCESS_KEY not set")?;
-        let secret_key = std::env::var("S3_SECRET_KEY")
-            .map_err(|_| "S3_SECRET_KEY not set")?;
+        let endpoint = std::env::var("S3_ENDPOINT").map_err(|_| "S3_ENDPOINT not set")?;
+        let bucket_name =
+            std::env::var("S3_BUCKET").unwrap_or_else(|_| "conductor-payloads".into());
+        let region_name = std::env::var("S3_REGION").unwrap_or_else(|_| "us-east-1".into());
+        let access_key = std::env::var("S3_ACCESS_KEY").map_err(|_| "S3_ACCESS_KEY not set")?;
+        let secret_key = std::env::var("S3_SECRET_KEY").map_err(|_| "S3_SECRET_KEY not set")?;
 
         let region = Region::Custom {
             region: region_name,
             endpoint,
         };
 
-        let credentials = Credentials::new(
-            Some(&access_key),
-            Some(&secret_key),
-            None,
-            None,
-            None,
-        ).map_err(|e| format!("Failed to create S3 credentials: {e}"))?;
+        let credentials = Credentials::new(Some(&access_key), Some(&secret_key), None, None, None)
+            .map_err(|e| format!("Failed to create S3 credentials: {e}"))?;
 
         let mut bucket = Bucket::new(&bucket_name, region, credentials)
             .map_err(|e| format!("Failed to create S3 bucket handle: {e}"))?;
@@ -70,6 +62,7 @@ impl ExternalPayloadStorage {
     }
 
     /// Check if a payload exceeds the externalization threshold.
+    #[allow(dead_code)]
     pub fn should_externalize(&self, payload: &Value) -> bool {
         // Quick estimate: serialize to check size
         match serde_json::to_vec(payload) {
@@ -81,18 +74,16 @@ impl ExternalPayloadStorage {
     /// Upload a payload to S3 and return the storage path (key).
     ///
     /// Key format: `{entity_type}/{workflow_id}/{uuid}.json`
+    #[allow(dead_code)]
     pub async fn upload(
         &self,
         entity_type: &str,
         workflow_id: &str,
         payload: &Value,
     ) -> Result<String, String> {
-        let key = format!(
-            "{entity_type}/{workflow_id}/{}.json",
-            uuid::Uuid::new_v4()
-        );
-        let data = serde_json::to_vec(payload)
-            .map_err(|e| format!("Failed to serialize payload: {e}"))?;
+        let key = format!("{entity_type}/{workflow_id}/{}.json", uuid::Uuid::new_v4());
+        let data =
+            serde_json::to_vec(payload).map_err(|e| format!("Failed to serialize payload: {e}"))?;
 
         self.bucket
             .put_object(&key, &data)
@@ -109,6 +100,7 @@ impl ExternalPayloadStorage {
     }
 
     /// Download a payload from S3 by its storage path (key).
+    #[allow(dead_code)]
     pub async fn download(&self, key: &str) -> Result<Value, String> {
         let response = self
             .bucket
@@ -121,6 +113,7 @@ impl ExternalPayloadStorage {
     }
 
     /// Delete a payload from S3.
+    #[allow(dead_code)]
     pub async fn delete(&self, key: &str) -> Result<(), String> {
         self.bucket
             .delete_object(key)
@@ -136,7 +129,10 @@ impl ExternalPayloadStorage {
             Ok(_) => Ok(()),
             Err(_) => {
                 tracing::info!(bucket = %self.bucket.name(), "Creating S3 bucket");
-                let creds = self.bucket.credentials().await
+                let creds = self
+                    .bucket
+                    .credentials()
+                    .await
                     .map_err(|e| format!("Failed to get credentials: {e}"))?;
                 Bucket::create_with_path_style(
                     &self.bucket.name(),

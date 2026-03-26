@@ -2,8 +2,8 @@ use chrono::Utc;
 use serde_json::Value;
 use uuid::Uuid;
 
-use super::error::EngineError;
 use super::WorkflowEngine;
+use super::error::EngineError;
 use crate::models::*;
 
 /// Row type for scheduled_workflow queries.
@@ -42,7 +42,10 @@ impl From<ScheduledRow> for ScheduledWorkflow {
 }
 
 impl WorkflowEngine {
-    pub async fn create_schedule(&self, sched: &ScheduledWorkflow) -> Result<ScheduledWorkflow, EngineError> {
+    pub async fn create_schedule(
+        &self,
+        sched: &ScheduledWorkflow,
+    ) -> Result<ScheduledWorkflow, EngineError> {
         let id = if sched.schedule_id.is_empty() {
             Uuid::new_v4().to_string()
         } else {
@@ -79,12 +82,11 @@ impl WorkflowEngine {
     }
 
     pub async fn list_schedules(&self) -> Result<Vec<ScheduledWorkflow>, EngineError> {
-        let rows = sqlx::query_as::<_, ScheduledRow>(
-            "SELECT * FROM scheduled_workflow ORDER BY name",
-        )
-        .fetch_all(self.shards.primary())
-        .await
-        .map_err(|e| EngineError::Database(e.to_string()))?;
+        let rows =
+            sqlx::query_as::<_, ScheduledRow>("SELECT * FROM scheduled_workflow ORDER BY name")
+                .fetch_all(self.shards.primary())
+                .await
+                .map_err(|e| EngineError::Database(e.to_string()))?;
 
         Ok(rows.into_iter().map(Into::into).collect())
     }
@@ -110,12 +112,18 @@ impl WorkflowEngine {
             .map_err(|e| EngineError::Database(e.to_string()))?;
 
         if result.rows_affected() == 0 {
-            return Err(EngineError::NotFound(format!("Schedule not found: {schedule_id}")));
+            return Err(EngineError::NotFound(format!(
+                "Schedule not found: {schedule_id}"
+            )));
         }
         Ok(())
     }
 
-    pub async fn toggle_schedule(&self, schedule_id: &str, enabled: bool) -> Result<(), EngineError> {
+    pub async fn toggle_schedule(
+        &self,
+        schedule_id: &str,
+        enabled: bool,
+    ) -> Result<(), EngineError> {
         let result = sqlx::query(
             "UPDATE scheduled_workflow SET enabled = $2, updated_on = NOW() WHERE schedule_id = $1",
         )
@@ -126,7 +134,9 @@ impl WorkflowEngine {
         .map_err(|e| EngineError::Database(e.to_string()))?;
 
         if result.rows_affected() == 0 {
-            return Err(EngineError::NotFound(format!("Schedule not found: {schedule_id}")));
+            return Err(EngineError::NotFound(format!(
+                "Schedule not found: {schedule_id}"
+            )));
         }
         Ok(())
     }
@@ -259,24 +269,28 @@ impl WorkflowEngine {
         }
         // */N step
         if let Some(step_str) = field.strip_prefix("*/")
-            && let Ok(step) = step_str.parse::<u32>() {
-                return step > 0 && value.is_multiple_of(step);
-            }
+            && let Ok(step) = step_str.parse::<u32>()
+        {
+            return step > 0 && value.is_multiple_of(step);
+        }
         // Comma-separated values
         for part in field.split(',') {
             // Range: N-M
             if let Some((start_str, end_str)) = part.split_once('-') {
                 if let (Ok(start), Ok(end)) = (start_str.parse::<u32>(), end_str.parse::<u32>())
-                    && value >= start && value <= end {
-                        return true;
-                    }
+                    && value >= start
+                    && value <= end
+                {
+                    return true;
+                }
                 continue;
             }
             // Exact match
             if let Ok(v) = part.trim().parse::<u32>()
-                && v == value {
-                    return true;
-                }
+                && v == value
+            {
+                return true;
+            }
         }
         false
     }

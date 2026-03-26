@@ -113,7 +113,9 @@ fn workflow_id_to_u32(workflow_id: &str) -> u32 {
         u32::from_be_bytes([bytes[12], bytes[13], bytes[14], bytes[15]])
     } else {
         // Fallback: simple byte sum for non-UUID workflow ids
-        workflow_id.bytes().fold(0u32, |acc, b| acc.wrapping_add(b as u32))
+        workflow_id
+            .bytes()
+            .fold(0u32, |acc, b| acc.wrapping_add(b as u32))
     }
 }
 

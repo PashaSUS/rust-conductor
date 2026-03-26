@@ -31,7 +31,7 @@ import { JsonView } from "@/components/JsonView";
 import {
   Save, Plus, Trash2, Code, Eye, Play, Flag,
   Settings2, Zap, LayoutGrid, AlertTriangle,
-  ArrowDown, GripVertical, ChevronUp, ChevronDown, Copy,
+  ArrowDown, GripVertical, ChevronUp, ChevronDown, Copy, GripHorizontal,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -380,6 +380,35 @@ function WorkflowDesignerInner() {
   } | null>(null);
 
   const reactFlowRef = useRef<HTMLDivElement>(null);
+
+  // Resizable right panel
+  const [rightPanelWidth, setRightPanelWidth] = useState(320);
+  const resizingRef = useRef(false);
+  const resizeStartX = useRef(0);
+  const resizeStartW = useRef(320);
+
+  const onResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    resizingRef.current = true;
+    resizeStartX.current = e.clientX;
+    resizeStartW.current = rightPanelWidth;
+    const onMove = (ev: MouseEvent) => {
+      if (!resizingRef.current) return;
+      const delta = resizeStartX.current - ev.clientX;
+      setRightPanelWidth(Math.max(260, Math.min(600, resizeStartW.current + delta)));
+    };
+    const onUp = () => {
+      resizingRef.current = false;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }, [rightPanelWidth]);
 
   // Fetch data
   const { data: registeredTaskDefs } = useQuery({
@@ -854,6 +883,19 @@ function WorkflowDesignerInner() {
   }, []);
   const onDragLeave = useCallback(() => setIsDragOver(false), []);
 
+  // ── Node click: auto-open editor ──
+  const onNodeClick = useCallback(
+    (_event: React.MouseEvent, node: Node) => {
+      if (node.id === "__start__" || node.id === "__end__") {
+        setShowSettings(true);
+        return;
+      }
+      const task = tasks.find((t) => t.id === node.id);
+      if (task) setEditingTask(task);
+    },
+    [tasks]
+  );
+
   // ── Context menu handlers ──
   const onCanvasContextMenu = useCallback(
     (event: React.MouseEvent | MouseEvent) => {
@@ -1017,9 +1059,6 @@ function WorkflowDesignerInner() {
             }}
             placeholder="Import workflow..."
           />
-          <Button variant="outline" size="sm" onClick={() => setShowSettings(!showSettings)}>
-            <Settings2 className="h-3.5 w-3.5 mr-1" />Settings
-          </Button>
           <Button variant="outline" size="sm" onClick={() => setShowPreview(!showPreview)}>
             <Eye className="h-3.5 w-3.5 mr-1" />{showPreview ? "Hide" : "JSON"}
           </Button>
@@ -1028,55 +1067,6 @@ function WorkflowDesignerInner() {
           </Button>
         </div>
       </div>
-
-      {/* ── Collapsible settings ── */}
-      {showSettings && (
-        <div className="px-4 py-3 border-b bg-muted/30 space-y-3 shrink-0">
-          <div className="grid grid-cols-[1fr_5rem_2fr] gap-3">
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Name</label>
-              <Input value={workflowName} onChange={(e) => setWorkflowName(e.target.value)} className="h-8" />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Version</label>
-              <Input type="number" min={1} value={workflowVersion} onChange={(e) => setWorkflowVersion(Number(e.target.value))} className="h-8" />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Description</label>
-              <Input value={workflowDesc} onChange={(e) => setWorkflowDesc(e.target.value)} placeholder="Optional" className="h-8" />
-            </div>
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Workflow Input Parameters (appear as ports on Start node)</label>
-            <div className="flex gap-1 mb-1">
-              <Input value={inputKeyDraft} onChange={(e) => setInputKeyDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addInputKey()} placeholder="Add input..." className="h-7 text-xs" />
-              <Button variant="outline" size="sm" className="h-7 px-2" onClick={addInputKey}><Plus className="h-3 w-3" /></Button>
-            </div>
-            <div className="flex flex-wrap gap-1">
-              {workflowInputKeys.map((k) => (
-                <Badge key={k} variant="secondary" className="text-xs gap-1">{k}<button onClick={() => removeInputKey(k)} className="hover:text-destructive">×</button></Badge>
-              ))}
-            </div>
-          </div>
-          <div className="bg-muted/50 rounded-md p-2.5">
-            <p className="text-[10px] text-muted-foreground">
-              <b>Workflow outputs</b> are automatically derived from task outputs connected to the END node.
-              Currently: {Object.keys(workflowOutputParams).length > 0
-                ? Object.keys(workflowOutputParams).join(", ")
-                : "none — connect task output ports to the END node's blue handle"}
-            </p>
-          </div>
-          {validationErrors.length > 0 && (
-            <div className="bg-destructive/10 rounded-md p-2 space-y-0.5">
-              {validationErrors.map((e, i) => (
-                <p key={i} className="text-xs text-destructive flex items-center gap-1">
-                  <AlertTriangle className="h-3 w-3 shrink-0" /> {e}
-                </p>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* ── Main: palette + canvas + editor ── */}
       <div className="flex flex-1 min-h-0">
@@ -1172,20 +1162,89 @@ function WorkflowDesignerInner() {
             </Button>
           </div>
 
+          {/* Settings section */}
+          {showSettings && (
+            <div className="border-t">
+              <button
+                className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-muted/50 transition-colors"
+                onClick={() => setShowSettings(false)}
+              >
+                <p className="text-xs font-semibold flex items-center gap-1.5"><Settings2 className="h-3.5 w-3.5" /> Workflow Settings</p>
+                <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
+              </button>
+              <div className="px-3 pb-3 space-y-2.5">
+                <div>
+                  <label className="text-[10px] text-muted-foreground mb-0.5 block">Name</label>
+                  <Input value={workflowName} onChange={(e) => setWorkflowName(e.target.value)} className="h-7 text-xs" />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] text-muted-foreground mb-0.5 block">Version</label>
+                    <Input type="number" min={1} value={workflowVersion} onChange={(e) => setWorkflowVersion(Number(e.target.value))} className="h-7 text-xs" />
+                  </div>
+                  <div className="col-span-1" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-muted-foreground mb-0.5 block">Description</label>
+                  <Input value={workflowDesc} onChange={(e) => setWorkflowDesc(e.target.value)} placeholder="Optional" className="h-7 text-xs" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-muted-foreground mb-0.5 block">Input Parameters</label>
+                  <div className="flex gap-1 mb-1">
+                    <Input value={inputKeyDraft} onChange={(e) => setInputKeyDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addInputKey()} placeholder="Add input..." className="h-6 text-[10px]" />
+                    <Button variant="outline" size="sm" className="h-6 px-1.5" onClick={addInputKey}><Plus className="h-2.5 w-2.5" /></Button>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {workflowInputKeys.map((k) => (
+                      <Badge key={k} variant="secondary" className="text-[10px] gap-0.5 h-5">{k}<button onClick={() => removeInputKey(k)} className="hover:text-destructive">×</button></Badge>
+                    ))}
+                  </div>
+                </div>
+                <div className="bg-muted/50 rounded p-2">
+                  <p className="text-[9px] text-muted-foreground">
+                    <b>Outputs:</b> {Object.keys(workflowOutputParams).length > 0
+                      ? Object.keys(workflowOutputParams).join(", ")
+                      : "Connect task outputs to END node"}
+                  </p>
+                </div>
+                {validationErrors.length > 0 && (
+                  <div className="bg-destructive/10 rounded p-1.5 space-y-0.5">
+                    {validationErrors.map((e, i) => (
+                      <p key={i} className="text-[10px] text-destructive flex items-center gap-1">
+                        <AlertTriangle className="h-2.5 w-2.5 shrink-0" /> {e}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          {!showSettings && (
+            <div className="border-t">
+              <button
+                className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-muted/50 transition-colors"
+                onClick={() => setShowSettings(true)}
+              >
+                <p className="text-xs font-semibold flex items-center gap-1.5"><Settings2 className="h-3.5 w-3.5" /> Workflow Settings</p>
+                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+              </button>
+            </div>
+          )}
+
           {/* Connection guide */}
           <div className="px-3 py-2.5 border-t shrink-0">
             <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">How it works</p>
             <div className="space-y-2 text-[9px] text-muted-foreground">
-              <p><b>Execution order</b> is the list above — reorder with arrows. No connecting needed.</p>
+              <p><b>Click</b> a node to edit it. <b>Right-click</b> for more options.</p>
+              <p><b>Execution order</b> = list above. Reorder with arrows.</p>
               <div className="flex items-start gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-emerald-500 border border-background mt-0.5 shrink-0" />
-                <span><b>Data out:</b> Drag from green ports to pass output data</span>
+                <span><b>Data out:</b> Drag from green ports</span>
               </div>
               <div className="flex items-start gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-blue-500 border border-background mt-0.5 shrink-0" />
-                <span><b>Data in:</b> Drop onto blue ports to receive input data</span>
+                <span><b>Data in:</b> Drop onto blue ports</span>
               </div>
-              <p><b>Right-click</b> canvas, nodes, or connections for more options.</p>
             </div>
           </div>
         </div>
@@ -1220,6 +1279,7 @@ function WorkflowDesignerInner() {
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
               onConnect={onConnect}
+              onNodeClick={onNodeClick}
               onPaneContextMenu={onCanvasContextMenu}
               onNodeContextMenu={onNodeContextMenu}
               onEdgeContextMenu={onEdgeContextMenu}
@@ -1238,9 +1298,17 @@ function WorkflowDesignerInner() {
           )}
         </div>
 
-        {/* Right: Task editor / JSON preview */}
+        {/* Right: Task editor / JSON preview (resizable) */}
         {(editingTask || showPreview) && (
-          <div className="w-80 border-l bg-background overflow-y-auto shrink-0">
+          <div className="relative flex shrink-0" style={{ width: rightPanelWidth }}>
+            {/* Resize handle */}
+            <div
+              className="w-1.5 cursor-col-resize hover:bg-primary/20 active:bg-primary/30 transition-colors flex items-center justify-center group"
+              onMouseDown={onResizeStart}
+            >
+              <GripHorizontal className="h-4 w-4 text-muted-foreground/30 group-hover:text-muted-foreground/60 rotate-90" />
+            </div>
+          <div className="flex-1 border-l bg-background overflow-y-auto">
             {editingTask && (
               <div className="p-4 space-y-3">
                 <div className="flex items-center justify-between">
@@ -1410,6 +1478,7 @@ function WorkflowDesignerInner() {
                 <JsonView data={workflowDef} maxHeight="24rem" />
               </div>
             )}
+          </div>
           </div>
         )}
       </div>

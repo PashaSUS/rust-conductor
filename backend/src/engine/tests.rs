@@ -1,13 +1,12 @@
 use std::collections::HashMap;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use crate::models::*;
-use super::{is_task_terminal, is_task_successful, is_task_failed};
 use super::system_tasks::{
-    resolve_value, resolve_string_value, resolve_expression, navigate_json,
-    evaluate_loop_condition,
+    evaluate_loop_condition, navigate_json, resolve_expression, resolve_string_value, resolve_value,
 };
+use super::{is_task_failed, is_task_successful, is_task_terminal};
+use crate::models::*;
 
 // ─── Task status helpers ────────────────────────────────────────────────
 
@@ -58,9 +57,15 @@ fn failed_statuses() {
 fn task_status_display() {
     assert_eq!(TaskStatus::InProgress.to_string(), "IN_PROGRESS");
     assert_eq!(TaskStatus::Failed.to_string(), "FAILED");
-    assert_eq!(TaskStatus::FailedWithTerminalError.to_string(), "FAILED_WITH_TERMINAL_ERROR");
+    assert_eq!(
+        TaskStatus::FailedWithTerminalError.to_string(),
+        "FAILED_WITH_TERMINAL_ERROR"
+    );
     assert_eq!(TaskStatus::Completed.to_string(), "COMPLETED");
-    assert_eq!(TaskStatus::CompletedWithErrors.to_string(), "COMPLETED_WITH_ERRORS");
+    assert_eq!(
+        TaskStatus::CompletedWithErrors.to_string(),
+        "COMPLETED_WITH_ERRORS"
+    );
     assert_eq!(TaskStatus::Scheduled.to_string(), "SCHEDULED");
     assert_eq!(TaskStatus::TimedOut.to_string(), "TIMED_OUT");
     assert_eq!(TaskStatus::Skipped.to_string(), "SKIPPED");
@@ -232,7 +237,12 @@ fn resolve_string_single_expression_preserves_type() {
 fn resolve_string_interpolation() {
     let input = json!({"name": "test"});
     let outputs = HashMap::new();
-    let result = resolve_string_value("prefix-${workflow.input.name}-suffix", &input, &outputs, "wf-1");
+    let result = resolve_string_value(
+        "prefix-${workflow.input.name}-suffix",
+        &input,
+        &outputs,
+        "wf-1",
+    );
     assert_eq!(result, json!("prefix-test-suffix"));
 }
 
@@ -321,21 +331,30 @@ fn resolve_value_nested_objects() {
 fn resolve_value_passthrough_number() {
     let input = json!({});
     let outputs = HashMap::new();
-    assert_eq!(resolve_value(&json!(42), &input, &outputs, "wf-1"), json!(42));
+    assert_eq!(
+        resolve_value(&json!(42), &input, &outputs, "wf-1"),
+        json!(42)
+    );
 }
 
 #[test]
 fn resolve_value_passthrough_null() {
     let input = json!({});
     let outputs = HashMap::new();
-    assert_eq!(resolve_value(&json!(null), &input, &outputs, "wf-1"), json!(null));
+    assert_eq!(
+        resolve_value(&json!(null), &input, &outputs, "wf-1"),
+        json!(null)
+    );
 }
 
 #[test]
 fn resolve_value_passthrough_bool() {
     let input = json!({});
     let outputs = HashMap::new();
-    assert_eq!(resolve_value(&json!(true), &input, &outputs, "wf-1"), json!(true));
+    assert_eq!(
+        resolve_value(&json!(true), &input, &outputs, "wf-1"),
+        json!(true)
+    );
 }
 
 #[test]
@@ -381,20 +400,44 @@ fn loop_iteration_less_equal() {
 
 #[test]
 fn loop_output_should_continue_bool() {
-    assert!(evaluate_loop_condition("check", &json!({"shouldContinue": true}), 0));
-    assert!(!evaluate_loop_condition("check", &json!({"shouldContinue": false}), 0));
+    assert!(evaluate_loop_condition(
+        "check",
+        &json!({"shouldContinue": true}),
+        0
+    ));
+    assert!(!evaluate_loop_condition(
+        "check",
+        &json!({"shouldContinue": false}),
+        0
+    ));
 }
 
 #[test]
 fn loop_output_result_bool() {
-    assert!(evaluate_loop_condition("check", &json!({"result": true}), 0));
-    assert!(!evaluate_loop_condition("check", &json!({"result": false}), 0));
+    assert!(evaluate_loop_condition(
+        "check",
+        &json!({"result": true}),
+        0
+    ));
+    assert!(!evaluate_loop_condition(
+        "check",
+        &json!({"result": false}),
+        0
+    ));
 }
 
 #[test]
 fn loop_output_result_string() {
-    assert!(evaluate_loop_condition("check", &json!({"result": "yes"}), 0));
-    assert!(!evaluate_loop_condition("check", &json!({"result": "false"}), 0));
+    assert!(evaluate_loop_condition(
+        "check",
+        &json!({"result": "yes"}),
+        0
+    ));
+    assert!(!evaluate_loop_condition(
+        "check",
+        &json!({"result": "false"}),
+        0
+    ));
     assert!(!evaluate_loop_condition("check", &json!({"result": ""}), 0));
 }
 
@@ -406,7 +449,11 @@ fn loop_output_result_number() {
 
 #[test]
 fn loop_output_null() {
-    assert!(!evaluate_loop_condition("check", &json!({"result": null}), 0));
+    assert!(!evaluate_loop_condition(
+        "check",
+        &json!({"result": null}),
+        0
+    ));
 }
 
 #[test]
@@ -470,7 +517,10 @@ fn workflow_status_serde_roundtrip() {
     for s in &statuses {
         let json_str = serde_json::to_string(s).unwrap();
         let deserialized: WorkflowStatus = serde_json::from_str(&json_str).unwrap();
-        assert_eq!(&deserialized, s, "WorkflowStatus roundtrip failed for {s:?}");
+        assert_eq!(
+            &deserialized, s,
+            "WorkflowStatus roundtrip failed for {s:?}"
+        );
     }
 }
 
@@ -740,7 +790,10 @@ fn resolve_value_deeply_nested_template() {
         }
     });
     let result = resolve_value(&template, &input, &outputs, "wf-deep");
-    assert_eq!(result["config"]["url"], json!("https://api.example.com/prod"));
+    assert_eq!(
+        result["config"]["url"],
+        json!("https://api.example.com/prod")
+    );
     assert_eq!(result["config"]["metadata"]["region"], json!("us-east-1"));
     assert_eq!(result["config"]["metadata"]["wfId"], json!("wf-deep"));
 }
@@ -1449,16 +1502,46 @@ fn contract_bulk_response_field_names() {
 #[test]
 fn contract_status_enums_use_screaming_snake() {
     // Conductor API uses SCREAMING_SNAKE_CASE for status enums
-    assert_eq!(serde_json::to_string(&TaskStatus::InProgress).unwrap(), "\"IN_PROGRESS\"");
-    assert_eq!(serde_json::to_string(&TaskStatus::FailedWithTerminalError).unwrap(), "\"FAILED_WITH_TERMINAL_ERROR\"");
-    assert_eq!(serde_json::to_string(&TaskStatus::CompletedWithErrors).unwrap(), "\"COMPLETED_WITH_ERRORS\"");
-    assert_eq!(serde_json::to_string(&TaskStatus::TimedOut).unwrap(), "\"TIMED_OUT\"");
-    assert_eq!(serde_json::to_string(&WorkflowStatus::Running).unwrap(), "\"RUNNING\"");
-    assert_eq!(serde_json::to_string(&WorkflowStatus::TimedOut).unwrap(), "\"TIMED_OUT\"");
-    assert_eq!(serde_json::to_string(&TimeoutPolicy::TimeOutWf).unwrap(), "\"TIME_OUT_WF\"");
-    assert_eq!(serde_json::to_string(&TimeoutPolicy::AlertOnly).unwrap(), "\"ALERT_ONLY\"");
-    assert_eq!(serde_json::to_string(&RetryLogic::ExponentialBackoff).unwrap(), "\"EXPONENTIAL_BACKOFF\"");
-    assert_eq!(serde_json::to_string(&RetryLogic::LinearBackoff).unwrap(), "\"LINEAR_BACKOFF\"");
+    assert_eq!(
+        serde_json::to_string(&TaskStatus::InProgress).unwrap(),
+        "\"IN_PROGRESS\""
+    );
+    assert_eq!(
+        serde_json::to_string(&TaskStatus::FailedWithTerminalError).unwrap(),
+        "\"FAILED_WITH_TERMINAL_ERROR\""
+    );
+    assert_eq!(
+        serde_json::to_string(&TaskStatus::CompletedWithErrors).unwrap(),
+        "\"COMPLETED_WITH_ERRORS\""
+    );
+    assert_eq!(
+        serde_json::to_string(&TaskStatus::TimedOut).unwrap(),
+        "\"TIMED_OUT\""
+    );
+    assert_eq!(
+        serde_json::to_string(&WorkflowStatus::Running).unwrap(),
+        "\"RUNNING\""
+    );
+    assert_eq!(
+        serde_json::to_string(&WorkflowStatus::TimedOut).unwrap(),
+        "\"TIMED_OUT\""
+    );
+    assert_eq!(
+        serde_json::to_string(&TimeoutPolicy::TimeOutWf).unwrap(),
+        "\"TIME_OUT_WF\""
+    );
+    assert_eq!(
+        serde_json::to_string(&TimeoutPolicy::AlertOnly).unwrap(),
+        "\"ALERT_ONLY\""
+    );
+    assert_eq!(
+        serde_json::to_string(&RetryLogic::ExponentialBackoff).unwrap(),
+        "\"EXPONENTIAL_BACKOFF\""
+    );
+    assert_eq!(
+        serde_json::to_string(&RetryLogic::LinearBackoff).unwrap(),
+        "\"LINEAR_BACKOFF\""
+    );
 }
 
 #[test]

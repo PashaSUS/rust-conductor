@@ -32,7 +32,7 @@ interface StartWorkflowDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Pre-select a specific workflow definition */
-  preselectedDef?: WorkflowDef;
+  preselectedDef?: Pick<WorkflowDef, 'name' | 'version'>;
   /** Pre-fill input data (e.g. for execution replay) */
   prefilledInput?: Record<string, unknown>;
 }

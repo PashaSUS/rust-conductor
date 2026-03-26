@@ -1,4 +1,4 @@
-use actix_web::{web, HttpResponse};
+use actix_web::{HttpResponse, web};
 
 use crate::engine::WorkflowEngine;
 
@@ -8,7 +8,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .route("/config", web::get().to(get_all_config))
             .route("/sweep/{workflowId}", web::post().to(sweep_workflow))
             .route("/task/{taskType}", web::get().to(get_tasks_for_type))
-            .route("/task/{taskType}/requeuetasks", web::post().to(requeue_pending_tasks)),
+            .route(
+                "/task/{taskType}/requeuetasks",
+                web::post().to(requeue_pending_tasks),
+            ),
     );
     cfg.service(
         web::scope("/queue")
@@ -74,8 +77,6 @@ async fn requeue_pending_tasks(
     Ok(HttpResponse::Ok().json(count))
 }
 
-async fn pool_metrics(
-    engine: web::Data<WorkflowEngine>,
-) -> HttpResponse {
+async fn pool_metrics(engine: web::Data<WorkflowEngine>) -> HttpResponse {
     HttpResponse::Ok().json(engine.pool_metrics())
 }

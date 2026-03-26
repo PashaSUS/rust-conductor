@@ -17,9 +17,9 @@ mod tests;
 
 #[cfg(feature = "kafka")]
 use crate::store::kafka::KafkaTaskQueue;
+use crate::store::redis::ShardedRedis;
 #[cfg(not(feature = "kafka"))]
 use crate::store::redis_queue::RedisTaskQueue;
-use crate::store::redis::ShardedRedis;
 pub use error::EngineError;
 pub use shard::ShardedPool;
 
@@ -68,6 +68,7 @@ pub struct WorkflowEngine {
     #[cfg(not(feature = "kafka"))]
     queue: RedisTaskQueue,
     #[cfg(feature = "external-storage")]
+    #[allow(dead_code)]
     pub(crate) external_storage: Option<crate::store::s3::ExternalPayloadStorage>,
     /// In-memory LRU cache for workflow definitions.
     wf_def_cache: std::sync::Arc<Mutex<lru::LruCache<(String, i32), WorkflowDef>>>,
@@ -79,15 +80,15 @@ pub struct WorkflowEngine {
 }
 
 impl WorkflowEngine {
+    #[allow(dead_code)]
     pub fn new(
         shards: ShardedPool,
         redis: ShardedRedis,
-        #[cfg(feature = "kafka")]
-        queue: KafkaTaskQueue,
-        #[cfg(not(feature = "kafka"))]
-        queue: RedisTaskQueue,
-        #[cfg(feature = "external-storage")]
-        external_storage: Option<crate::store::s3::ExternalPayloadStorage>,
+        #[cfg(feature = "kafka")] queue: KafkaTaskQueue,
+        #[cfg(not(feature = "kafka"))] queue: RedisTaskQueue,
+        #[cfg(feature = "external-storage")] external_storage: Option<
+            crate::store::s3::ExternalPayloadStorage,
+        >,
     ) -> Self {
         Self::with_cache_size(
             shards,
@@ -105,12 +106,11 @@ impl WorkflowEngine {
     pub fn with_cache_size(
         shards: ShardedPool,
         redis: ShardedRedis,
-        #[cfg(feature = "kafka")]
-        queue: KafkaTaskQueue,
-        #[cfg(not(feature = "kafka"))]
-        queue: RedisTaskQueue,
-        #[cfg(feature = "external-storage")]
-        external_storage: Option<crate::store::s3::ExternalPayloadStorage>,
+        #[cfg(feature = "kafka")] queue: KafkaTaskQueue,
+        #[cfg(not(feature = "kafka"))] queue: RedisTaskQueue,
+        #[cfg(feature = "external-storage")] external_storage: Option<
+            crate::store::s3::ExternalPayloadStorage,
+        >,
         cache_max_entries: usize,
     ) -> Self {
         let cap = NonZeroUsize::new(cache_max_entries.max(1)).unwrap();
@@ -241,11 +241,18 @@ impl WorkflowEngine {
             return Ok(None);
         }
         // Fallback: parallel fan-out across all shards
-        let futs: Vec<_> = self.shards.read_shards().iter().map(|shard| {
-            sqlx::query_as::<_, (String,)>("SELECT workflow_instance_id FROM task WHERE task_id = $1")
+        let futs: Vec<_> = self
+            .shards
+            .read_shards()
+            .iter()
+            .map(|shard| {
+                sqlx::query_as::<_, (String,)>(
+                    "SELECT workflow_instance_id FROM task WHERE task_id = $1",
+                )
                 .bind(task_id)
                 .fetch_optional(shard)
-        }).collect();
+            })
+            .collect();
         for result in futures::future::join_all(futs).await {
             if let Ok(Some((wf_id,))) = result {
                 let _ = self.set_task_routing(task_id, &wf_id).await;
@@ -258,6 +265,7 @@ impl WorkflowEngine {
     // ── Redis pipeline batching for bulk routing lookups ──────────────
 
     /// Batch lookup multiple task_ids → workflow_instance_ids via Redis pipeline.
+    #[allow(dead_code)]
     pub(crate) async fn batch_get_task_routing(
         &self,
         task_ids: &[String],
@@ -277,9 +285,12 @@ impl WorkflowEngine {
 
         let mut results = vec![None; task_ids.len()];
 
-        for (_shard_idx, items) in &shard_groups {
+        for items in shard_groups.values() {
             let pool = self.redis.pool_for_key(items[0].1);
-            let mut conn = pool.get().await.map_err(|e| EngineError::Redis(e.to_string()))?;
+            let mut conn = pool
+                .get()
+                .await
+                .map_err(|e| EngineError::Redis(e.to_string()))?;
 
             // Build pipeline
             let mut pipe = deadpool_redis::redis::pipe();
@@ -303,6 +314,7 @@ impl WorkflowEngine {
     }
 
     /// Batch set multiple task_id → workflow_id routing entries via Redis pipeline.
+    #[allow(dead_code)]
     pub(crate) async fn batch_set_task_routing(
         &self,
         mappings: &[(&str, &str)],
@@ -320,9 +332,12 @@ impl WorkflowEngine {
             shard_groups.entry(shard_idx).or_default().push((tid, wid));
         }
 
-        for (_shard_idx, items) in &shard_groups {
+        for items in shard_groups.values() {
             let pool = self.redis.pool_for_key(items[0].0);
-            let mut conn = pool.get().await.map_err(|e| EngineError::Redis(e.to_string()))?;
+            let mut conn = pool
+                .get()
+                .await
+                .map_err(|e| EngineError::Redis(e.to_string()))?;
 
             let mut pipe = deadpool_redis::redis::pipe();
             for &(tid, wid) in items {

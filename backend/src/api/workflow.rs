@@ -1,6 +1,6 @@
-use actix_web::{web, HttpResponse};
-use std::collections::HashMap;
+use actix_web::{HttpResponse, web};
 use serde_json::Value;
+use std::collections::HashMap;
 
 use crate::engine::WorkflowEngine;
 use crate::models::{RerunWorkflowRequest, SkipTaskRequest, StartWorkflowRequest};
@@ -23,7 +23,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .route("/{workflowId}/retry", web::post().to(retry_workflow))
             .route("/{workflowId}/rerun", web::post().to(rerun_workflow))
             .route("/{workflowId}/decide", web::put().to(decide_workflow))
-            .route("/{workflowId}/variables", web::post().to(update_workflow_variables))
+            .route(
+                "/{workflowId}/variables",
+                web::post().to(update_workflow_variables),
+            )
             .route(
                 "/{workflowId}/skiptask/{taskReferenceName}",
                 web::put().to(skip_task),
@@ -103,7 +106,10 @@ async fn search_workflows(
     query: web::Query<SearchQuery>,
 ) -> Result<HttpResponse, crate::engine::EngineError> {
     let tags: Option<Vec<String>> = query.tags.as_ref().map(|t| {
-        t.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
+        t.split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
     });
     let result = engine
         .search_workflows_with_cursor(

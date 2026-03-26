@@ -1,9 +1,10 @@
-use sqlx::postgres::{PgPool, PgPoolOptions, PgConnectOptions};
 use sqlx::ConnectOptions;
+use sqlx::postgres::{PgConnectOptions, PgPool, PgPoolOptions};
 use std::time::Duration;
 
 pub type DbPool = PgPool;
 
+#[allow(dead_code)]
 pub async fn create_pool(database_url: &str) -> DbPool {
     create_pool_with_options(database_url, 500).await
 }
@@ -81,11 +82,10 @@ pub async fn run_migrations(pool: &DbPool) {
     // Use try-lock to avoid blocking forever if a previous migration was killed.
     let max_attempts = 30;
     for attempt in 1..=max_attempts {
-        let acquired: (bool,) =
-            sqlx::query_as("SELECT pg_try_advisory_xact_lock(8192023)")
-                .fetch_one(&mut *tx)
-                .await
-                .expect("Failed to try migration advisory lock");
+        let acquired: (bool,) = sqlx::query_as("SELECT pg_try_advisory_xact_lock(8192023)")
+            .fetch_one(&mut *tx)
+            .await
+            .expect("Failed to try migration advisory lock");
         if acquired.0 {
             break;
         }
@@ -96,7 +96,10 @@ pub async fn run_migrations(pool: &DbPool) {
                  lingering connections holding advisory lock 8192023."
             );
         }
-        tracing::warn!(attempt, "Migration lock held by another process, retrying in 1s…");
+        tracing::warn!(
+            attempt,
+            "Migration lock held by another process, retrying in 1s…"
+        );
         // Drop the transaction so we don't hold a connection while waiting
         drop(tx);
         tokio::time::sleep(Duration::from_secs(1)).await;

@@ -2,9 +2,9 @@ use chrono::Utc;
 use futures::future::join_all;
 use serde_json::Value;
 
+use super::WorkflowEngine;
 use super::error::EngineError;
 use super::rows::{TaskLogRow, TaskRow, TaskSummaryRow};
-use super::WorkflowEngine;
 use crate::models::*;
 
 impl WorkflowEngine {
@@ -18,14 +18,18 @@ impl WorkflowEngine {
                     tracing::error!(task_id = %task_id, error = %e, "DB error fetching task");
                     EngineError::Database(e.to_string())
                 })?
-            {
-                return Ok(r.into());
-            }
+        {
+            return Ok(r.into());
+        }
         tracing::error!(task_id = %task_id, "Task not found on any shard");
         Err(EngineError::NotFound(format!("Task not found: {task_id}")))
     }
 
-    pub async fn poll_task(&self, task_type: &str, worker_id: Option<&str>) -> Result<Option<PollTask>, EngineError> {
+    pub async fn poll_task(
+        &self,
+        task_type: &str,
+        worker_id: Option<&str>,
+    ) -> Result<Option<PollTask>, EngineError> {
         let task_id = match self.queue.dequeue(task_type).await {
             Some(id) => id,
             None => return Ok(None),
@@ -102,7 +106,12 @@ impl WorkflowEngine {
                 | TaskStatus::TimedOut
         );
 
-        if is_terminal && matches!(update.status, TaskStatus::Failed | TaskStatus::FailedWithTerminalError | TaskStatus::TimedOut) {
+        if is_terminal
+            && matches!(
+                update.status,
+                TaskStatus::Failed | TaskStatus::FailedWithTerminalError | TaskStatus::TimedOut
+            )
+        {
             tracing::error!(
                 task_id = %update.task_id,
                 workflow_id = %update.workflow_instance_id,
@@ -114,26 +123,29 @@ impl WorkflowEngine {
         }
 
         // Validate output data against task definition's output schema
-        if matches!(update.status, TaskStatus::Completed | TaskStatus::CompletedWithErrors)
-            && let Ok(task) = self.get_task(&update.task_id).await
-                && let Ok(task_def) = self.get_task_def(&task.task_def_name).await
-                    && task_def.enforce_schema
-                        && let Some(schema) = &task_def.output_schema
-                            && let Some(expected_keys) = &schema.data {
-                                let output = &update.output_data;
-                                for key in expected_keys.keys() {
-                                    if output.get(key).is_none() {
-                                        tracing::error!(
-                                            task_id = %update.task_id,
-                                            missing_key = %key,
-                                            "Output schema validation failed: missing required key"
-                                        );
-                                        return Err(EngineError::InvalidState(format!(
-                                            "Output schema validation failed: missing key '{key}'"
-                                        )));
-                                    }
-                                }
-                            }
+        if matches!(
+            update.status,
+            TaskStatus::Completed | TaskStatus::CompletedWithErrors
+        ) && let Ok(task) = self.get_task(&update.task_id).await
+            && let Ok(task_def) = self.get_task_def(&task.task_def_name).await
+            && task_def.enforce_schema
+            && let Some(schema) = &task_def.output_schema
+            && let Some(expected_keys) = &schema.data
+        {
+            let output = &update.output_data;
+            for key in expected_keys.keys() {
+                if output.get(key).is_none() {
+                    tracing::error!(
+                        task_id = %update.task_id,
+                        missing_key = %key,
+                        "Output schema validation failed: missing required key"
+                    );
+                    return Err(EngineError::InvalidState(format!(
+                        "Output schema validation failed: missing key '{key}'"
+                    )));
+                }
+            }
+        }
 
         let db = self.shards.shard_for(&update.workflow_instance_id);
 
@@ -172,42 +184,52 @@ impl WorkflowEngine {
             // FailedWithTerminalError is never retried.
             if update.status == TaskStatus::Failed
                 && let Ok(task) = self.get_task(&update.task_id).await
-                    && let Ok(task_def) = self.get_task_def(&task.task_def_name).await
-                        && !task_def.retry_on_errors.is_empty() {
-                            let reason = update.reason_for_incompletion.as_deref().unwrap_or("");
-                            let matches = task_def.retry_on_errors.iter().any(|pattern| {
-                                reason.contains(pattern.as_str())
-                            });
-                            if !matches {
-                                tracing::info!(
-                                    task_id = %update.task_id,
-                                    reason = %reason,
-                                    patterns = ?task_def.retry_on_errors,
-                                    "Task failure does not match retry_on_errors patterns, skipping retry"
-                                );
-                                self.fail_workflow(
-                                    &update.workflow_instance_id,
-                                    update.reason_for_incompletion.as_deref(),
-                                    "FAILED",
-                                )
-                                .await?;
-                                return Ok(update.task_id.clone());
-                            }
-                        }
+                && let Ok(task_def) = self.get_task_def(&task.task_def_name).await
+                && !task_def.retry_on_errors.is_empty()
+            {
+                let reason = update.reason_for_incompletion.as_deref().unwrap_or("");
+                let matches = task_def
+                    .retry_on_errors
+                    .iter()
+                    .any(|pattern| reason.contains(pattern.as_str()));
+                if !matches {
+                    tracing::info!(
+                        task_id = %update.task_id,
+                        reason = %reason,
+                        patterns = ?task_def.retry_on_errors,
+                        "Task failure does not match retry_on_errors patterns, skipping retry"
+                    );
+                    self.fail_workflow(
+                        &update.workflow_instance_id,
+                        update.reason_for_incompletion.as_deref(),
+                        "FAILED",
+                    )
+                    .await?;
+                    return Ok(update.task_id.clone());
+                }
+            }
 
             let wf_status = if update.status == TaskStatus::TimedOut {
                 "TIMED_OUT"
             } else {
                 "FAILED"
             };
-            self.fail_workflow(&update.workflow_instance_id, update.reason_for_incompletion.as_deref(), wf_status)
-                .await?;
+            self.fail_workflow(
+                &update.workflow_instance_id,
+                update.reason_for_incompletion.as_deref(),
+                wf_status,
+            )
+            .await?;
         }
 
         Ok(update.task_id.clone())
     }
 
-    pub async fn ack_task(&self, task_id: &str, worker_id: Option<&str>) -> Result<bool, EngineError> {
+    pub async fn ack_task(
+        &self,
+        task_id: &str,
+        worker_id: Option<&str>,
+    ) -> Result<bool, EngineError> {
         if let Some((_wf_id, db)) = self.resolve_task_shard(task_id).await? {
             let r = sqlx::query(
                 "UPDATE task SET worker_id = COALESCE($2, worker_id), update_time = NOW() WHERE task_id = $1 AND status = 'IN_PROGRESS'",
@@ -342,7 +364,10 @@ impl WorkflowEngine {
         let mut where_clause = String::from(" WHERE 1=1");
 
         if let Some(wid) = workflow_id {
-            where_clause.push_str(&format!(" AND workflow_instance_id = '{}'", wid.replace('\'', "")));
+            where_clause.push_str(&format!(
+                " AND workflow_instance_id = '{}'",
+                wid.replace('\'', "")
+            ));
         }
         if let Some(tt) = task_type {
             where_clause.push_str(&format!(" AND task_type = '{}'", tt.replace('\'', "")));
@@ -360,7 +385,9 @@ impl WorkflowEngine {
         // If we know the workflow_id, route to the specific read shard
         if let Some(wid) = workflow_id {
             let db = self.shards.read_shard_for(wid);
-            return self.search_tasks_on_shard(db, &where_clause, start, size).await;
+            return self
+                .search_tasks_on_shard(db, &where_clause, start, size)
+                .await;
         }
 
         // Parallel fan-out across all read shards
@@ -370,21 +397,26 @@ impl WorkflowEngine {
             "SELECT task_id, workflow_instance_id, task_type, task_def_name, reference_task_name, status, scheduled_time, start_time, end_time, update_time FROM task{where_clause} ORDER BY scheduled_time DESC LIMIT {fetch_size} OFFSET 0"
         );
 
-        let futs: Vec<_> = self.shards.read_shards().iter().map(|shard| {
-            let cq = count_query.clone();
-            let dq = data_query.clone();
-            async move {
-                let count: i64 = sqlx::query_scalar(&cq)
-                    .fetch_one(shard)
-                    .await
-                    .map_err(|e| EngineError::Database(e.to_string()))?;
-                let rows = sqlx::query_as::<_, TaskSummaryRow>(&dq)
-                    .fetch_all(shard)
-                    .await
-                    .map_err(|e| EngineError::Database(e.to_string()))?;
-                Ok::<_, EngineError>((count, rows))
-            }
-        }).collect();
+        let futs: Vec<_> = self
+            .shards
+            .read_shards()
+            .iter()
+            .map(|shard| {
+                let cq = count_query.clone();
+                let dq = data_query.clone();
+                async move {
+                    let count: i64 = sqlx::query_scalar(&cq)
+                        .fetch_one(shard)
+                        .await
+                        .map_err(|e| EngineError::Database(e.to_string()))?;
+                    let rows = sqlx::query_as::<_, TaskSummaryRow>(&dq)
+                        .fetch_all(shard)
+                        .await
+                        .map_err(|e| EngineError::Database(e.to_string()))?;
+                    Ok::<_, EngineError>((count, rows))
+                }
+            })
+            .collect();
 
         let results = join_all(futs).await;
         let mut total: i64 = 0;
@@ -434,7 +466,10 @@ impl WorkflowEngine {
 
         Ok(SearchResult {
             total_hits: total,
-            results: rows.into_iter().map(|r| self.task_summary_from_row(r)).collect(),
+            results: rows
+                .into_iter()
+                .map(|r| self.task_summary_from_row(r))
+                .collect(),
             next_cursor: None,
         })
     }
@@ -464,7 +499,9 @@ impl WorkflowEngine {
         }
     }
 
-    pub async fn get_queue_sizes(&self) -> Result<std::collections::HashMap<String, i64>, EngineError> {
+    pub async fn get_queue_sizes(
+        &self,
+    ) -> Result<std::collections::HashMap<String, i64>, EngineError> {
         // Query all read shards for SCHEDULED task counts grouped by task type
         let futs: Vec<_> = self.shards.read_shards().iter().map(|shard| {
             async move {
@@ -515,8 +552,9 @@ impl WorkflowEngine {
             ))
         })?;
 
-        let parsed_status: TaskStatus = serde_json::from_value(Value::String(status.to_string()))
-            .map_err(|_| EngineError::InvalidState(format!("Invalid task status: {status}")))?;
+        let parsed_status: TaskStatus =
+            serde_json::from_value(Value::String(status.to_string()))
+                .map_err(|_| EngineError::InvalidState(format!("Invalid task status: {status}")))?;
 
         let is_terminal = super::is_task_terminal(&parsed_status);
 
@@ -536,10 +574,16 @@ impl WorkflowEngine {
             let _ = self.delete_task_routing(&task_id).await;
         }
 
-        if parsed_status == TaskStatus::Completed || parsed_status == TaskStatus::CompletedWithErrors {
+        if parsed_status == TaskStatus::Completed
+            || parsed_status == TaskStatus::CompletedWithErrors
+        {
             self.advance_workflow(workflow_id).await?;
         } else if super::is_task_failed(&parsed_status) {
-            let wf_status = if parsed_status == TaskStatus::TimedOut { "TIMED_OUT" } else { "FAILED" };
+            let wf_status = if parsed_status == TaskStatus::TimedOut {
+                "TIMED_OUT"
+            } else {
+                "FAILED"
+            };
             self.fail_workflow(workflow_id, None, wf_status).await?;
         }
 
@@ -548,7 +592,10 @@ impl WorkflowEngine {
 
     // ── In-progress tasks ──
 
-    pub async fn get_in_progress_tasks(&self, task_type: &str) -> Result<Vec<TaskResult>, EngineError> {
+    pub async fn get_in_progress_tasks(
+        &self,
+        task_type: &str,
+    ) -> Result<Vec<TaskResult>, EngineError> {
         let futs: Vec<_> = self.shards.read_shards().iter().map(|shard| {
             async move {
                 sqlx::query_as::<_, TaskRow>(
@@ -589,11 +636,18 @@ impl WorkflowEngine {
 
     // ── Queue details ──
 
-    pub async fn get_all_queue_details(&self) -> Result<std::collections::HashMap<String, i64>, EngineError> {
+    pub async fn get_all_queue_details(
+        &self,
+    ) -> Result<std::collections::HashMap<String, i64>, EngineError> {
         self.get_queue_sizes().await
     }
 
-    pub async fn get_all_queue_details_verbose(&self) -> Result<std::collections::HashMap<String, std::collections::HashMap<String, i64>>, EngineError> {
+    pub async fn get_all_queue_details_verbose(
+        &self,
+    ) -> Result<
+        std::collections::HashMap<String, std::collections::HashMap<String, i64>>,
+        EngineError,
+    > {
         let futs: Vec<_> = self.shards.read_shards().iter().map(|shard| {
             async move {
                 let rows: Vec<(String, String, i64)> = sqlx::query_as(
@@ -607,7 +661,8 @@ impl WorkflowEngine {
         }).collect();
 
         let results = join_all(futs).await;
-        let mut details: std::collections::HashMap<String, std::collections::HashMap<String, i64>> = std::collections::HashMap::new();
+        let mut details: std::collections::HashMap<String, std::collections::HashMap<String, i64>> =
+            std::collections::HashMap::new();
         for result in results {
             for (name, status, count) in result? {
                 *details.entry(name).or_default().entry(status).or_insert(0) += count;

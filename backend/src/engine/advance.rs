@@ -4,7 +4,7 @@ use chrono::Utc;
 use serde_json::Value;
 
 use super::error::EngineError;
-use super::{is_task_failed, is_task_terminal, WorkflowEngine};
+use super::{WorkflowEngine, is_task_failed, is_task_terminal};
 use crate::models::*;
 use deadpool_redis::redis;
 
@@ -153,7 +153,11 @@ impl WorkflowEngine {
                         );
                         self.fail_workflow(
                             workflow_id,
-                            Some(&format!("Task {} failed: {}", ref_name, task.reason_for_incompletion.as_deref().unwrap_or("unknown"))),
+                            Some(&format!(
+                                "Task {} failed: {}",
+                                ref_name,
+                                task.reason_for_incompletion.as_deref().unwrap_or("unknown")
+                            )),
                             wf_status,
                         )
                         .await?;
@@ -164,7 +168,11 @@ impl WorkflowEngine {
                         "FORK_JOIN" | "FORK" => {
                             for branch in &task_def.fork_tasks {
                                 let branch_done = Box::pin(self.evaluate_and_schedule(
-                                    workflow_id, branch, task_map, input, seq,
+                                    workflow_id,
+                                    branch,
+                                    task_map,
+                                    input,
+                                    seq,
                                 ))
                                 .await?;
 
@@ -185,7 +193,11 @@ impl WorkflowEngine {
                                 .get(selected)
                                 .unwrap_or(&task_def.default_case);
                             let branch_done = Box::pin(self.evaluate_and_schedule(
-                                workflow_id, branch, task_map, input, seq,
+                                workflow_id,
+                                branch,
+                                task_map,
+                                input,
+                                seq,
                             ))
                             .await?;
                             if !branch_done {
@@ -270,13 +282,8 @@ impl WorkflowEngine {
                 }
 
                 None => {
-                    self.schedule_tasks(
-                        workflow_id,
-                        &def_tasks[idx..],
-                        input,
-                        seq,
-                    )
-                    .await?;
+                    self.schedule_tasks(workflow_id, &def_tasks[idx..], input, seq)
+                        .await?;
 
                     match task_def.task_type.as_str() {
                         "FORK_JOIN" | "FORK" | "DECISION" | "SWITCH" => {
@@ -316,7 +323,12 @@ impl WorkflowEngine {
     }
 
     /// Mark a task as FAILED.
-    pub(crate) async fn fail_task(&self, workflow_id: &str, task_id: &str, reason: &str) -> Result<(), EngineError> {
+    pub(crate) async fn fail_task(
+        &self,
+        workflow_id: &str,
+        task_id: &str,
+        reason: &str,
+    ) -> Result<(), EngineError> {
         let now = Utc::now();
         let db = self.shards.shard_for(workflow_id);
         tracing::error!(workflow_id = %workflow_id, task_id = %task_id, reason = %reason, "Marking task as FAILED");
@@ -363,7 +375,12 @@ impl WorkflowEngine {
         Ok(())
     }
 
-    pub(crate) async fn fail_workflow(&self, workflow_id: &str, reason: Option<&str>, terminal_status: &str) -> Result<(), EngineError> {
+    pub(crate) async fn fail_workflow(
+        &self,
+        workflow_id: &str,
+        reason: Option<&str>,
+        terminal_status: &str,
+    ) -> Result<(), EngineError> {
         tracing::error!(
             workflow_id = %workflow_id,
             status = %terminal_status,
@@ -422,7 +439,12 @@ impl WorkflowEngine {
                 parent_task_id = %parent_task_id,
                 "Propagating failure from child sub-workflow to parent"
             );
-            self.fail_task(&parent_wf_id, &parent_task_id, reason.unwrap_or("Sub-workflow failed")).await?;
+            self.fail_task(
+                &parent_wf_id,
+                &parent_task_id,
+                reason.unwrap_or("Sub-workflow failed"),
+            )
+            .await?;
             Box::pin(self.fail_workflow(&parent_wf_id, reason, terminal_status)).await?;
         }
 
@@ -440,9 +462,10 @@ impl WorkflowEngine {
             .ok()
             .flatten()
             .flatten()
-                && let Ok(def) = serde_json::from_value::<WorkflowDef>(def_json) {
-                    self.notify_webhooks(&def, workflow_id, terminal_status, &Value::Null);
-                }
+                && let Ok(def) = serde_json::from_value::<WorkflowDef>(def_json)
+            {
+                self.notify_webhooks(&def, workflow_id, terminal_status, &Value::Null);
+            }
         }
 
         tracing::warn!(workflow_id = %workflow_id, status = %terminal_status, "Workflow terminated");
@@ -457,16 +480,17 @@ impl WorkflowEngine {
     ) -> Result<(), EngineError> {
         let db = self.shards.shard_for(failed_workflow_id);
 
-        let def_json: Option<Value> = sqlx::query_scalar(
-            "SELECT workflow_def FROM workflow WHERE workflow_id = $1",
-        )
-        .bind(failed_workflow_id)
-        .fetch_optional(db)
-        .await
-        .map_err(|e| EngineError::Database(e.to_string()))?
-        .flatten();
+        let def_json: Option<Value> =
+            sqlx::query_scalar("SELECT workflow_def FROM workflow WHERE workflow_id = $1")
+                .bind(failed_workflow_id)
+                .fetch_optional(db)
+                .await
+                .map_err(|e| EngineError::Database(e.to_string()))?
+                .flatten();
 
-        let Some(def_json) = def_json else { return Ok(()) };
+        let Some(def_json) = def_json else {
+            return Ok(());
+        };
         let def: WorkflowDef = match serde_json::from_value(def_json) {
             Ok(d) => d,
             Err(e) => {
@@ -475,7 +499,9 @@ impl WorkflowEngine {
             }
         };
 
-        let Some(failure_wf_name) = &def.failure_workflow else { return Ok(()) };
+        let Some(failure_wf_name) = &def.failure_workflow else {
+            return Ok(());
+        };
         if failure_wf_name.is_empty() {
             return Ok(());
         }
@@ -550,7 +576,13 @@ impl WorkflowEngine {
     }
 
     /// Notify configured webhooks on workflow completion or failure.
-    pub(crate) fn notify_webhooks(&self, def: &WorkflowDef, workflow_id: &str, status: &str, output: &Value) {
+    pub(crate) fn notify_webhooks(
+        &self,
+        def: &WorkflowDef,
+        workflow_id: &str,
+        status: &str,
+        output: &Value,
+    ) {
         let payload = serde_json::json!({
             "workflowId": workflow_id,
             "workflowName": def.name,
@@ -561,15 +593,17 @@ impl WorkflowEngine {
         match status {
             "COMPLETED" => {
                 if let Some(url) = &def.on_complete_webhook
-                    && !url.is_empty() {
-                        Self::fire_webhook(url.clone(), payload);
-                    }
+                    && !url.is_empty()
+                {
+                    Self::fire_webhook(url.clone(), payload);
+                }
             }
             "FAILED" | "TIMED_OUT" => {
                 if let Some(url) = &def.on_failure_webhook
-                    && !url.is_empty() {
-                        Self::fire_webhook(url.clone(), payload);
-                    }
+                    && !url.is_empty()
+                {
+                    Self::fire_webhook(url.clone(), payload);
+                }
             }
             _ => {}
         }

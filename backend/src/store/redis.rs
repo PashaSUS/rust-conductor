@@ -70,6 +70,7 @@ impl ShardedRedis {
     }
 
     /// Number of Redis shards.
+    #[allow(dead_code)]
     pub fn num_shards(&self) -> usize {
         self.pools.len()
     }

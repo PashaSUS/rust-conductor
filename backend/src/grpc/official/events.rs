@@ -1,10 +1,10 @@
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
+use super::pb;
 use crate::engine::WorkflowEngine;
 use crate::grpc::metadata::engine_err_to_status;
 use crate::grpc::proto_conv;
-use super::pb;
 
 pub struct OfficialEventServiceImpl {
     engine: Arc<WorkflowEngine>,
@@ -23,7 +23,9 @@ impl pb::event_service_server::EventService for OfficialEventServiceImpl {
         request: Request<pb::OfAddEventHandlerRequest>,
     ) -> Result<Response<pb::OfAddEventHandlerResponse>, Status> {
         let inner = request.into_inner();
-        let eh = inner.event_handler.ok_or_else(|| Status::invalid_argument("Missing event_handler"))?;
+        let eh = inner
+            .event_handler
+            .ok_or_else(|| Status::invalid_argument("Missing event_handler"))?;
         let handler = proto_conv::event_handler_from_official(&eh);
         self.engine
             .register_event_handler(&handler)
@@ -37,7 +39,9 @@ impl pb::event_service_server::EventService for OfficialEventServiceImpl {
         request: Request<pb::OfUpdateEventHandlerRequest>,
     ) -> Result<Response<pb::OfUpdateEventHandlerResponse>, Status> {
         let inner = request.into_inner();
-        let eh = inner.event_handler.ok_or_else(|| Status::invalid_argument("Missing event_handler"))?;
+        let eh = inner
+            .event_handler
+            .ok_or_else(|| Status::invalid_argument("Missing event_handler"))?;
         let handler = proto_conv::event_handler_from_official(&eh);
         self.engine
             .register_event_handler(&handler)
@@ -74,7 +78,10 @@ impl pb::event_service_server::EventService for OfficialEventServiceImpl {
                 .map_err(engine_err_to_status)?
         };
         Ok(Response::new(pb::OfGetEventHandlersResponse {
-            event_handlers: handlers.iter().map(proto_conv::event_handler_to_official).collect(),
+            event_handlers: handlers
+                .iter()
+                .map(proto_conv::event_handler_to_official)
+                .collect(),
         }))
     }
 
@@ -89,7 +96,10 @@ impl pb::event_service_server::EventService for OfficialEventServiceImpl {
             .await
             .map_err(engine_err_to_status)?;
         Ok(Response::new(pb::OfGetEventHandlersForEventResponse {
-            event_handlers: handlers.iter().map(proto_conv::event_handler_to_official).collect(),
+            event_handlers: handlers
+                .iter()
+                .map(proto_conv::event_handler_to_official)
+                .collect(),
         }))
     }
 }

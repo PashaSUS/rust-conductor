@@ -17,8 +17,8 @@ use utoipa_swagger_ui::SwaggerUi;
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
-    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| "info".into());
+    let env_filter =
+        tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into());
 
     let fmt_layer = tracing_subscriber::fmt::layer();
 
@@ -51,7 +51,8 @@ async fn main() -> std::io::Result<()> {
     // Create shard pools — one per database URL
     let mut shard_pools = Vec::with_capacity(cfg.shard_database_urls.len());
     for (i, url) in cfg.shard_database_urls.iter().enumerate() {
-        let pool = store::postgres::create_pool_with_options(url, cfg.slow_query_threshold_ms).await;
+        let pool =
+            store::postgres::create_pool_with_options(url, cfg.slow_query_threshold_ms).await;
         if !skip_migrations {
             store::postgres::run_migrations(&pool).await;
             tracing::info!(shard = i, "Shard database connected and migrated");
@@ -75,7 +76,10 @@ async fn main() -> std::io::Result<()> {
             tracing::info!(shard = i, "Read replica connected");
             replica_pools.push(pool);
         }
-        tracing::info!(num_replicas = replica_pools.len(), "Read replicas initialized");
+        tracing::info!(
+            num_replicas = replica_pools.len(),
+            "Read replicas initialized"
+        );
     }
 
     // Initialize sharded Redis pool from comma-separated URLs
@@ -89,8 +93,7 @@ async fn main() -> std::io::Result<()> {
         .await
         .expect("Failed to create sharded Redis pool");
 
-    let sharded_pool = engine::ShardedPool::new(shard_pools)
-        .with_replicas(replica_pools);
+    let sharded_pool = engine::ShardedPool::new(shard_pools).with_replicas(replica_pools);
 
     #[cfg(feature = "kafka")]
     let queue = store::kafka::KafkaTaskQueue::new(&cfg.kafka_brokers)
@@ -199,7 +202,9 @@ async fn main() -> std::io::Result<()> {
         let json_cfg = web::JsonConfig::default().limit(10 * 1024 * 1024); // 10MB payload limit
 
         let rate_limiter = api::rate_limit::RateLimiter::new(
-            rate_limit_redis.clone(), rate_limit_max_requests, rate_limit_window_secs,
+            rate_limit_redis.clone(),
+            rate_limit_max_requests,
+            rate_limit_window_secs,
         );
 
         let app = App::new()
@@ -216,10 +221,9 @@ async fn main() -> std::io::Result<()> {
         #[cfg(feature = "graphql")]
         let app = app.app_data(web::Data::new(graphql_schema.clone()));
 
-        app.configure(api::configure)
-            .service(
-                SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-docs/openapi.json", openapi.clone()),
-            )
+        app.configure(api::configure).service(
+            SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-docs/openapi.json", openapi.clone()),
+        )
     })
     .workers(num_cpus::get())
     .keep_alive(std::time::Duration::from_secs(75))

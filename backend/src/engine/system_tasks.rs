@@ -4,8 +4,8 @@ use chrono::Utc;
 use serde_json::Value;
 use uuid::Uuid;
 
-use super::error::EngineError;
 use super::WorkflowEngine;
+use super::error::EngineError;
 use crate::models::*;
 
 impl WorkflowEngine {
@@ -165,10 +165,17 @@ impl WorkflowEngine {
         seq: i32,
     ) -> Result<(), EngineError> {
         let fork_output = serde_json::json!({ "forkedBranches": task_def.fork_tasks.len() });
-        let (_task_id, is_new) = self.insert_task_record(
-            workflow_id, task_def, input, seq, "COMPLETED", &fork_output, None,
-        )
-        .await?;
+        let (_task_id, is_new) = self
+            .insert_task_record(
+                workflow_id,
+                task_def,
+                input,
+                seq,
+                "COMPLETED",
+                &fork_output,
+                None,
+            )
+            .await?;
 
         if !is_new {
             return Ok(());
@@ -210,7 +217,15 @@ impl WorkflowEngine {
         seq: i32,
     ) -> Result<(), EngineError> {
         let (task_id, _is_new) = self
-            .insert_task_record(workflow_id, task_def, input, seq, "IN_PROGRESS", &Value::Object(Default::default()), None)
+            .insert_task_record(
+                workflow_id,
+                task_def,
+                input,
+                seq,
+                "IN_PROGRESS",
+                &Value::Object(Default::default()),
+                None,
+            )
             .await?;
 
         if task_def.join_on.is_empty() {
@@ -272,10 +287,17 @@ impl WorkflowEngine {
         let case_value = self.evaluate_case_value(task_def, input);
         let output = serde_json::json!({ "selectedBranch": &case_value });
 
-        let (_task_id, is_new) = self.insert_task_record(
-            workflow_id, task_def, input, seq, "COMPLETED", &output, None,
-        )
-        .await?;
+        let (_task_id, is_new) = self
+            .insert_task_record(
+                workflow_id,
+                task_def,
+                input,
+                seq,
+                "COMPLETED",
+                &output,
+                None,
+            )
+            .await?;
 
         if !is_new {
             return Ok(());
@@ -287,8 +309,7 @@ impl WorkflowEngine {
             .unwrap_or(&task_def.default_case);
 
         if !branch.is_empty() {
-            Box::pin(self.schedule_tasks(workflow_id, branch, input, seq + 1))
-                .await?;
+            Box::pin(self.schedule_tasks(workflow_id, branch, input, seq + 1)).await?;
         } else {
             if parent_tasks.len() > 1 {
                 Box::pin(self.schedule_tasks(workflow_id, &parent_tasks[1..], input, seq + 1))
@@ -321,12 +342,13 @@ impl WorkflowEngine {
             }
         }
         if let Some(expr) = &task_def.case_expression
-            && let Some(val) = input.get(expr.as_str()) {
-                return match val {
-                    Value::String(s) => s.clone(),
-                    other => other.to_string(),
-                };
-            }
+            && let Some(val) = input.get(expr.as_str())
+        {
+            return match val {
+                Value::String(s) => s.clone(),
+                other => other.to_string(),
+            };
+        }
         String::new()
     }
 
@@ -361,21 +383,20 @@ impl WorkflowEngine {
                 ref_name = %task_def.task_reference_name,
                 "SUB_WORKFLOW task missing sub_workflow_param"
             );
-            EngineError::InvalidState(
-                "SUB_WORKFLOW task missing sub_workflow_param".into(),
-            )
+            EngineError::InvalidState("SUB_WORKFLOW task missing sub_workflow_param".into())
         })?;
 
-        let (task_id, is_new) = self.insert_task_record(
-            workflow_id,
-            task_def,
-            input,
-            seq,
-            "IN_PROGRESS",
-            &Value::Object(Default::default()),
-            None,
-        )
-        .await?;
+        let (task_id, is_new) = self
+            .insert_task_record(
+                workflow_id,
+                task_def,
+                input,
+                seq,
+                "IN_PROGRESS",
+                &Value::Object(Default::default()),
+                None,
+            )
+            .await?;
 
         if !is_new {
             tracing::debug!(
@@ -421,17 +442,21 @@ impl WorkflowEngine {
 
         // Update the parent's task with the child's id (on parent's shard).
         let parent_db = self.shards.shard_for(workflow_id);
-        if let Err(e) = sqlx::query(
-            "UPDATE task SET sub_workflow_id = $2, output_data = $3 WHERE task_id = $1",
-        )
-        .bind(&task_id)
-        .bind(&child_id)
-        .bind(serde_json::json!({ "subWorkflowId": &child_id }))
-        .execute(parent_db)
-        .await
+        if let Err(e) =
+            sqlx::query("UPDATE task SET sub_workflow_id = $2, output_data = $3 WHERE task_id = $1")
+                .bind(&task_id)
+                .bind(&child_id)
+                .bind(serde_json::json!({ "subWorkflowId": &child_id }))
+                .execute(parent_db)
+                .await
         {
             tracing::error!(task_id = %task_id, child_id = %child_id, error = %e, "Failed to link parent task→child, failing sub-workflow task");
-            self.fail_task(workflow_id, &task_id, &format!("Failed to set sub_workflow_id on parent task: {e}")).await?;
+            self.fail_task(
+                workflow_id,
+                &task_id,
+                &format!("Failed to set sub_workflow_id on parent task: {e}"),
+            )
+            .await?;
             return Err(EngineError::Database(e.to_string()));
         }
 
@@ -452,22 +477,29 @@ impl WorkflowEngine {
         seq: i32,
     ) -> Result<(), EngineError> {
         let (task_id, is_new) = self
-            .insert_task_record(workflow_id, task_def, input, seq, "SCHEDULED", &Value::Object(Default::default()), None)
+            .insert_task_record(
+                workflow_id,
+                task_def,
+                input,
+                seq,
+                "SCHEDULED",
+                &Value::Object(Default::default()),
+                None,
+            )
             .await?;
 
         // Inject env_vars from task definition into the task row
         if is_new
             && let Ok(td) = self.get_task_def(&task_def.name).await
-                && let Some(env) = &td.env_vars {
-                    let db = self.shards.shard_for(workflow_id);
-                    let _ = sqlx::query(
-                        "UPDATE task SET env_vars = $2 WHERE task_id = $1",
-                    )
-                    .bind(&task_id)
-                    .bind(env)
-                    .execute(db)
-                    .await;
-                }
+            && let Some(env) = &td.env_vars
+        {
+            let db = self.shards.shard_for(workflow_id);
+            let _ = sqlx::query("UPDATE task SET env_vars = $2 WHERE task_id = $1")
+                .bind(&task_id)
+                .bind(env)
+                .execute(db)
+                .await;
+        }
 
         if is_new {
             self.set_task_routing(&task_id, workflow_id).await?;
@@ -487,13 +519,12 @@ impl WorkflowEngine {
             // Task already exists — if it's still SCHEDULED, re-enqueue it
             // because the original Kafka push may have been lost.
             let db = self.shards.shard_for(workflow_id);
-            let status: Option<String> = sqlx::query_scalar(
-                "SELECT status FROM task WHERE task_id = $1",
-            )
-            .bind(&task_id)
-            .fetch_optional(db)
-            .await
-            .map_err(|e| EngineError::Database(e.to_string()))?;
+            let status: Option<String> =
+                sqlx::query_scalar("SELECT status FROM task WHERE task_id = $1")
+                    .bind(&task_id)
+                    .fetch_optional(db)
+                    .await
+                    .map_err(|e| EngineError::Database(e.to_string()))?;
 
             if status.as_deref() == Some("SCHEDULED") {
                 tracing::warn!(
@@ -520,7 +551,11 @@ impl WorkflowEngine {
     }
 
     /// Mark an existing task as COMPLETED by its task_id.
-    pub(crate) async fn complete_task_by_id(&self, workflow_id: &str, task_id: &str) -> Result<(), EngineError> {
+    pub(crate) async fn complete_task_by_id(
+        &self,
+        workflow_id: &str,
+        task_id: &str,
+    ) -> Result<(), EngineError> {
         let now = Utc::now();
         let db = self.shards.shard_for(workflow_id);
         sqlx::query(
@@ -551,7 +586,9 @@ impl WorkflowEngine {
         input: &Value,
         seq: i32,
     ) -> Result<(), EngineError> {
-        let task_input = self.resolve_task_input(workflow_id, task_def, input).await?;
+        let task_input = self
+            .resolve_task_input(workflow_id, task_def, input)
+            .await?;
 
         let term_status = task_input
             .get("terminationStatus")
@@ -575,7 +612,15 @@ impl WorkflowEngine {
         });
 
         let (_task_id, _is_new) = self
-            .insert_task_record(workflow_id, task_def, &task_input, seq, "COMPLETED", &output, None)
+            .insert_task_record(
+                workflow_id,
+                task_def,
+                &task_input,
+                seq,
+                "COMPLETED",
+                &output,
+                None,
+            )
             .await?;
 
         let db = self.shards.shard_for(workflow_id);
@@ -595,7 +640,8 @@ impl WorkflowEngine {
 
             tracing::info!(workflow_id = %workflow_id, "TERMINATE task — workflow completed");
         } else {
-            self.fail_workflow(workflow_id, Some(&reason), "FAILED").await?;
+            self.fail_workflow(workflow_id, Some(&reason), "FAILED")
+                .await?;
             tracing::info!(workflow_id = %workflow_id, reason = %reason, "TERMINATE task — workflow failed");
         }
 
@@ -613,7 +659,9 @@ impl WorkflowEngine {
         input: &Value,
         seq: i32,
     ) -> Result<(), EngineError> {
-        let task_input = self.resolve_task_input(workflow_id, task_def, input).await?;
+        let task_input = self
+            .resolve_task_input(workflow_id, task_def, input)
+            .await?;
         let db = self.shards.shard_for(workflow_id);
 
         // Read current variables
@@ -638,16 +686,26 @@ impl WorkflowEngine {
         let merged = Value::Object(vars.clone());
 
         // Write back
-        sqlx::query("UPDATE workflow SET variables = $2, update_time = NOW() WHERE workflow_id = $1")
-            .bind(workflow_id)
-            .bind(&merged)
-            .execute(db)
-            .await
-            .map_err(|e| EngineError::Database(e.to_string()))?;
+        sqlx::query(
+            "UPDATE workflow SET variables = $2, update_time = NOW() WHERE workflow_id = $1",
+        )
+        .bind(workflow_id)
+        .bind(&merged)
+        .execute(db)
+        .await
+        .map_err(|e| EngineError::Database(e.to_string()))?;
 
         // Auto-complete the task with the merged variables as output
         let (_task_id, _is_new) = self
-            .insert_task_record(workflow_id, task_def, &task_input, seq, "COMPLETED", &merged, None)
+            .insert_task_record(
+                workflow_id,
+                task_def,
+                &task_input,
+                seq,
+                "COMPLETED",
+                &merged,
+                None,
+            )
             .await?;
 
         tracing::info!(workflow_id = %workflow_id, keys = ?vars.keys().collect::<Vec<_>>(), "SET_VARIABLE completed");
@@ -666,12 +724,19 @@ impl WorkflowEngine {
         input: &Value,
         seq: i32,
     ) -> Result<(), EngineError> {
-        let task_input = self.resolve_task_input(workflow_id, task_def, input).await?;
+        let task_input = self
+            .resolve_task_input(workflow_id, task_def, input)
+            .await?;
 
         let (task_id, is_new) = self
             .insert_task_record(
-                workflow_id, task_def, &task_input, seq, "IN_PROGRESS",
-                &Value::Object(Default::default()), None,
+                workflow_id,
+                task_def,
+                &task_input,
+                seq,
+                "IN_PROGRESS",
+                &Value::Object(Default::default()),
+                None,
             )
             .await?;
 
@@ -684,13 +749,15 @@ impl WorkflowEngine {
             .cloned()
             .unwrap_or_else(|| task_input.clone());
 
-        let uri = http_req
-            .get("uri")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let uri = http_req.get("uri").and_then(|v| v.as_str()).unwrap_or("");
 
         if uri.is_empty() {
-            self.fail_task(workflow_id, &task_id, "HTTP task missing 'uri' in http_request").await?;
+            self.fail_task(
+                workflow_id,
+                &task_id,
+                "HTTP task missing 'uri' in http_request",
+            )
+            .await?;
             return Ok(());
         }
 
@@ -737,8 +804,12 @@ impl WorkflowEngine {
         // Apply body
         if let Some(body) = http_req.get("body") {
             match body {
-                Value::String(s) => { req_builder = req_builder.body(s.clone()); }
-                other => { req_builder = req_builder.json(other); }
+                Value::String(s) => {
+                    req_builder = req_builder.body(s.clone());
+                }
+                other => {
+                    req_builder = req_builder.json(other);
+                }
             }
         }
 
@@ -809,12 +880,19 @@ impl WorkflowEngine {
         input: &Value,
         seq: i32,
     ) -> Result<(), EngineError> {
-        let task_input = self.resolve_task_input(workflow_id, task_def, input).await?;
+        let task_input = self
+            .resolve_task_input(workflow_id, task_def, input)
+            .await?;
 
         let (_task_id, _is_new) = self
             .insert_task_record(
-                workflow_id, task_def, &task_input, seq, "IN_PROGRESS",
-                &Value::Object(Default::default()), None,
+                workflow_id,
+                task_def,
+                &task_input,
+                seq,
+                "IN_PROGRESS",
+                &Value::Object(Default::default()),
+                None,
             )
             .await?;
 
@@ -835,20 +913,35 @@ impl WorkflowEngine {
         input: &Value,
         seq: i32,
     ) -> Result<(), EngineError> {
-        let task_input = self.resolve_task_input(workflow_id, task_def, input).await?;
+        let task_input = self
+            .resolve_task_input(workflow_id, task_def, input)
+            .await?;
 
         if task_def.loop_over.is_empty() {
             let output = serde_json::json!({ "iteration": 0 });
-            self.insert_task_record(workflow_id, task_def, &task_input, seq, "COMPLETED", &output, None)
-                .await?;
+            self.insert_task_record(
+                workflow_id,
+                task_def,
+                &task_input,
+                seq,
+                "COMPLETED",
+                &output,
+                None,
+            )
+            .await?;
             tracing::warn!(workflow_id = %workflow_id, "DO_WHILE has empty loop_over, auto-completing");
             return Ok(());
         }
 
         let (task_id, is_new) = self
             .insert_task_record(
-                workflow_id, task_def, &task_input, seq, "IN_PROGRESS",
-                &Value::Object(Default::default()), None,
+                workflow_id,
+                task_def,
+                &task_input,
+                seq,
+                "IN_PROGRESS",
+                &Value::Object(Default::default()),
+                None,
             )
             .await?;
 
@@ -862,17 +955,26 @@ impl WorkflowEngine {
         loop {
             iteration += 1;
             if iteration > max_iterations {
-                self.fail_task(workflow_id, &task_id, &format!("DO_WHILE exceeded max iterations ({})", max_iterations)).await?;
+                self.fail_task(
+                    workflow_id,
+                    &task_id,
+                    &format!("DO_WHILE exceeded max iterations ({})", max_iterations),
+                )
+                .await?;
                 tracing::error!(workflow_id = %workflow_id, "DO_WHILE hit max iterations");
                 return Ok(());
             }
 
             // Schedule the loop body with unique ref names per iteration
-            let iter_tasks: Vec<WorkflowTask> = task_def.loop_over.iter().map(|t| {
-                let mut clone = t.clone();
-                clone.task_reference_name = format!("{}__{}", t.task_reference_name, iteration);
-                clone
-            }).collect();
+            let iter_tasks: Vec<WorkflowTask> = task_def
+                .loop_over
+                .iter()
+                .map(|t| {
+                    let mut clone = t.clone();
+                    clone.task_reference_name = format!("{}__{}", t.task_reference_name, iteration);
+                    clone
+                })
+                .collect();
 
             let body_seq = seq + (iteration as i32 * 1000);
             Box::pin(self.schedule_tasks(workflow_id, &iter_tasks, input, body_seq)).await?;
@@ -900,7 +1002,8 @@ impl WorkflowEngine {
             }
 
             if !all_done {
-                self.fail_task(workflow_id, &task_id, "DO_WHILE body tasks timed out").await?;
+                self.fail_task(workflow_id, &task_id, "DO_WHILE body tasks timed out")
+                    .await?;
                 return Ok(());
             }
 
@@ -915,7 +1018,8 @@ impl WorkflowEngine {
             .map_err(|e| EngineError::Database(e.to_string()))?;
 
             if failed > 0 {
-                self.fail_task(workflow_id, &task_id, "DO_WHILE body task failed").await?;
+                self.fail_task(workflow_id, &task_id, "DO_WHILE body task failed")
+                    .await?;
                 return Ok(());
             }
 
@@ -975,7 +1079,9 @@ impl WorkflowEngine {
         input: &Value,
         seq: i32,
     ) -> Result<(), EngineError> {
-        let task_input = self.resolve_task_input(workflow_id, task_def, input).await?;
+        let task_input = self
+            .resolve_task_input(workflow_id, task_def, input)
+            .await?;
 
         let sink = task_def.sink.as_deref().unwrap_or("conductor_events");
 
@@ -987,24 +1093,42 @@ impl WorkflowEngine {
         });
 
         // Publish to Kafka
-        let payload_str = serde_json::to_string(&event_payload)
-            .unwrap_or_else(|_| "{}".to_string());
+        let payload_str =
+            serde_json::to_string(&event_payload).unwrap_or_else(|_| "{}".to_string());
 
         match self.queue.produce(sink, &payload_str).await {
             Ok(()) => {
                 let output = serde_json::json!({ "event": { "sink": sink, "published": true } });
                 let (_task_id, _is_new) = self
-                    .insert_task_record(workflow_id, task_def, &task_input, seq, "COMPLETED", &output, None)
+                    .insert_task_record(
+                        workflow_id,
+                        task_def,
+                        &task_input,
+                        seq,
+                        "COMPLETED",
+                        &output,
+                        None,
+                    )
                     .await?;
                 tracing::info!(workflow_id = %workflow_id, sink = %sink, "EVENT task published and completed");
             }
             Err(e) => {
                 let output = serde_json::json!({ "event": { "sink": sink, "published": false, "error": e } });
                 let (task_id, _) = self
-                    .insert_task_record(workflow_id, task_def, &task_input, seq, "FAILED", &output, None)
+                    .insert_task_record(
+                        workflow_id,
+                        task_def,
+                        &task_input,
+                        seq,
+                        "FAILED",
+                        &output,
+                        None,
+                    )
                     .await?;
                 tracing::error!(workflow_id = %workflow_id, sink = %sink, error = %e, "EVENT task Kafka publish failed");
-                let _ = self.fail_task(workflow_id, &task_id, &format!("Event publish failed: {e}")).await;
+                let _ = self
+                    .fail_task(workflow_id, &task_id, &format!("Event publish failed: {e}"))
+                    .await;
             }
         }
 
@@ -1013,10 +1137,11 @@ impl WorkflowEngine {
 
     // ── LAMBDA / INLINE ──────────────────────────────────────────────────
 
-    /// LAMBDA — execute an inline expression without an external worker.
-    /// The task's `script_expression` or `expression` field contains a simple
-    /// JSON expression that is evaluated using the task input. The result is
-    /// written as the task output and the task completes immediately.
+    // LAMBDA — execute an inline expression without an external worker.
+    // The task's `script_expression` or `expression` field contains a simple
+    // JSON expression that is evaluated using the task input. The result is
+    // written as the task output and the task completes immediately.
+
     // ── DYNAMIC ───────────────────────────────────────────────────────
 
     /// DYNAMIC — resolve the actual task type at runtime from input parameters.
@@ -1029,10 +1154,15 @@ impl WorkflowEngine {
         input: &Value,
         seq: i32,
     ) -> Result<(), EngineError> {
-        let param_name = task_def.dynamic_task_name_param.as_deref().unwrap_or("dynamicTaskName");
+        let param_name = task_def
+            .dynamic_task_name_param
+            .as_deref()
+            .unwrap_or("dynamicTaskName");
 
         // Resolve inputParameters first so we can read the dynamic task name
-        let resolved_input = self.resolve_task_input(workflow_id, task_def, input).await?;
+        let resolved_input = self
+            .resolve_task_input(workflow_id, task_def, input)
+            .await?;
 
         let resolved_task_name = resolved_input
             .get(param_name)
@@ -1101,26 +1231,27 @@ impl WorkflowEngine {
         input: &Value,
         seq: i32,
     ) -> Result<(), EngineError> {
-        let resolved_input = self.resolve_task_input(workflow_id, task_def, input).await?;
+        let resolved_input = self
+            .resolve_task_input(workflow_id, task_def, input)
+            .await?;
 
         // Collect the dynamic tasks and their inputs
         let mut forked_tasks: Vec<(WorkflowTask, Value)> = Vec::new();
 
         if let Some(param_name) = &task_def.dynamic_fork_join_tasks_param {
             // Format 1: single param with array of {taskRefName, taskType, name, input}
-            let tasks_value = resolved_input.get(param_name.as_str())
-                .ok_or_else(|| {
-                    tracing::error!(
-                        workflow_id = %workflow_id,
-                        ref_name = %task_def.task_reference_name,
-                        param = %param_name,
-                        "DYNAMIC_FORK_JOIN: could not find param in resolved input"
-                    );
-                    EngineError::NotFound(format!(
-                        "DYNAMIC_FORK_JOIN '{}': param '{}' not found in input",
-                        task_def.task_reference_name, param_name
-                    ))
-                })?;
+            let tasks_value = resolved_input.get(param_name.as_str()).ok_or_else(|| {
+                tracing::error!(
+                    workflow_id = %workflow_id,
+                    ref_name = %task_def.task_reference_name,
+                    param = %param_name,
+                    "DYNAMIC_FORK_JOIN: could not find param in resolved input"
+                );
+                EngineError::NotFound(format!(
+                    "DYNAMIC_FORK_JOIN '{}': param '{}' not found in input",
+                    task_def.task_reference_name, param_name
+                ))
+            })?;
 
             let tasks_arr = tasks_value.as_array().ok_or_else(|| {
                 EngineError::InvalidState(format!(
@@ -1130,18 +1261,22 @@ impl WorkflowEngine {
             })?;
 
             for item in tasks_arr {
-                let ref_name = item.get("taskReferenceName")
+                let ref_name = item
+                    .get("taskReferenceName")
                     .or_else(|| item.get("taskRefName"))
                     .and_then(|v| v.as_str())
                     .unwrap_or("unknown");
-                let task_type = item.get("type")
+                let task_type = item
+                    .get("type")
                     .or_else(|| item.get("taskType"))
                     .and_then(|v| v.as_str())
                     .unwrap_or("SIMPLE");
-                let task_name = item.get("name")
+                let task_name = item
+                    .get("name")
                     .and_then(|v| v.as_str())
                     .unwrap_or(ref_name);
-                let task_input = item.get("input")
+                let task_input = item
+                    .get("input")
                     .or_else(|| item.get("inputParameters"))
                     .cloned()
                     .unwrap_or(Value::Object(Default::default()));
@@ -1185,19 +1320,20 @@ impl WorkflowEngine {
             }
         } else if let Some(tasks_param) = &task_def.dynamic_fork_tasks_param {
             // Format 2: separate task defs + input map
-            let tasks_value = resolved_input.get(tasks_param.as_str())
-                .ok_or_else(|| {
-                    EngineError::NotFound(format!(
-                        "DYNAMIC_FORK_JOIN '{}': param '{}' not found",
-                        task_def.task_reference_name, tasks_param
-                    ))
-                })?;
+            let tasks_value = resolved_input.get(tasks_param.as_str()).ok_or_else(|| {
+                EngineError::NotFound(format!(
+                    "DYNAMIC_FORK_JOIN '{}': param '{}' not found",
+                    task_def.task_reference_name, tasks_param
+                ))
+            })?;
 
-            let input_param_name = task_def.dynamic_fork_tasks_input_param_name
+            let input_param_name = task_def
+                .dynamic_fork_tasks_input_param_name
                 .as_deref()
                 .unwrap_or("forkedTasksInputs");
 
-            let inputs_map = resolved_input.get(input_param_name)
+            let inputs_map = resolved_input
+                .get(input_param_name)
                 .and_then(|v| v.as_object())
                 .cloned()
                 .unwrap_or_default();
@@ -1241,7 +1377,15 @@ impl WorkflowEngine {
             "forkedTaskRefs": forked_tasks.iter().map(|(t, _)| &t.task_reference_name).collect::<Vec<_>>(),
         });
         let (_task_id, is_new) = self
-            .insert_task_record(workflow_id, task_def, &resolved_input, seq, "COMPLETED", &fork_output, None)
+            .insert_task_record(
+                workflow_id,
+                task_def,
+                &resolved_input,
+                seq,
+                "COMPLETED",
+                &fork_output,
+                None,
+            )
             .await?;
 
         if !is_new {
@@ -1249,16 +1393,17 @@ impl WorkflowEngine {
         }
 
         // Schedule all forked tasks in parallel
-        let join_on: Vec<String> = forked_tasks.iter().map(|(t, _)| t.task_reference_name.clone()).collect();
+        let join_on: Vec<String> = forked_tasks
+            .iter()
+            .map(|(t, _)| t.task_reference_name.clone())
+            .collect();
         let fork_count = forked_tasks.len();
 
         // Prepare owned task arrays so they live long enough for async scheduling
         let prepared: Vec<(Vec<WorkflowTask>, Value, i32)> = forked_tasks
             .into_iter()
             .enumerate()
-            .map(|(idx, (wt, task_input))| {
-                (vec![wt], task_input, seq + 1 + idx as i32)
-            })
+            .map(|(idx, (wt, task_input))| (vec![wt], task_input, seq + 1 + idx as i32))
             .collect();
 
         let branch_futs: Vec<_> = prepared
@@ -1339,7 +1484,9 @@ impl WorkflowEngine {
         input: &Value,
         seq: i32,
     ) -> Result<(), EngineError> {
-        let task_input = self.resolve_task_input(workflow_id, task_def, input).await?;
+        let task_input = self
+            .resolve_task_input(workflow_id, task_def, input)
+            .await?;
 
         let output = if let Some(expr) = &task_def.script_expression {
             // Try to parse the expression as a JSON value, with variable substitution
@@ -1347,13 +1494,19 @@ impl WorkflowEngine {
                 Ok(v) => v,
                 Err(_) => {
                     // If it's not valid JSON, treat it as a simple key lookup from input
-                    task_input.get(expr).cloned().unwrap_or(Value::String(expr.clone()))
+                    task_input
+                        .get(expr)
+                        .cloned()
+                        .unwrap_or(Value::String(expr.clone()))
                 }
             }
         } else if let Some(expr) = &task_def.expression {
             match serde_json::from_str::<Value>(expr) {
                 Ok(v) => v,
-                Err(_) => task_input.get(expr).cloned().unwrap_or(Value::String(expr.clone())),
+                Err(_) => task_input
+                    .get(expr)
+                    .cloned()
+                    .unwrap_or(Value::String(expr.clone())),
             }
         } else {
             // If no expression, pass through input as output
@@ -1365,7 +1518,15 @@ impl WorkflowEngine {
         });
 
         let (_task_id, _is_new) = self
-            .insert_task_record(workflow_id, task_def, &task_input, seq, "COMPLETED", &result_output, None)
+            .insert_task_record(
+                workflow_id,
+                task_def,
+                &task_input,
+                seq,
+                "COMPLETED",
+                &result_output,
+                None,
+            )
             .await?;
 
         tracing::info!(
@@ -1457,17 +1618,20 @@ pub(crate) fn resolve_value(
         Value::Object(map) => {
             let resolved: serde_json::Map<String, Value> = map
                 .iter()
-                .map(|(k, v)| (k.clone(), resolve_value(v, workflow_input, task_outputs, workflow_id)))
+                .map(|(k, v)| {
+                    (
+                        k.clone(),
+                        resolve_value(v, workflow_input, task_outputs, workflow_id),
+                    )
+                })
                 .collect();
             Value::Object(resolved)
         }
-        Value::Array(arr) => {
-            Value::Array(
-                arr.iter()
-                    .map(|v| resolve_value(v, workflow_input, task_outputs, workflow_id))
-                    .collect(),
-            )
-        }
+        Value::Array(arr) => Value::Array(
+            arr.iter()
+                .map(|v| resolve_value(v, workflow_input, task_outputs, workflow_id))
+                .collect(),
+        ),
         other => other.clone(),
     }
 }
@@ -1483,9 +1647,11 @@ pub(crate) fn resolve_string_value(
     if trimmed.starts_with("${") && trimmed.ends_with('}') {
         let inner = &trimmed[2..trimmed.len() - 1];
         if !inner.contains("${")
-            && let Some(resolved) = resolve_expression(inner, workflow_input, task_outputs, workflow_id) {
-                return resolved;
-            }
+            && let Some(resolved) =
+                resolve_expression(inner, workflow_input, task_outputs, workflow_id)
+        {
+            return resolved;
+        }
     }
 
     if !s.contains("${") {
@@ -1548,12 +1714,13 @@ pub(crate) fn resolve_expression(
 
     // Task reference: refName.output.field.path
     if parts[1] == "output"
-        && let Some(output) = task_outputs.get(parts[0]) {
-            if parts.len() == 2 {
-                return Some(output.clone());
-            }
-            return navigate_json(output, &parts[2..]);
+        && let Some(output) = task_outputs.get(parts[0])
+    {
+        if parts.len() == 2 {
+            return Some(output.clone());
         }
+        return navigate_json(output, &parts[2..]);
+    }
 
     None
 }
@@ -1570,7 +1737,11 @@ pub(crate) fn navigate_json(val: &Value, path: &[&str]) -> Option<Value> {
 ///   - `"iteration < N"` — continue while iteration count is below N
 ///   - `"true"` / `"false"` — literal
 ///   - Otherwise: check if the last task output's `result` field is truthy
-pub(crate) fn evaluate_loop_condition(condition: &str, last_output: &Value, iteration: usize) -> bool {
+pub(crate) fn evaluate_loop_condition(
+    condition: &str,
+    last_output: &Value,
+    iteration: usize,
+) -> bool {
     let trimmed = condition.trim();
 
     if trimmed == "false" || trimmed.is_empty() {
@@ -1584,17 +1755,22 @@ pub(crate) fn evaluate_loop_condition(condition: &str, last_output: &Value, iter
     if let Some(rest) = trimmed.strip_prefix("iteration") {
         let rest = rest.trim();
         if let Some(n_str) = rest.strip_prefix('<')
-            && let Ok(n) = n_str.trim().parse::<usize>() {
-                return iteration < n;
-            }
+            && let Ok(n) = n_str.trim().parse::<usize>()
+        {
+            return iteration < n;
+        }
         if let Some(n_str) = rest.strip_prefix("<=")
-            && let Ok(n) = n_str.trim().parse::<usize>() {
-                return iteration <= n;
-            }
+            && let Ok(n) = n_str.trim().parse::<usize>()
+        {
+            return iteration <= n;
+        }
     }
 
     // Check last task output for a truthy "result" field
-    match last_output.get("shouldContinue").or_else(|| last_output.get("result")) {
+    match last_output
+        .get("shouldContinue")
+        .or_else(|| last_output.get("result"))
+    {
         Some(Value::Bool(b)) => *b,
         Some(Value::String(s)) => s != "false" && !s.is_empty(),
         Some(Value::Number(n)) => n.as_f64().unwrap_or(0.0) != 0.0,

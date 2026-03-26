@@ -1,10 +1,10 @@
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
-use crate::engine::WorkflowEngine;
+use super::metadata::engine_err_to_status;
 use super::pb;
 use super::proto_conv;
-use super::metadata::engine_err_to_status;
+use crate::engine::WorkflowEngine;
 
 pub struct AdminServiceImpl {
     engine: Arc<WorkflowEngine>,
@@ -81,7 +81,11 @@ impl pb::admin_service_server::AdminService for AdminServiceImpl {
         &self,
         _request: Request<pb::Empty>,
     ) -> Result<Response<pb::HealthCheckResponse>, Status> {
-        let status = self.engine.health_check().await.map_err(engine_err_to_status)?;
+        let status = self
+            .engine
+            .health_check()
+            .await
+            .map_err(engine_err_to_status)?;
         Ok(Response::new(proto_conv::health_to_proto(&status)))
     }
 }

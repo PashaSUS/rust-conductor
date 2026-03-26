@@ -1,4 +1,4 @@
-use actix_web::{web, HttpResponse};
+use actix_web::{HttpResponse, web};
 use serde_json::Value;
 
 use crate::engine::WorkflowEngine;
@@ -17,9 +17,15 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .route("/queue/polldata", web::get().to(poll_data))
             .route("/queue/polldata/all", web::get().to(poll_data_all))
             .route("/in_progress/{taskType}", web::get().to(in_progress_tasks))
-            .route("/in_progress/{workflowId}/{taskRefName}", web::get().to(in_progress_task_for_workflow))
+            .route(
+                "/in_progress/{workflowId}/{taskRefName}",
+                web::get().to(in_progress_task_for_workflow),
+            )
             .route("/register/{taskType}", web::post().to(register_task_type))
-            .route("/{workflowId}/{taskRefName}/{status}", web::post().to(update_task_by_ref_name))
+            .route(
+                "/{workflowId}/{taskRefName}/{status}",
+                web::post().to(update_task_by_ref_name),
+            )
             .route("/{taskId}", web::get().to(get_task))
             .route("/{taskId}/ack", web::post().to(ack_task))
             .route("/{taskId}/log", web::get().to(get_task_logs))

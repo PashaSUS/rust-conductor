@@ -1,4 +1,4 @@
-use actix_web::{web, HttpResponse, HttpRequest};
+use actix_web::{HttpRequest, HttpResponse, web};
 use serde::Deserialize;
 use std::time::Duration;
 use tokio::time::interval;
@@ -8,7 +8,10 @@ use crate::engine::WorkflowEngine;
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::scope("/sse")
-            .route("/workflow/{workflowId}", web::get().to(workflow_status_stream))
+            .route(
+                "/workflow/{workflowId}",
+                web::get().to(workflow_status_stream),
+            )
             .route("/queue/sizes", web::get().to(queue_sizes_stream)),
     );
 }

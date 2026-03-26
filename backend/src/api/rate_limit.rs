@@ -1,6 +1,6 @@
-use actix_web::dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform};
 use actix_web::Error;
-use futures::future::{ok, Ready, LocalBoxFuture};
+use actix_web::dev::{Service, ServiceRequest, ServiceResponse, Transform, forward_ready};
+use futures::future::{LocalBoxFuture, Ready, ok};
 
 use crate::store::redis::ShardedRedis;
 
@@ -20,7 +20,11 @@ pub struct RateLimiter {
 
 impl RateLimiter {
     pub fn new(redis: ShardedRedis, max_requests: u64, window_seconds: u64) -> Self {
-        Self { redis, max_requests, window_seconds }
+        Self {
+            redis,
+            max_requests,
+            window_seconds,
+        }
     }
 }
 
@@ -87,12 +91,16 @@ where
                     resp.headers_mut().insert(
                         actix_web::http::header::HeaderName::from_static("x-ratelimit-remaining"),
                         actix_web::http::header::HeaderValue::from_str(&remaining.to_string())
-                            .unwrap_or_else(|_| actix_web::http::header::HeaderValue::from_static("0")),
+                            .unwrap_or_else(|_| {
+                                actix_web::http::header::HeaderValue::from_static("0")
+                            }),
                     );
                     resp.headers_mut().insert(
                         actix_web::http::header::HeaderName::from_static("x-ratelimit-limit"),
                         actix_web::http::header::HeaderValue::from_str(&max_tokens.to_string())
-                            .unwrap_or_else(|_| actix_web::http::header::HeaderValue::from_static("0")),
+                            .unwrap_or_else(|_| {
+                                actix_web::http::header::HeaderValue::from_static("0")
+                            }),
                     );
                     Ok(resp)
                 }
@@ -106,12 +114,17 @@ where
                     resp.headers_mut().insert(
                         actix_web::http::header::HeaderName::from_static("x-ratelimit-limit"),
                         actix_web::http::header::HeaderValue::from_str(&max_tokens.to_string())
-                            .unwrap_or_else(|_| actix_web::http::header::HeaderValue::from_static("0")),
+                            .unwrap_or_else(|_| {
+                                actix_web::http::header::HeaderValue::from_static("0")
+                            }),
                     );
                     resp.headers_mut().insert(
                         actix_web::http::header::HeaderName::from_static("retry-after"),
-                        actix_web::http::header::HeaderValue::from_str(&format!("{:.0}", retry_after_secs))
-                            .unwrap_or_else(|_| actix_web::http::header::HeaderValue::from_static("1")),
+                        actix_web::http::header::HeaderValue::from_str(&format!(
+                            "{:.0}",
+                            retry_after_secs
+                        ))
+                        .unwrap_or_else(|_| actix_web::http::header::HeaderValue::from_static("1")),
                     );
                     Ok(resp)
                 }
@@ -201,7 +214,9 @@ async fn token_bucket_consume(
     match result {
         Ok(s) if s.starts_with('-') => {
             let wait: f64 = s[1..].parse().unwrap_or(1.0);
-            TokenBucketResult::Limited { retry_after_secs: wait }
+            TokenBucketResult::Limited {
+                retry_after_secs: wait,
+            }
         }
         Ok(s) => {
             let remaining: u64 = s.parse().unwrap_or(0);
@@ -210,4 +225,3 @@ async fn token_bucket_consume(
         Err(_) => TokenBucketResult::Error,
     }
 }
-

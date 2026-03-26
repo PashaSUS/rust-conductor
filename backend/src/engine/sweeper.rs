@@ -1,9 +1,8 @@
 use chrono::Utc;
 
-
+use super::WorkflowEngine;
 use super::error::EngineError;
 use super::rows::OrphanedTaskRow;
-use super::WorkflowEngine;
 
 impl WorkflowEngine {
     /// Scans for orphaned tasks across all shards: SCHEDULED worker tasks in
@@ -30,11 +29,19 @@ impl WorkflowEngine {
             })?;
 
             if !orphans.is_empty() {
-                tracing::error!(count = orphans.len(), "Found orphaned SCHEDULED tasks, re-queuing");
+                tracing::error!(
+                    count = orphans.len(),
+                    "Found orphaned SCHEDULED tasks, re-queuing"
+                );
                 for orphan in &orphans {
                     // Enqueue first — only bump scheduled_time on success
-                    self.set_task_routing(&orphan.task_id, &orphan.workflow_instance_id).await?;
-                    match self.queue.enqueue(&orphan.task_def_name, &orphan.task_id).await {
+                    self.set_task_routing(&orphan.task_id, &orphan.workflow_instance_id)
+                        .await?;
+                    match self
+                        .queue
+                        .enqueue(&orphan.task_def_name, &orphan.task_id)
+                        .await
+                    {
                         Ok(_) => {
                             // Bump scheduled_time so this orphan isn't re-queued next cycle
                             let _ = sqlx::query(
@@ -76,16 +83,20 @@ impl WorkflowEngine {
             })?;
 
             if !timed_out_workflows.is_empty() {
-                tracing::error!(count = timed_out_workflows.len(), "Timed out stale IN_PROGRESS tasks");
+                tracing::error!(
+                    count = timed_out_workflows.len(),
+                    "Timed out stale IN_PROGRESS tasks"
+                );
 
                 // Advance each affected workflow so it detects the timed-out task
                 // and either fails the workflow or proceeds (if the task was optional).
                 let mut seen = std::collections::HashSet::new();
                 for (wf_id,) in &timed_out_workflows {
                     if seen.insert(wf_id.clone())
-                        && let Err(e) = self.advance_workflow(wf_id).await {
-                            tracing::error!(workflow_id = %wf_id, error = %e, "Sweep advance after timeout failed");
-                        }
+                        && let Err(e) = self.advance_workflow(wf_id).await
+                    {
+                        tracing::error!(workflow_id = %wf_id, error = %e, "Sweep advance after timeout failed");
+                    }
                 }
             }
 
@@ -104,7 +115,10 @@ impl WorkflowEngine {
             })?;
 
             if !stale_subs.is_empty() {
-                tracing::error!(count = stale_subs.len(), "Found stale SUB_WORKFLOW tasks, advancing parent workflows");
+                tracing::error!(
+                    count = stale_subs.len(),
+                    "Found stale SUB_WORKFLOW tasks, advancing parent workflows"
+                );
             }
 
             for (wf_id,) in &stale_subs {
@@ -159,7 +173,10 @@ impl WorkflowEngine {
             })?;
 
             if !failed_task_workflows.is_empty() {
-                tracing::error!(count = failed_task_workflows.len(), "Found RUNNING workflows with FAILED tasks, advancing");
+                tracing::error!(
+                    count = failed_task_workflows.len(),
+                    "Found RUNNING workflows with FAILED tasks, advancing"
+                );
             }
 
             for (wf_id,) in &failed_task_workflows {
@@ -190,7 +207,9 @@ impl WorkflowEngine {
                 let mut work_done = false;
 
                 match engine.sweep_orphaned_tasks().await {
-                    Ok(recovered) if recovered > 0 => { work_done = true; }
+                    Ok(recovered) if recovered > 0 => {
+                        work_done = true;
+                    }
                     Ok(_) => {}
                     Err(e) => tracing::error!(error = %e, "Background sweep failed"),
                 }
@@ -216,7 +235,10 @@ impl WorkflowEngine {
                 // Adaptive interval: if work was done, speed up; if idle, slow down
                 if work_done {
                     current_interval = (current_interval / 2).max(min_interval);
-                    tracing::debug!(interval_secs = current_interval, "Sweeper found work, decreasing interval");
+                    tracing::debug!(
+                        interval_secs = current_interval,
+                        "Sweeper found work, decreasing interval"
+                    );
                 } else {
                     current_interval = (current_interval + 5).min(max_interval);
                 }

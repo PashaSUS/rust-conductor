@@ -1,12 +1,11 @@
-use utoipa::openapi::path::{HttpMethod, OperationBuilder, PathItemBuilder, ParameterBuilder, ParameterIn};
+use utoipa::openapi::path::{
+    HttpMethod, OperationBuilder, ParameterBuilder, ParameterIn, PathItemBuilder,
+};
 use utoipa::openapi::request_body::RequestBodyBuilder;
 use utoipa::openapi::response::ResponseBuilder;
-use utoipa::openapi::schema::{
-    ArrayBuilder, ObjectBuilder, Ref as SchemaRef, SchemaType, Type,
-};
+use utoipa::openapi::schema::{ArrayBuilder, ObjectBuilder, Ref as SchemaRef, SchemaType, Type};
 use utoipa::openapi::{
-    ComponentsBuilder, ContentBuilder, InfoBuilder, OpenApiBuilder, PathsBuilder,
-    ServerBuilder,
+    ComponentsBuilder, ContentBuilder, InfoBuilder, OpenApiBuilder, PathsBuilder, ServerBuilder,
 };
 
 fn s() -> ObjectBuilder {
@@ -22,9 +21,7 @@ fn sref(name: &str) -> SchemaRef {
     SchemaRef::new(format!("#/components/schemas/{}", name))
 }
 fn ref_content(name: &str) -> utoipa::openapi::Content {
-    ContentBuilder::new()
-        .schema(Some(sref(name)))
-        .build()
+    ContentBuilder::new().schema(Some(sref(name))).build()
 }
 fn arr_ref_content(name: &str) -> utoipa::openapi::Content {
     ContentBuilder::new()
@@ -33,7 +30,9 @@ fn arr_ref_content(name: &str) -> utoipa::openapi::Content {
 }
 fn str_content() -> utoipa::openapi::Content {
     ContentBuilder::new()
-        .schema(Some(ObjectBuilder::new().schema_type(SchemaType::Type(Type::String))))
+        .schema(Some(
+            ObjectBuilder::new().schema_type(SchemaType::Type(Type::String)),
+        ))
         .build()
 }
 fn json_content() -> utoipa::openapi::Content {
@@ -43,9 +42,9 @@ fn json_content() -> utoipa::openapi::Content {
 }
 fn str_arr_content() -> utoipa::openapi::Content {
     ContentBuilder::new()
-        .schema(Some(
-            ArrayBuilder::new().items(ObjectBuilder::new().schema_type(SchemaType::Type(Type::String))),
-        ))
+        .schema(Some(ArrayBuilder::new().items(
+            ObjectBuilder::new().schema_type(SchemaType::Type(Type::String)),
+        )))
         .build()
 }
 
@@ -129,7 +128,9 @@ pub fn build_openapi() -> utoipa::openapi::OpenApi {
             .content(
                 "application/json",
                 ContentBuilder::new()
-                    .schema(Some(ObjectBuilder::new().schema_type(SchemaType::Type(Type::Boolean))))
+                    .schema(Some(
+                        ObjectBuilder::new().schema_type(SchemaType::Type(Type::Boolean)),
+                    ))
                     .build(),
             )
             .build()
@@ -140,14 +141,20 @@ pub fn build_openapi() -> utoipa::openapi::OpenApi {
             .content(
                 "application/json",
                 ContentBuilder::new()
-                    .schema(Some(ObjectBuilder::new().schema_type(SchemaType::Type(Type::Integer))))
+                    .schema(Some(
+                        ObjectBuilder::new().schema_type(SchemaType::Type(Type::Integer)),
+                    ))
                     .build(),
             )
             .build()
     };
     let no_content = || ResponseBuilder::new().description("No Content").build();
     let not_found = || ResponseBuilder::new().description("Not Found").build();
-    let conflict = || ResponseBuilder::new().description("Conflict - Invalid State").build();
+    let conflict = || {
+        ResponseBuilder::new()
+            .description("Conflict - Invalid State")
+            .build()
+    };
 
     let path_param = |name: &str, desc: &str| {
         ParameterBuilder::new()
@@ -1375,7 +1382,14 @@ pub fn build_openapi() -> utoipa::openapi::OpenApi {
             ObjectBuilder::new()
                 .schema_type(SchemaType::Type(Type::String))
                 .description(Some("Status of a workflow execution"))
-                .enum_values(Some(["RUNNING", "COMPLETED", "FAILED", "TIMED_OUT", "TERMINATED", "PAUSED"])),
+                .enum_values(Some([
+                    "RUNNING",
+                    "COMPLETED",
+                    "FAILED",
+                    "TIMED_OUT",
+                    "TERMINATED",
+                    "PAUSED",
+                ])),
         )
         .schema(
             "TaskStatus",
@@ -1383,8 +1397,15 @@ pub fn build_openapi() -> utoipa::openapi::OpenApi {
                 .schema_type(SchemaType::Type(Type::String))
                 .description(Some("Status of a task"))
                 .enum_values(Some([
-                    "IN_PROGRESS", "CANCELED", "FAILED", "FAILED_WITH_TERMINAL_ERROR",
-                    "COMPLETED", "COMPLETED_WITH_ERRORS", "SCHEDULED", "TIMED_OUT", "SKIPPED",
+                    "IN_PROGRESS",
+                    "CANCELED",
+                    "FAILED",
+                    "FAILED_WITH_TERMINAL_ERROR",
+                    "COMPLETED",
+                    "COMPLETED_WITH_ERRORS",
+                    "SCHEDULED",
+                    "TIMED_OUT",
+                    "SKIPPED",
                 ])),
         )
         .schema(
@@ -1411,14 +1432,16 @@ pub fn build_openapi() -> utoipa::openapi::OpenApi {
                 .schema_type(SchemaType::Type(Type::String))
                 .enum_values(Some(["FAIL", "RETURN_EXISTING", "FAIL_ON_RUNNING"])),
         )
-
         // ── Health ──
         .schema(
             "Health",
             ObjectBuilder::new()
                 .property("healthy", b())
                 .required("healthy")
-                .property("details", ObjectBuilder::new().description(Some("Detailed health info per service")))
+                .property(
+                    "details",
+                    ObjectBuilder::new().description(Some("Detailed health info per service")),
+                )
                 .property("errorMessage", s()),
         )
         .schema(
@@ -1427,9 +1450,11 @@ pub fn build_openapi() -> utoipa::openapi::OpenApi {
                 .property("healthy", b())
                 .required("healthy")
                 .property("healthResults", ArrayBuilder::new().items(sref("Health")))
-                .property("suppressedHealthResults", ArrayBuilder::new().items(sref("Health"))),
+                .property(
+                    "suppressedHealthResults",
+                    ArrayBuilder::new().items(sref("Health")),
+                ),
         )
-
         // ── Workflow Definition ──
         .schema(
             "WorkflowTask",
@@ -1439,21 +1464,40 @@ pub fn build_openapi() -> utoipa::openapi::OpenApi {
                 .required("name")
                 .property("taskReferenceName", s())
                 .required("taskReferenceName")
-                .property("type", s().description(Some("Task type: SIMPLE, SUB_WORKFLOW, DECISION, FORK_JOIN, etc.")))
+                .property(
+                    "type",
+                    s().description(Some(
+                        "Task type: SIMPLE, SUB_WORKFLOW, DECISION, FORK_JOIN, etc.",
+                    )),
+                )
                 .property("description", s())
-                .property("inputParameters", ObjectBuilder::new().description(Some("Map of input parameter name to value/expression")))
+                .property(
+                    "inputParameters",
+                    ObjectBuilder::new()
+                        .description(Some("Map of input parameter name to value/expression")),
+                )
                 .property("optional", b())
                 .property("startDelay", i())
-                .property("subWorkflowParam", ObjectBuilder::new()
-                    .property("name", s())
-                    .property("version", i())
-                    .property("taskToDomain", ObjectBuilder::new()))
+                .property(
+                    "subWorkflowParam",
+                    ObjectBuilder::new()
+                        .property("name", s())
+                        .property("version", i())
+                        .property("taskToDomain", ObjectBuilder::new()),
+                )
                 .property("joinOn", ArrayBuilder::new().items(s()))
-                .property("forkTasks", ArrayBuilder::new().items(
+                .property(
+                    "forkTasks",
+                    ArrayBuilder::new().items(ArrayBuilder::new().items(sref("WorkflowTask"))),
+                )
+                .property(
+                    "decisionCases",
+                    ObjectBuilder::new().description(Some("Map of case value to task list")),
+                )
+                .property(
+                    "defaultCase",
                     ArrayBuilder::new().items(sref("WorkflowTask")),
-                ))
-                .property("decisionCases", ObjectBuilder::new().description(Some("Map of case value to task list")))
-                .property("defaultCase", ArrayBuilder::new().items(sref("WorkflowTask")))
+                )
                 .property("caseExpression", s())
                 .property("caseValueParam", s())
                 .property("loopCondition", s())
@@ -1472,19 +1516,32 @@ pub fn build_openapi() -> utoipa::openapi::OpenApi {
                 .property("name", s())
                 .required("name")
                 .property("description", s())
-                .property("version", i().description(Some("Version number (default: 1)")))
+                .property(
+                    "version",
+                    i().description(Some("Version number (default: 1)")),
+                )
                 .property("tasks", ArrayBuilder::new().items(sref("WorkflowTask")))
                 .required("tasks")
                 .property("inputParameters", ArrayBuilder::new().items(s()))
-                .property("outputParameters", ObjectBuilder::new().description(Some("Map of output parameter name to expression")))
-                .property("failureWorkflow", s().description(Some("Workflow to run on failure")))
+                .property(
+                    "outputParameters",
+                    ObjectBuilder::new()
+                        .description(Some("Map of output parameter name to expression")),
+                )
+                .property(
+                    "failureWorkflow",
+                    s().description(Some("Workflow to run on failure")),
+                )
                 .property("schemaVersion", i())
                 .property("restartable", b())
                 .property("workflowStatusListenerEnabled", b())
                 .property("ownerEmail", s())
                 .property("timeoutPolicy", sref("TimeoutPolicy"))
                 .property("timeoutSeconds", i())
-                .property("variables", ObjectBuilder::new().description(Some("Workflow-level variables")))
+                .property(
+                    "variables",
+                    ObjectBuilder::new().description(Some("Workflow-level variables")),
+                )
                 .property("inputTemplate", ObjectBuilder::new())
                 .property("ownerApp", s())
                 .property("createTime", i())
@@ -1492,7 +1549,6 @@ pub fn build_openapi() -> utoipa::openapi::OpenApi {
                 .property("createdBy", s())
                 .property("updatedBy", s()),
         )
-
         // ── Workflow Execution ──
         .schema(
             "Workflow",
@@ -1505,8 +1561,14 @@ pub fn build_openapi() -> utoipa::openapi::OpenApi {
                 .property("workflowVersion", i())
                 .property("status", sref("WorkflowStatus"))
                 .required("status")
-                .property("input", ObjectBuilder::new().description(Some("Workflow input data")))
-                .property("output", ObjectBuilder::new().description(Some("Workflow output data")))
+                .property(
+                    "input",
+                    ObjectBuilder::new().description(Some("Workflow input data")),
+                )
+                .property(
+                    "output",
+                    ObjectBuilder::new().description(Some("Workflow output data")),
+                )
                 .property("tasks", ArrayBuilder::new().items(sref("TaskResult")))
                 .property("correlationId", s())
                 .property("startTime", i().description(Some("Epoch milliseconds")))
@@ -1535,11 +1597,23 @@ pub fn build_openapi() -> utoipa::openapi::OpenApi {
                 .description(Some("Request to start a new workflow"))
                 .property("name", s().description(Some("Workflow definition name")))
                 .required("name")
-                .property("version", i().description(Some("Workflow version (default: 1)")))
-                .property("input", ObjectBuilder::new().description(Some("Workflow input data as JSON object")))
-                .property("correlationId", s().description(Some("User-supplied correlation ID")))
+                .property(
+                    "version",
+                    i().description(Some("Workflow version (default: 1)")),
+                )
+                .property(
+                    "input",
+                    ObjectBuilder::new().description(Some("Workflow input data as JSON object")),
+                )
+                .property(
+                    "correlationId",
+                    s().description(Some("User-supplied correlation ID")),
+                )
                 .property("priority", i().description(Some("Priority (default: 0)")))
-                .property("taskToDomain", ObjectBuilder::new().description(Some("Map of task ref name to domain")))
+                .property(
+                    "taskToDomain",
+                    ObjectBuilder::new().description(Some("Map of task ref name to domain")),
+                )
                 .property("workflowDef", sref("WorkflowDef"))
                 .property("createdBy", s())
                 .property("idempotencyKey", s())
@@ -1562,7 +1636,6 @@ pub fn build_openapi() -> utoipa::openapi::OpenApi {
                 .property("taskInput", ObjectBuilder::new())
                 .property("taskOutput", ObjectBuilder::new()),
         )
-
         // ── Task Definition ──
         .schema(
             "TaskDef",
@@ -1571,12 +1644,24 @@ pub fn build_openapi() -> utoipa::openapi::OpenApi {
                 .property("name", s())
                 .required("name")
                 .property("description", s())
-                .property("retryCount", i().description(Some("Number of retries (default: 3)")))
+                .property(
+                    "retryCount",
+                    i().description(Some("Number of retries (default: 3)")),
+                )
                 .property("retryLogic", sref("RetryLogic"))
-                .property("retryDelaySeconds", i().description(Some("Delay between retries (default: 60)")))
-                .property("timeoutSeconds", i().description(Some("Task timeout in seconds (default: 3600)")))
+                .property(
+                    "retryDelaySeconds",
+                    i().description(Some("Delay between retries (default: 60)")),
+                )
+                .property(
+                    "timeoutSeconds",
+                    i().description(Some("Task timeout in seconds (default: 3600)")),
+                )
                 .property("timeoutPolicy", sref("TaskTimeoutPolicy"))
-                .property("responseTimeoutSeconds", i().description(Some("Worker response timeout (default: 600)")))
+                .property(
+                    "responseTimeoutSeconds",
+                    i().description(Some("Worker response timeout (default: 600)")),
+                )
                 .property("concurrentExecLimit", i())
                 .property("inputKeys", ArrayBuilder::new().items(s()))
                 .property("outputKeys", ArrayBuilder::new().items(s()))
@@ -1594,7 +1679,6 @@ pub fn build_openapi() -> utoipa::openapi::OpenApi {
                 .property("updatedBy", s())
                 .property("enforceSchema", b()),
         )
-
         // ── Task Execution ──
         .schema(
             "TaskResult",
@@ -1609,8 +1693,14 @@ pub fn build_openapi() -> utoipa::openapi::OpenApi {
                 .property("referenceTaskName", s())
                 .property("status", sref("TaskStatus"))
                 .required("status")
-                .property("inputData", ObjectBuilder::new().description(Some("Task input data")))
-                .property("outputData", ObjectBuilder::new().description(Some("Task output data")))
+                .property(
+                    "inputData",
+                    ObjectBuilder::new().description(Some("Task input data")),
+                )
+                .property(
+                    "outputData",
+                    ObjectBuilder::new().description(Some("Task output data")),
+                )
                 .property("reasonForIncompletion", s())
                 .property("scheduledTime", i())
                 .property("startTime", i())
@@ -1643,7 +1733,10 @@ pub fn build_openapi() -> utoipa::openapi::OpenApi {
                 .required("workflowInstanceId")
                 .property("status", sref("TaskStatus"))
                 .required("status")
-                .property("outputData", ObjectBuilder::new().description(Some("Task output data")))
+                .property(
+                    "outputData",
+                    ObjectBuilder::new().description(Some("Task output data")),
+                )
                 .property("reasonForIncompletion", s())
                 .property("callbackAfterSeconds", i())
                 .property("workerId", s())
@@ -1671,7 +1764,10 @@ pub fn build_openapi() -> utoipa::openapi::OpenApi {
                 .property("taskDefName", s())
                 .property("referenceTaskName", s())
                 .property("status", sref("TaskStatus"))
-                .property("inputData", ObjectBuilder::new().description(Some("Task input data")))
+                .property(
+                    "inputData",
+                    ObjectBuilder::new().description(Some("Task input data")),
+                )
                 .property("scheduledTime", i())
                 .property("startTime", i())
                 .property("callbackAfterSeconds", i())
@@ -1687,38 +1783,61 @@ pub fn build_openapi() -> utoipa::openapi::OpenApi {
                 .property("workerId", s())
                 .property("lastPollTime", i()),
         )
-
         // ── Event Handler ──
         .schema(
             "EventAction",
             ObjectBuilder::new()
                 .description(Some("Action to execute when an event is received"))
-                .property("action", ObjectBuilder::new()
-                    .schema_type(SchemaType::Type(Type::String))
-                    .enum_values(Some(["start_workflow", "complete_task", "fail_task", "terminate_workflow", "update_workflow_variables"])))
-                .property("startWorkflow", ObjectBuilder::new()
-                    .property("name", s())
-                    .property("version", i())
-                    .property("correlationId", s())
-                    .property("input", ObjectBuilder::new())
-                    .property("taskToDomain", ObjectBuilder::new()))
-                .property("completeTask", ObjectBuilder::new()
-                    .property("workflowId", s())
-                    .property("taskRefName", s())
-                    .property("output", ObjectBuilder::new())
-                    .property("taskId", s()))
-                .property("failTask", ObjectBuilder::new()
-                    .property("workflowId", s())
-                    .property("taskRefName", s())
-                    .property("output", ObjectBuilder::new())
-                    .property("taskId", s()))
-                .property("terminateWorkflow", ObjectBuilder::new()
-                    .property("workflowId", s())
-                    .property("terminationReason", s()))
-                .property("updateWorkflowVariables", ObjectBuilder::new()
-                    .property("workflowId", s())
-                    .property("variables", ObjectBuilder::new())
-                    .property("appendArray", b()))
+                .property(
+                    "action",
+                    ObjectBuilder::new()
+                        .schema_type(SchemaType::Type(Type::String))
+                        .enum_values(Some([
+                            "start_workflow",
+                            "complete_task",
+                            "fail_task",
+                            "terminate_workflow",
+                            "update_workflow_variables",
+                        ])),
+                )
+                .property(
+                    "startWorkflow",
+                    ObjectBuilder::new()
+                        .property("name", s())
+                        .property("version", i())
+                        .property("correlationId", s())
+                        .property("input", ObjectBuilder::new())
+                        .property("taskToDomain", ObjectBuilder::new()),
+                )
+                .property(
+                    "completeTask",
+                    ObjectBuilder::new()
+                        .property("workflowId", s())
+                        .property("taskRefName", s())
+                        .property("output", ObjectBuilder::new())
+                        .property("taskId", s()),
+                )
+                .property(
+                    "failTask",
+                    ObjectBuilder::new()
+                        .property("workflowId", s())
+                        .property("taskRefName", s())
+                        .property("output", ObjectBuilder::new())
+                        .property("taskId", s()),
+                )
+                .property(
+                    "terminateWorkflow",
+                    ObjectBuilder::new()
+                        .property("workflowId", s())
+                        .property("terminationReason", s()),
+                )
+                .property(
+                    "updateWorkflowVariables",
+                    ObjectBuilder::new()
+                        .property("workflowId", s())
+                        .property("variables", ObjectBuilder::new())
+                        .property("appendArray", b()),
+                )
                 .property("expandInlineJson", b()),
         )
         .schema(
@@ -1727,15 +1846,23 @@ pub fn build_openapi() -> utoipa::openapi::OpenApi {
                 .description(Some("Event handler definition"))
                 .property("name", s())
                 .required("name")
-                .property("event", s().description(Some("Event source (e.g., conductor:workflow_name:status)")))
+                .property(
+                    "event",
+                    s().description(Some("Event source (e.g., conductor:workflow_name:status)")),
+                )
                 .required("event")
-                .property("condition", s().description(Some("ECMAScript expression to evaluate")))
+                .property(
+                    "condition",
+                    s().description(Some("ECMAScript expression to evaluate")),
+                )
                 .property("actions", ArrayBuilder::new().items(sref("EventAction")))
                 .required("actions")
-                .property("active", b().description(Some("Whether handler is active (default: true)")))
+                .property(
+                    "active",
+                    b().description(Some("Whether handler is active (default: true)")),
+                )
                 .property("evaluatorType", s()),
         )
-
         // ── Search Results ──
         .schema(
             "WorkflowSummary",
@@ -1786,28 +1913,39 @@ pub fn build_openapi() -> utoipa::openapi::OpenApi {
             "SearchResultWorkflowSummary",
             ObjectBuilder::new()
                 .description(Some("Paginated search result for workflows"))
-                .property("totalHits", i().description(Some("Total number of matching results")))
+                .property(
+                    "totalHits",
+                    i().description(Some("Total number of matching results")),
+                )
                 .required("totalHits")
-                .property("results", ArrayBuilder::new().items(sref("WorkflowSummary")))
+                .property(
+                    "results",
+                    ArrayBuilder::new().items(sref("WorkflowSummary")),
+                )
                 .required("results"),
         )
         .schema(
             "SearchResultTaskSummary",
             ObjectBuilder::new()
                 .description(Some("Paginated search result for tasks"))
-                .property("totalHits", i().description(Some("Total number of matching results")))
+                .property(
+                    "totalHits",
+                    i().description(Some("Total number of matching results")),
+                )
                 .required("totalHits")
                 .property("results", ArrayBuilder::new().items(sref("TaskSummary")))
                 .required("results"),
         )
-
         // ── Bulk Response ──
         .schema(
             "BulkResponse",
             ObjectBuilder::new()
                 .description(Some("Response from bulk operations"))
-                .property("bulkErrorResults", ObjectBuilder::new()
-                    .description(Some("Map of failed workflow ID to error message")))
+                .property(
+                    "bulkErrorResults",
+                    ObjectBuilder::new()
+                        .description(Some("Map of failed workflow ID to error message")),
+                )
                 .property("bulkSuccessfulResults", ArrayBuilder::new().items(s())),
         )
         .build();

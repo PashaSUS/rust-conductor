@@ -1,7 +1,9 @@
-use actix_web::{web, HttpResponse};
+use actix_web::{HttpResponse, web};
 
 use crate::engine::WorkflowEngine;
-use crate::models::{BulkResponse, InstantiateTemplateRequest, TaskDef, WorkflowDef, WorkflowTemplate};
+use crate::models::{
+    BulkResponse, InstantiateTemplateRequest, TaskDef, WorkflowDef, WorkflowTemplate,
+};
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(
@@ -26,7 +28,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .route("/template", web::get().to(list_templates))
             .route("/template/{name}", web::get().to(get_template))
             .route("/template/{name}", web::delete().to(delete_template))
-            .route("/template/instantiate", web::post().to(instantiate_template)),
+            .route(
+                "/template/instantiate",
+                web::post().to(instantiate_template),
+            ),
     );
 }
 

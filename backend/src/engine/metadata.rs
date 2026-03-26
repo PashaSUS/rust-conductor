@@ -1,13 +1,16 @@
 use serde_json::Value;
 
-use super::error::EngineError;
 use super::WorkflowEngine;
+use super::error::EngineError;
 use crate::models::*;
 
 impl WorkflowEngine {
     // ── Workflow Definition CRUD ──
 
-    pub async fn register_workflow_def(&self, def: &WorkflowDef) -> Result<WorkflowDef, EngineError> {
+    pub async fn register_workflow_def(
+        &self,
+        def: &WorkflowDef,
+    ) -> Result<WorkflowDef, EngineError> {
         let json = serde_json::to_value(def).map_err(|e| {
             tracing::error!(name = %def.name, version = def.version, error = %e, "Failed to serialize workflow def");
             EngineError::Serde(e.to_string())
@@ -35,10 +38,10 @@ impl WorkflowEngine {
         version: Option<i32>,
     ) -> Result<WorkflowDef, EngineError> {
         // Check LRU cache first
-        if let Some(v) = version {
-            if let Some(cached) = self.cache_get_workflow_def(name, v) {
-                return Ok(cached);
-            }
+        if let Some(v) = version
+            && let Some(cached) = self.cache_get_workflow_def(name, v)
+        {
+            return Ok(cached);
         }
 
         let db = self.shards.read_primary();
@@ -52,14 +55,12 @@ impl WorkflowEngine {
                 .fetch_optional(db)
                 .await
             }
-            None => {
-                sqlx::query_scalar::<_, Value>(
-                    "SELECT definition FROM workflow_def WHERE name = $1 ORDER BY version DESC LIMIT 1",
-                )
-                .bind(name)
-                .fetch_optional(db)
-                .await
-            }
+            None => sqlx::query_scalar::<_, Value>(
+                "SELECT definition FROM workflow_def WHERE name = $1 ORDER BY version DESC LIMIT 1",
+            )
+            .bind(name)
+            .fetch_optional(db)
+            .await,
         }
         .map_err(|e| EngineError::Database(e.to_string()))?;
 
@@ -95,13 +96,12 @@ impl WorkflowEngine {
     }
 
     pub async fn delete_workflow_def(&self, name: &str, version: i32) -> Result<(), EngineError> {
-        let result =
-            sqlx::query("DELETE FROM workflow_def WHERE name = $1 AND version = $2")
-                .bind(name)
-                .bind(version)
-                .execute(self.shards.primary())
-                .await
-                .map_err(|e| EngineError::Database(e.to_string()))?;
+        let result = sqlx::query("DELETE FROM workflow_def WHERE name = $1 AND version = $2")
+            .bind(name)
+            .bind(version)
+            .execute(self.shards.primary())
+            .await
+            .map_err(|e| EngineError::Database(e.to_string()))?;
 
         if result.rows_affected() == 0 {
             return Err(EngineError::NotFound(format!(
@@ -142,16 +142,14 @@ impl WorkflowEngine {
         }
 
         let db = self.shards.read_primary();
-        let row = sqlx::query_scalar::<_, Value>(
-            "SELECT definition FROM task_def WHERE name = $1",
-        )
-        .bind(name)
-        .fetch_optional(db)
-        .await
-        .map_err(|e| {
-            tracing::error!(name = %name, error = %e, "DB error fetching task def");
-            EngineError::Database(e.to_string())
-        })?;
+        let row = sqlx::query_scalar::<_, Value>("SELECT definition FROM task_def WHERE name = $1")
+            .bind(name)
+            .fetch_optional(db)
+            .await
+            .map_err(|e| {
+                tracing::error!(name = %name, error = %e, "DB error fetching task def");
+                EngineError::Database(e.to_string())
+            })?;
 
         match row {
             Some(json) => {
@@ -170,12 +168,10 @@ impl WorkflowEngine {
     }
 
     pub async fn list_task_defs(&self) -> Result<Vec<TaskDef>, EngineError> {
-        let rows = sqlx::query_scalar::<_, Value>(
-            "SELECT definition FROM task_def ORDER BY name",
-        )
-        .fetch_all(self.shards.read_primary())
-        .await
-        .map_err(|e| EngineError::Database(e.to_string()))?;
+        let rows = sqlx::query_scalar::<_, Value>("SELECT definition FROM task_def ORDER BY name")
+            .fetch_all(self.shards.read_primary())
+            .await
+            .map_err(|e| EngineError::Database(e.to_string()))?;
 
         rows.into_iter()
             .map(|r| serde_json::from_value(r).map_err(|e| EngineError::Serde(e.to_string())))
@@ -198,7 +194,10 @@ impl WorkflowEngine {
 
     // ── Workflow Template CRUD ──
 
-    pub async fn register_template(&self, tmpl: &WorkflowTemplate) -> Result<WorkflowTemplate, EngineError> {
+    pub async fn register_template(
+        &self,
+        tmpl: &WorkflowTemplate,
+    ) -> Result<WorkflowTemplate, EngineError> {
         let json = serde_json::to_value(tmpl).map_err(|e| EngineError::Serde(e.to_string()))?;
         sqlx::query(
             "INSERT INTO workflow_template (name, definition) VALUES ($1, $2)
@@ -222,7 +221,9 @@ impl WorkflowEngine {
         .map_err(|e| EngineError::Database(e.to_string()))?;
 
         match row {
-            Some(json) => serde_json::from_value(json).map_err(|e| EngineError::Serde(e.to_string())),
+            Some(json) => {
+                serde_json::from_value(json).map_err(|e| EngineError::Serde(e.to_string()))
+            }
             None => Err(EngineError::NotFound(format!("Template not found: {name}"))),
         }
     }
@@ -254,7 +255,10 @@ impl WorkflowEngine {
     }
 
     /// Instantiate a template: replace parameter placeholders and start.
-    pub async fn instantiate_template(&self, req: &InstantiateTemplateRequest) -> Result<String, EngineError> {
+    pub async fn instantiate_template(
+        &self,
+        req: &InstantiateTemplateRequest,
+    ) -> Result<String, EngineError> {
         let tmpl = self.get_template(&req.template_name).await?;
         let mut def_json = serde_json::to_string(&tmpl.workflow_def)
             .map_err(|e| EngineError::Serde(e.to_string()))?;
@@ -269,8 +273,9 @@ impl WorkflowEngine {
             def_json = def_json.replace(&placeholder, &replacement);
         }
 
-        let resolved_def: WorkflowDef = serde_json::from_str(&def_json)
-            .map_err(|e| EngineError::Serde(format!("Template parameter resolution failed: {e}")))?;
+        let resolved_def: WorkflowDef = serde_json::from_str(&def_json).map_err(|e| {
+            EngineError::Serde(format!("Template parameter resolution failed: {e}"))
+        })?;
 
         // Register the resolved def (auto-version) and start
         let _ = self.register_workflow_def(&resolved_def).await?;

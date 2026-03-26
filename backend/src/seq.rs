@@ -7,10 +7,10 @@
 mod inner {
     use std::fmt;
     use tokio::sync::mpsc;
-    use tracing::field::{Field, Visit};
     use tracing::Subscriber;
-    use tracing_subscriber::layer::Context;
+    use tracing::field::{Field, Visit};
     use tracing_subscriber::Layer;
+    use tracing_subscriber::layer::Context;
 
     /// How many events we buffer before the oldest are dropped.
     const CHANNEL_CAPACITY: usize = 8192;
@@ -66,7 +66,11 @@ mod inner {
 
             for (k, v) in &visitor.fields {
                 let escaped_val = serde_json::to_string(v).unwrap_or_else(|_| "\"\"".into());
-                clef.push_str(&format!(r#","{}":"{}""#, k, v.replace('\\', "\\\\").replace('"', "\\\"")));
+                clef.push_str(&format!(
+                    r#","{}":"{}""#,
+                    k,
+                    v.replace('\\', "\\\\").replace('"', "\\\"")
+                ));
                 let _ = escaped_val; // use escaped_val for complex values
             }
 
@@ -98,29 +102,29 @@ mod inner {
             if field.name() == "message" {
                 self.message = Some(value.to_string());
             } else {
-                self.fields.push((field.name().to_string(), value.to_string()));
+                self.fields
+                    .push((field.name().to_string(), value.to_string()));
             }
         }
 
         fn record_i64(&mut self, field: &Field, value: i64) {
-            self.fields.push((field.name().to_string(), value.to_string()));
+            self.fields
+                .push((field.name().to_string(), value.to_string()));
         }
 
         fn record_u64(&mut self, field: &Field, value: u64) {
-            self.fields.push((field.name().to_string(), value.to_string()));
+            self.fields
+                .push((field.name().to_string(), value.to_string()));
         }
 
         fn record_bool(&mut self, field: &Field, value: bool) {
-            self.fields.push((field.name().to_string(), value.to_string()));
+            self.fields
+                .push((field.name().to_string(), value.to_string()));
         }
     }
 
     /// Background loop: drain events and POST to Seq in batches.
-    async fn flush_loop(
-        mut rx: mpsc::Receiver<String>,
-        base_url: String,
-        api_key: Option<String>,
-    ) {
+    async fn flush_loop(mut rx: mpsc::Receiver<String>, base_url: String, api_key: Option<String>) {
         let url = format!("{}/api/events/raw", base_url.trim_end_matches('/'));
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(5))

@@ -4,15 +4,25 @@ use std::collections::HashMap;
 
 use super::common::SchemaDef;
 
-//  Defaults 
+//  Defaults
 
-fn default_retry_count() -> i32 { 3 }
-fn default_retry_delay() -> i32 { 60 }
-fn default_timeout() -> i64 { 3600 }
-fn default_response_timeout() -> i64 { 600 }
-fn default_backoff() -> i32 { 1 }
+fn default_retry_count() -> i32 {
+    3
+}
+fn default_retry_delay() -> i32 {
+    60
+}
+fn default_timeout() -> i64 {
+    3600
+}
+fn default_response_timeout() -> i64 {
+    600
+}
+fn default_backoff() -> i32 {
+    1
+}
 
-//  Task Definition 
+//  Task Definition
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -100,7 +110,7 @@ pub enum TaskTimeoutPolicy {
     AlertOnly,
 }
 
-//  Runtime Task 
+//  Runtime Task
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -222,7 +232,7 @@ impl std::fmt::Display for TaskStatus {
     }
 }
 
-//  Task Update Request 
+//  Task Update Request
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -258,7 +268,7 @@ pub struct TaskExecLog {
     pub created_time: Option<i64>,
 }
 
-//  Poll / Queue 
+//  Poll / Queue
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

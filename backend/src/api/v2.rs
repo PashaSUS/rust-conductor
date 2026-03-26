@@ -1,4 +1,4 @@
-use actix_web::{web, HttpResponse, HttpRequest};
+use actix_web::{HttpRequest, HttpResponse, web};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::time::Duration;
@@ -16,7 +16,10 @@ pub fn configure_v2(cfg: &mut web::ServiceConfig) {
             .route("/workflow/{workflowId}", web::get().to(get_workflow_v2))
             .route("/workflow/search", web::get().to(search_workflows_v2))
             .route("/metadata/workflow", web::get().to(list_workflow_defs_v2))
-            .route("/metadata/workflow/{name}", web::get().to(get_workflow_def_v2))
+            .route(
+                "/metadata/workflow/{name}",
+                web::get().to(get_workflow_def_v2),
+            )
             .route("/metadata/taskdefs", web::get().to(list_task_defs_v2))
             .route("/tasks/poll/{taskType}", web::get().to(poll_task_v2))
             .route("/tasks/poll/long/{taskType}", web::get().to(long_poll_task)),
@@ -119,12 +122,11 @@ async fn get_workflow_def_v2(
     // #167 — Conditional requests: ETag support
     let etag = compute_etag(&def);
 
-    if let Some(if_none_match) = req.headers().get("If-None-Match") {
-        if let Ok(val) = if_none_match.to_str() {
-            if val.trim_matches('"') == etag.trim_matches('"') {
-                return Ok(HttpResponse::NotModified().finish());
-            }
-        }
+    if let Some(if_none_match) = req.headers().get("If-None-Match")
+        && let Ok(val) = if_none_match.to_str()
+        && val.trim_matches('"') == etag.trim_matches('"')
+    {
+        return Ok(HttpResponse::NotModified().finish());
     }
 
     Ok(HttpResponse::Ok()
@@ -287,12 +289,10 @@ async fn execute_batch_operation(
                 Err(e) => Err(e.to_string()),
             }
         }
-        ("GET", p) if p.starts_with("workflow/stats") => {
-            match engine.workflow_stats().await {
-                Ok(s) => Ok(serde_json::to_value(s).unwrap_or(Value::Null)),
-                Err(e) => Err(e.to_string()),
-            }
-        }
+        ("GET", p) if p.starts_with("workflow/stats") => match engine.workflow_stats().await {
+            Ok(s) => Ok(serde_json::to_value(s).unwrap_or(Value::Null)),
+            Err(e) => Err(e.to_string()),
+        },
         ("GET", p) if p.starts_with("workflow/") => {
             let wf_id = p.trim_start_matches("workflow/");
             match engine.get_workflow(wf_id).await {
@@ -313,24 +313,18 @@ async fn execute_batch_operation(
                 Err("Missing request body".to_string())
             }
         }
-        ("GET", "metadata/workflow") => {
-            match engine.list_workflow_defs().await {
-                Ok(defs) => Ok(serde_json::to_value(defs).unwrap_or(Value::Null)),
-                Err(e) => Err(e.to_string()),
-            }
-        }
-        ("GET", "metadata/taskdefs") => {
-            match engine.list_task_defs().await {
-                Ok(defs) => Ok(serde_json::to_value(defs).unwrap_or(Value::Null)),
-                Err(e) => Err(e.to_string()),
-            }
-        }
-        ("GET", "tasks/queue/sizes") => {
-            match engine.get_queue_sizes().await {
-                Ok(s) => Ok(serde_json::to_value(s).unwrap_or(Value::Null)),
-                Err(e) => Err(e.to_string()),
-            }
-        }
+        ("GET", "metadata/workflow") => match engine.list_workflow_defs().await {
+            Ok(defs) => Ok(serde_json::to_value(defs).unwrap_or(Value::Null)),
+            Err(e) => Err(e.to_string()),
+        },
+        ("GET", "metadata/taskdefs") => match engine.list_task_defs().await {
+            Ok(defs) => Ok(serde_json::to_value(defs).unwrap_or(Value::Null)),
+            Err(e) => Err(e.to_string()),
+        },
+        ("GET", "tasks/queue/sizes") => match engine.get_queue_sizes().await {
+            Ok(s) => Ok(serde_json::to_value(s).unwrap_or(Value::Null)),
+            Err(e) => Err(e.to_string()),
+        },
         _ => Err(format!("Unsupported batch operation: {} {}", method, path)),
     };
 

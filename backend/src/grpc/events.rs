@@ -1,10 +1,10 @@
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
-use crate::engine::WorkflowEngine;
+use super::metadata::engine_err_to_status;
 use super::pb;
 use super::proto_conv;
-use super::metadata::engine_err_to_status;
+use crate::engine::WorkflowEngine;
 
 pub struct EventServiceImpl {
     engine: Arc<WorkflowEngine>,
@@ -52,7 +52,10 @@ impl pb::event_service_server::EventService for EventServiceImpl {
             .await
             .map_err(engine_err_to_status)?;
         Ok(Response::new(pb::ListEventHandlersResponse {
-            event_handlers: handlers.iter().map(proto_conv::event_handler_to_proto).collect(),
+            event_handlers: handlers
+                .iter()
+                .map(proto_conv::event_handler_to_proto)
+                .collect(),
         }))
     }
 
@@ -67,7 +70,10 @@ impl pb::event_service_server::EventService for EventServiceImpl {
             .await
             .map_err(engine_err_to_status)?;
         Ok(Response::new(pb::ListEventHandlersResponse {
-            event_handlers: handlers.iter().map(proto_conv::event_handler_to_proto).collect(),
+            event_handlers: handlers
+                .iter()
+                .map(proto_conv::event_handler_to_proto)
+                .collect(),
         }))
     }
 

@@ -1,4 +1,4 @@
-use actix_web::{web, HttpRequest, HttpResponse};
+use actix_web::{HttpRequest, HttpResponse, web};
 use actix_ws::Message;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -37,6 +37,7 @@ enum WsServerMessage {
         task_count: usize,
         output: serde_json::Value,
     },
+    #[allow(dead_code)]
     TaskUpdate {
         task_id: String,
         task_type: String,
@@ -142,7 +143,10 @@ async fn send_workflow_status(
             let json = serde_json::to_string(&msg).unwrap_or_default();
             let _ = session.text(json).await;
 
-            matches!(status.as_str(), "COMPLETED" | "FAILED" | "TERMINATED" | "TIMED_OUT")
+            matches!(
+                status.as_str(),
+                "COMPLETED" | "FAILED" | "TERMINATED" | "TIMED_OUT"
+            )
         }
         Err(e) => {
             let msg = WsServerMessage::Error {

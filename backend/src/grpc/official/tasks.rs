@@ -1,10 +1,10 @@
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
+use super::pb;
 use crate::engine::WorkflowEngine;
 use crate::grpc::metadata::engine_err_to_status;
 use crate::grpc::proto_conv;
-use super::pb;
 
 pub struct OfficialTaskServiceImpl {
     engine: Arc<WorkflowEngine>,
@@ -60,7 +60,10 @@ impl pb::task_service_server::TaskService for OfficialTaskServiceImpl {
             .await
             .map_err(engine_err_to_status)?;
         Ok(Response::new(pb::OfBatchPollResponse {
-            tasks: tasks.into_iter().map(proto_conv::poll_task_to_official).collect(),
+            tasks: tasks
+                .into_iter()
+                .map(proto_conv::poll_task_to_official)
+                .collect(),
         }))
     }
 
@@ -101,7 +104,9 @@ impl pb::task_service_server::TaskService for OfficialTaskServiceImpl {
             .ack_task(&req.task_id, opt(&req.worker_id))
             .await
             .map_err(engine_err_to_status)?;
-        Ok(Response::new(pb::OfAckTaskResponse { acknowledged: acked }))
+        Ok(Response::new(pb::OfAckTaskResponse {
+            acknowledged: acked,
+        }))
     }
 
     async fn add_log(
@@ -133,7 +138,9 @@ impl pb::task_service_server::TaskService for OfficialTaskServiceImpl {
                 created_time: l.created_time.unwrap_or(0),
             })
             .collect();
-        Ok(Response::new(pb::OfGetTaskLogsResponse { logs: proto_logs }))
+        Ok(Response::new(pb::OfGetTaskLogsResponse {
+            logs: proto_logs,
+        }))
     }
 
     async fn search(
@@ -143,19 +150,16 @@ impl pb::task_service_server::TaskService for OfficialTaskServiceImpl {
         let req = request.into_inner();
         let result = self
             .engine
-            .search_tasks(
-                None,
-                None,
-                None,
-                opt(&req.free_text),
-                req.start,
-                req.size,
-            )
+            .search_tasks(None, None, None, opt(&req.free_text), req.start, req.size)
             .await
             .map_err(engine_err_to_status)?;
         Ok(Response::new(pb::OfSearchTasksResponse {
             total_hits: result.total_hits,
-            results: result.results.iter().map(proto_conv::task_summary_to_official).collect(),
+            results: result
+                .results
+                .iter()
+                .map(proto_conv::task_summary_to_official)
+                .collect(),
         }))
     }
 

@@ -1,9 +1,9 @@
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
-use crate::engine::WorkflowEngine;
 use super::pb;
 use super::proto_conv;
+use crate::engine::WorkflowEngine;
 
 pub struct MetadataServiceImpl {
     engine: Arc<WorkflowEngine>,
@@ -21,7 +21,9 @@ impl pb::metadata_service_server::MetadataService for MetadataServiceImpl {
         &self,
         request: Request<pb::RegisterWorkflowDefRequest>,
     ) -> Result<Response<pb::Empty>, Status> {
-        let pb_def = request.into_inner().workflow_def
+        let pb_def = request
+            .into_inner()
+            .workflow_def
             .ok_or_else(|| Status::invalid_argument("Missing workflow_def"))?;
         let def = proto_conv::workflow_def_from_proto(&pb_def);
         self.engine
@@ -51,7 +53,11 @@ impl pb::metadata_service_server::MetadataService for MetadataServiceImpl {
         request: Request<pb::GetWorkflowDefRequest>,
     ) -> Result<Response<pb::WorkflowDefPb>, Status> {
         let req = request.into_inner();
-        let version = if req.version == 0 { None } else { Some(req.version) };
+        let version = if req.version == 0 {
+            None
+        } else {
+            Some(req.version)
+        };
         let def = self
             .engine
             .get_workflow_def(&req.name, version)

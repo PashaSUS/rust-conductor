@@ -1,10 +1,10 @@
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
-use crate::engine::WorkflowEngine;
-use super::pb;
 use super::metadata::engine_err_to_status;
+use super::pb;
 use super::proto_conv;
+use crate::engine::WorkflowEngine;
 
 pub struct WorkflowServiceImpl {
     engine: Arc<WorkflowEngine>,
@@ -27,8 +27,14 @@ impl pb::workflow_service_server::WorkflowService for WorkflowServiceImpl {
         request: Request<pb::StartWorkflowRequest>,
     ) -> Result<Response<pb::StartWorkflowResponse>, Status> {
         let req = proto_conv::start_workflow_from_proto(request.into_inner());
-        let wf_id = self.engine.start_workflow(&req).await.map_err(engine_err_to_status)?;
-        Ok(Response::new(pb::StartWorkflowResponse { workflow_id: wf_id }))
+        let wf_id = self
+            .engine
+            .start_workflow(&req)
+            .await
+            .map_err(engine_err_to_status)?;
+        Ok(Response::new(pb::StartWorkflowResponse {
+            workflow_id: wf_id,
+        }))
     }
 
     async fn get_workflow(
@@ -122,7 +128,9 @@ impl pb::workflow_service_server::WorkflowService for WorkflowServiceImpl {
             .rerun_workflow(&inner.workflow_id, &req)
             .await
             .map_err(engine_err_to_status)?;
-        Ok(Response::new(pb::StartWorkflowResponse { workflow_id: wf_id }))
+        Ok(Response::new(pb::StartWorkflowResponse {
+            workflow_id: wf_id,
+        }))
     }
 
     async fn decide_workflow(
@@ -153,7 +161,11 @@ impl pb::workflow_service_server::WorkflowService for WorkflowServiceImpl {
         &self,
         _request: Request<pb::Empty>,
     ) -> Result<Response<pb::WorkflowStatsResponse>, Status> {
-        let stats = self.engine.workflow_stats().await.map_err(engine_err_to_status)?;
+        let stats = self
+            .engine
+            .workflow_stats()
+            .await
+            .map_err(engine_err_to_status)?;
         Ok(Response::new(pb::WorkflowStatsResponse { stats }))
     }
 
@@ -176,7 +188,11 @@ impl pb::workflow_service_server::WorkflowService for WorkflowServiceImpl {
             .map_err(engine_err_to_status)?;
         Ok(Response::new(pb::WorkflowSearchResponse {
             total_hits: result.total_hits,
-            results: result.results.iter().map(proto_conv::workflow_summary_to_proto).collect(),
+            results: result
+                .results
+                .iter()
+                .map(proto_conv::workflow_summary_to_proto)
+                .collect(),
         }))
     }
 
@@ -185,14 +201,28 @@ impl pb::workflow_service_server::WorkflowService for WorkflowServiceImpl {
         request: Request<pb::GetRunningWorkflowsRequest>,
     ) -> Result<Response<pb::RunningWorkflowsResponse>, Status> {
         let req = request.into_inner();
-        let version = if req.version == 0 { None } else { Some(req.version) };
-        let start_time = if req.start_time == 0 { None } else { Some(req.start_time) };
-        let end_time = if req.end_time == 0 { None } else { Some(req.end_time) };
+        let version = if req.version == 0 {
+            None
+        } else {
+            Some(req.version)
+        };
+        let start_time = if req.start_time == 0 {
+            None
+        } else {
+            Some(req.start_time)
+        };
+        let end_time = if req.end_time == 0 {
+            None
+        } else {
+            Some(req.end_time)
+        };
         let ids = self
             .engine
             .get_running_workflows(&req.name, version, start_time, end_time)
             .await
             .map_err(engine_err_to_status)?;
-        Ok(Response::new(pb::RunningWorkflowsResponse { workflow_ids: ids }))
+        Ok(Response::new(pb::RunningWorkflowsResponse {
+            workflow_ids: ids,
+        }))
     }
 }

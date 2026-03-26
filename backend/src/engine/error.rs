@@ -1,4 +1,3 @@
-
 #[derive(Debug, thiserror::Error)]
 pub enum EngineError {
     #[error("Database error: {0}")]

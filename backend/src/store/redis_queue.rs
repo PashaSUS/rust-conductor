@@ -65,7 +65,10 @@ impl RedisTaskQueue {
             Err(e) => return Err(e.to_string()),
         }
 
-        self.known_groups.write().await.insert(task_type.to_string());
+        self.known_groups
+            .write()
+            .await
+            .insert(task_type.to_string());
         Ok(())
     }
 
@@ -158,7 +161,8 @@ impl RedisTaskQueue {
         match result {
             Ok(redis::Value::Array(streams)) => {
                 // Response: [[stream_key, [[msg_id, [field, value, ...]]]]]
-                self.extract_and_ack(&mut conn, &key, &streams, task_type).await
+                self.extract_and_ack(&mut conn, &key, &streams, task_type)
+                    .await
             }
             _ => None,
         }
@@ -200,7 +204,8 @@ impl RedisTaskQueue {
 
         match result {
             Ok(redis::Value::Array(streams)) => {
-                self.extract_batch_and_ack(&mut conn, &key, &streams, task_type).await
+                self.extract_batch_and_ack(&mut conn, &key, &streams, task_type)
+                    .await
             }
             _ => vec![],
         }
@@ -212,9 +217,7 @@ impl RedisTaskQueue {
         let pool = self.redis.random_pool();
         match pool.get().await {
             Ok(mut conn) => {
-                let res: Result<String, _> = redis::cmd("PING")
-                    .query_async(&mut *conn)
-                    .await;
+                let res: Result<String, _> = redis::cmd("PING").query_async(&mut *conn).await;
                 res.is_ok()
             }
             Err(_) => false,

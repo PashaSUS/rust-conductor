@@ -26,17 +26,24 @@ async fn start_infra() -> (
     String,
     String,
 ) {
-    let pg = Postgres::default().start().await.expect("Failed to start Postgres container");
-    let redis = Redis::default().start().await.expect("Failed to start Redis container");
-    let kafka = Kafka::default().start().await.expect("Failed to start Kafka container");
+    let pg = Postgres::default()
+        .start()
+        .await
+        .expect("Failed to start Postgres container");
+    let redis = Redis::default()
+        .start()
+        .await
+        .expect("Failed to start Redis container");
+    let kafka = Kafka::default()
+        .start()
+        .await
+        .expect("Failed to start Kafka container");
 
     let pg_port = pg.get_host_port_ipv4(5432).await.expect("Postgres port");
     let redis_port = redis.get_host_port_ipv4(6379).await.expect("Redis port");
     let kafka_port = kafka.get_host_port_ipv4(9093).await.expect("Kafka port");
 
-    let pg_url = format!(
-        "postgres://postgres:postgres@127.0.0.1:{pg_port}/postgres"
-    );
+    let pg_url = format!("postgres://postgres:postgres@127.0.0.1:{pg_port}/postgres");
     let redis_url = format!("redis://127.0.0.1:{redis_port}");
     let kafka_brokers = format!("127.0.0.1:{kafka_port}");
 
@@ -81,10 +88,10 @@ async fn kafka_produce_consume_roundtrip() {
     // Give Kafka a moment to fully start
     tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
+    use rdkafka::Message;
     use rdkafka::config::ClientConfig;
     use rdkafka::consumer::{Consumer, StreamConsumer};
     use rdkafka::producer::{FutureProducer, FutureRecord};
-    use rdkafka::Message;
     use std::time::Duration;
 
     // Producer
@@ -352,11 +359,13 @@ async fn workflow_task_lifecycle_in_db() {
     .expect("Complete task");
 
     // Complete workflow
-    sqlx::query("UPDATE workflow SET status = 'COMPLETED', end_time = NOW() WHERE workflow_id = $1")
-        .bind(&wf_id)
-        .execute(&pool)
-        .await
-        .expect("Complete workflow");
+    sqlx::query(
+        "UPDATE workflow SET status = 'COMPLETED', end_time = NOW() WHERE workflow_id = $1",
+    )
+    .bind(&wf_id)
+    .execute(&pool)
+    .await
+    .expect("Complete workflow");
 
     let wf_status: (String,) = sqlx::query_as("SELECT status FROM workflow WHERE workflow_id = $1")
         .bind(&wf_id)

@@ -3,7 +3,7 @@
 //! `serde_json::Value` ↔ `prost_types::Struct` is the core bridge: proto Struct
 //! fields map directly to dynamic JSON payloads without string serialization.
 
-use prost_types::{value::Kind, ListValue, Struct, Value as ProstValue};
+use prost_types::{ListValue, Struct, Value as ProstValue, value::Kind};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use tonic::Status;
@@ -40,11 +40,9 @@ pub fn prost_to_json(v: &ProstValue) -> JsonValue {
     match &v.kind {
         None | Some(Kind::NullValue(_)) => JsonValue::Null,
         Some(Kind::BoolValue(b)) => JsonValue::Bool(*b),
-        Some(Kind::NumberValue(n)) => {
-            serde_json::Number::from_f64(*n)
-                .map(JsonValue::Number)
-                .unwrap_or(JsonValue::Null)
-        }
+        Some(Kind::NumberValue(n)) => serde_json::Number::from_f64(*n)
+            .map(JsonValue::Number)
+            .unwrap_or(JsonValue::Null),
         Some(Kind::StringValue(s)) => JsonValue::String(s.clone()),
         Some(Kind::ListValue(list)) => {
             JsonValue::Array(list.values.iter().map(prost_to_json).collect())
@@ -91,7 +89,10 @@ pub fn struct_to_json(st: &Struct) -> JsonValue {
 /// Convert `HashMap<String, serde_json::Value>` to `prost_types::Struct`.
 pub fn hashmap_to_struct(m: &HashMap<String, JsonValue>) -> Struct {
     Struct {
-        fields: m.iter().map(|(k, v)| (k.clone(), json_to_prost(v))).collect(),
+        fields: m
+            .iter()
+            .map(|(k, v)| (k.clone(), json_to_prost(v)))
+            .collect(),
     }
 }
 
@@ -125,7 +126,9 @@ pub fn hashmap_to_opt_struct(m: &HashMap<String, JsonValue>) -> Option<Struct> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 pub fn json_to_prost_owned(v: JsonValue) -> ProstValue {
-    ProstValue { kind: Some(json_to_kind_owned(v)) }
+    ProstValue {
+        kind: Some(json_to_kind_owned(v)),
+    }
 }
 
 fn json_to_kind_owned(v: JsonValue) -> Kind {
@@ -138,7 +141,10 @@ fn json_to_kind_owned(v: JsonValue) -> Kind {
             values: arr.into_iter().map(json_to_prost_owned).collect(),
         }),
         JsonValue::Object(map) => Kind::StructValue(Struct {
-            fields: map.into_iter().map(|(k, v)| (k, json_to_prost_owned(v))).collect(),
+            fields: map
+                .into_iter()
+                .map(|(k, v)| (k, json_to_prost_owned(v)))
+                .collect(),
         }),
     }
 }
@@ -146,11 +152,18 @@ fn json_to_kind_owned(v: JsonValue) -> Kind {
 pub fn json_to_struct_owned(v: JsonValue) -> Struct {
     match v {
         JsonValue::Object(map) => Struct {
-            fields: map.into_iter().map(|(k, v)| (k, json_to_prost_owned(v))).collect(),
+            fields: map
+                .into_iter()
+                .map(|(k, v)| (k, json_to_prost_owned(v)))
+                .collect(),
         },
-        JsonValue::Null => Struct { fields: Default::default() },
+        JsonValue::Null => Struct {
+            fields: Default::default(),
+        },
         other => Struct {
-            fields: [("value".to_string(), json_to_prost_owned(other))].into_iter().collect(),
+            fields: [("value".to_string(), json_to_prost_owned(other))]
+                .into_iter()
+                .collect(),
         },
     }
 }
@@ -165,21 +178,28 @@ pub fn json_to_opt_struct_owned(v: JsonValue) -> Option<Struct> {
 
 pub fn hashmap_to_struct_owned(m: HashMap<String, JsonValue>) -> Struct {
     Struct {
-        fields: m.into_iter().map(|(k, v)| (k, json_to_prost_owned(v))).collect(),
+        fields: m
+            .into_iter()
+            .map(|(k, v)| (k, json_to_prost_owned(v)))
+            .collect(),
     }
 }
 
 pub fn hashmap_to_opt_struct_owned(m: HashMap<String, JsonValue>) -> Option<Struct> {
-    if m.is_empty() { None } else { Some(hashmap_to_struct_owned(m)) }
+    if m.is_empty() {
+        None
+    } else {
+        Some(hashmap_to_struct_owned(m))
+    }
 }
 
 pub fn prost_to_json_owned(v: ProstValue) -> JsonValue {
     match v.kind {
         None | Some(Kind::NullValue(_)) => JsonValue::Null,
         Some(Kind::BoolValue(b)) => JsonValue::Bool(b),
-        Some(Kind::NumberValue(n)) => {
-            serde_json::Number::from_f64(n).map(JsonValue::Number).unwrap_or(JsonValue::Null)
-        }
+        Some(Kind::NumberValue(n)) => serde_json::Number::from_f64(n)
+            .map(JsonValue::Number)
+            .unwrap_or(JsonValue::Null),
         Some(Kind::StringValue(s)) => JsonValue::String(s),
         Some(Kind::ListValue(list)) => {
             JsonValue::Array(list.values.into_iter().map(prost_to_json_owned).collect())
@@ -189,8 +209,11 @@ pub fn prost_to_json_owned(v: ProstValue) -> JsonValue {
 }
 
 pub fn struct_to_json_owned(st: Struct) -> JsonValue {
-    let map: serde_json::Map<String, JsonValue> =
-        st.fields.into_iter().map(|(k, v)| (k, prost_to_json_owned(v))).collect();
+    let map: serde_json::Map<String, JsonValue> = st
+        .fields
+        .into_iter()
+        .map(|(k, v)| (k, prost_to_json_owned(v)))
+        .collect();
     JsonValue::Object(map)
 }
 
@@ -218,7 +241,9 @@ pub fn parse_task_status(s: &str) -> Result<models::TaskStatus, Status> {
         "SCHEDULED" => Ok(models::TaskStatus::Scheduled),
         "TIMED_OUT" => Ok(models::TaskStatus::TimedOut),
         "SKIPPED" => Ok(models::TaskStatus::Skipped),
-        _ => Err(Status::invalid_argument(format!("Invalid task status: '{s}'"))),
+        _ => Err(Status::invalid_argument(format!(
+            "Invalid task status: '{s}'"
+        ))),
     }
 }
 
@@ -272,8 +297,16 @@ pub fn workflow_def_from_proto(p: &pb::WorkflowDefPb) -> models::WorkflowDef {
         variables: opt_struct_to_hashmap(&p.variables),
         input_template: opt_struct_to_hashmap(&p.input_template),
         owner_app: opt_string(&p.owner_app),
-        create_time: if p.create_time == 0 { None } else { Some(p.create_time) },
-        update_time: if p.update_time == 0 { None } else { Some(p.update_time) },
+        create_time: if p.create_time == 0 {
+            None
+        } else {
+            Some(p.create_time)
+        },
+        update_time: if p.update_time == 0 {
+            None
+        } else {
+            Some(p.update_time)
+        },
         created_by: None,
         updated_by: None,
         workflow_status_listener_sink: None,
@@ -340,7 +373,11 @@ fn workflow_task_from_proto(p: &pb::WorkflowTaskPb) -> models::WorkflowTask {
     models::WorkflowTask {
         name: p.name.clone(),
         task_reference_name: p.task_reference_name.clone(),
-        task_type: if p.r#type.is_empty() { "SIMPLE".into() } else { p.r#type.clone() },
+        task_type: if p.r#type.is_empty() {
+            "SIMPLE".into()
+        } else {
+            p.r#type.clone()
+        },
         description: opt_string(&p.description),
         input_parameters: opt_struct_to_hashmap(&p.input_parameters),
         optional: p.optional,
@@ -355,14 +392,27 @@ fn workflow_task_from_proto(p: &pb::WorkflowTaskPb) -> models::WorkflowTask {
         decision_cases: p
             .decision_cases
             .iter()
-            .map(|(k, v)| (k.clone(), v.tasks.iter().map(workflow_task_from_proto).collect()))
+            .map(|(k, v)| {
+                (
+                    k.clone(),
+                    v.tasks.iter().map(workflow_task_from_proto).collect(),
+                )
+            })
             .collect(),
-        default_case: p.default_case.iter().map(workflow_task_from_proto).collect(),
+        default_case: p
+            .default_case
+            .iter()
+            .map(workflow_task_from_proto)
+            .collect(),
         case_expression: opt_string(&p.case_expression),
         case_value_param: opt_string(&p.case_value_param),
         loop_condition: None,
         loop_over: vec![],
-        retry_count: if p.retry_count == 0 { None } else { Some(p.retry_count) },
+        retry_count: if p.retry_count == 0 {
+            None
+        } else {
+            Some(p.retry_count)
+        },
         evaluator_type: opt_string(&p.evaluator_type),
         expression: opt_string(&p.expression),
         script_expression: opt_string(&p.script_expression),
@@ -393,8 +443,16 @@ fn sub_wf_to_proto(s: &models::SubWorkflowParams) -> pb::SubWorkflowParamsPb {
 fn sub_wf_from_proto(p: &pb::SubWorkflowParamsPb) -> models::SubWorkflowParams {
     models::SubWorkflowParams {
         name: p.name.clone(),
-        version: if p.version == 0 { None } else { Some(p.version) },
-        task_to_domain: if p.task_to_domain.is_empty() { None } else { Some(p.task_to_domain.clone()) },
+        version: if p.version == 0 {
+            None
+        } else {
+            Some(p.version)
+        },
+        task_to_domain: if p.task_to_domain.is_empty() {
+            None
+        } else {
+            Some(p.task_to_domain.clone())
+        },
         idempotency_key: None,
         idempotency_strategy: None,
         priority: None,
@@ -439,19 +497,43 @@ pub fn task_def_from_proto(p: &pb::TaskDefPb) -> models::TaskDef {
         timeout_seconds: p.timeout_seconds,
         timeout_policy: Default::default(),
         response_timeout_seconds: p.response_timeout_seconds,
-        concurrent_exec_limit: if p.concurrent_exec_limit == 0 { None } else { Some(p.concurrent_exec_limit) },
+        concurrent_exec_limit: if p.concurrent_exec_limit == 0 {
+            None
+        } else {
+            Some(p.concurrent_exec_limit)
+        },
         input_keys: p.input_keys.clone(),
         output_keys: p.output_keys.clone(),
         input_template: opt_struct_to_hashmap(&p.input_template),
-        rate_limit_per_frequency: if p.rate_limit_per_frequency == 0 { None } else { Some(p.rate_limit_per_frequency) },
-        rate_limit_frequency_in_seconds: if p.rate_limit_frequency_in_seconds == 0 { None } else { Some(p.rate_limit_frequency_in_seconds) },
+        rate_limit_per_frequency: if p.rate_limit_per_frequency == 0 {
+            None
+        } else {
+            Some(p.rate_limit_per_frequency)
+        },
+        rate_limit_frequency_in_seconds: if p.rate_limit_frequency_in_seconds == 0 {
+            None
+        } else {
+            Some(p.rate_limit_frequency_in_seconds)
+        },
         owner_email: opt_string(&p.owner_email),
-        poll_timeout_seconds: if p.poll_timeout_seconds == 0 { None } else { Some(p.poll_timeout_seconds) },
+        poll_timeout_seconds: if p.poll_timeout_seconds == 0 {
+            None
+        } else {
+            Some(p.poll_timeout_seconds)
+        },
         backoff_scale_factor: p.backoff_scale_factor,
         total_timeout_seconds: None,
         owner_app: opt_string(&p.owner_app),
-        create_time: if p.create_time == 0 { None } else { Some(p.create_time) },
-        update_time: if p.update_time == 0 { None } else { Some(p.update_time) },
+        create_time: if p.create_time == 0 {
+            None
+        } else {
+            Some(p.create_time)
+        },
+        update_time: if p.update_time == 0 {
+            None
+        } else {
+            Some(p.update_time)
+        },
         created_by: None,
         updated_by: None,
         base_type: None,
@@ -476,7 +558,9 @@ pub fn start_workflow_from_proto(p: pb::StartWorkflowRequest) -> models::StartWo
         priority: p.priority,
         task_to_domain: p.task_to_domain,
         workflow_def: None,
-        external_input_payload_storage_path: opt_string_owned(p.external_input_payload_storage_path),
+        external_input_payload_storage_path: opt_string_owned(
+            p.external_input_payload_storage_path,
+        ),
         created_by: opt_string_owned(p.created_by),
         idempotency_key: opt_string_owned(p.idempotency_key),
         idempotency_strategy: None,
@@ -539,7 +623,9 @@ pub fn task_result_to_proto(t: models::TaskResult) -> pb::TaskResultPb {
 // ── TaskUpdateRequest ──
 
 #[allow(clippy::result_large_err)]
-pub fn task_update_from_proto(p: pb::UpdateTaskRequest) -> Result<models::TaskUpdateRequest, Status> {
+pub fn task_update_from_proto(
+    p: pb::UpdateTaskRequest,
+) -> Result<models::TaskUpdateRequest, Status> {
     let status = parse_task_status(&p.status)?;
     Ok(models::TaskUpdateRequest {
         task_id: p.task_id,
@@ -616,9 +702,21 @@ pub fn workflow_summary_to_proto(s: &models::WorkflowSummary) -> pb::WorkflowSum
         workflow_type: s.workflow_type.clone(),
         version: s.version,
         status: s.status.to_string(),
-        start_time: s.start_time.as_ref().and_then(|t| t.parse::<i64>().ok()).unwrap_or(0),
-        update_time: s.update_time.as_ref().and_then(|t| t.parse::<i64>().ok()).unwrap_or(0),
-        end_time: s.end_time.as_ref().and_then(|t| t.parse::<i64>().ok()).unwrap_or(0),
+        start_time: s
+            .start_time
+            .as_ref()
+            .and_then(|t| t.parse::<i64>().ok())
+            .unwrap_or(0),
+        update_time: s
+            .update_time
+            .as_ref()
+            .and_then(|t| t.parse::<i64>().ok())
+            .unwrap_or(0),
+        end_time: s
+            .end_time
+            .as_ref()
+            .and_then(|t| t.parse::<i64>().ok())
+            .unwrap_or(0),
         correlation_id: s.correlation_id.clone().unwrap_or_default(),
         reason_for_incompletion: s.reason_for_incompletion.clone().unwrap_or_default(),
         priority: s.priority,
@@ -635,11 +733,31 @@ pub fn task_summary_to_proto(s: &models::TaskSummary) -> pb::TaskSummaryPb {
         task_type: s.task_type.clone().unwrap_or_default(),
         task_def_name: s.task_def_name.clone().unwrap_or_default(),
         reference_task_name: String::new(),
-        status: s.status.as_ref().map(|st| st.to_string()).unwrap_or_default(),
-        scheduled_time: s.scheduled_time.as_ref().and_then(|t| t.parse::<i64>().ok()).unwrap_or(0),
-        start_time: s.start_time.as_ref().and_then(|t| t.parse::<i64>().ok()).unwrap_or(0),
-        end_time: s.end_time.as_ref().and_then(|t| t.parse::<i64>().ok()).unwrap_or(0),
-        update_time: s.update_time.as_ref().and_then(|t| t.parse::<i64>().ok()).unwrap_or(0),
+        status: s
+            .status
+            .as_ref()
+            .map(|st| st.to_string())
+            .unwrap_or_default(),
+        scheduled_time: s
+            .scheduled_time
+            .as_ref()
+            .and_then(|t| t.parse::<i64>().ok())
+            .unwrap_or(0),
+        start_time: s
+            .start_time
+            .as_ref()
+            .and_then(|t| t.parse::<i64>().ok())
+            .unwrap_or(0),
+        end_time: s
+            .end_time
+            .as_ref()
+            .and_then(|t| t.parse::<i64>().ok())
+            .unwrap_or(0),
+        update_time: s
+            .update_time
+            .as_ref()
+            .and_then(|t| t.parse::<i64>().ok())
+            .unwrap_or(0),
     }
 }
 
@@ -669,42 +787,31 @@ pub fn event_handler_from_proto(p: &pb::EventHandlerPb) -> models::EventHandler 
 
 fn event_action_to_proto(a: &models::EventAction) -> pb::EventActionPb {
     pb::EventActionPb {
-        action: a.action.as_ref().map(|at| format!("{:?}", at)).unwrap_or_default(),
-        start_workflow: a
-            .start_workflow
+        action: a
+            .action
             .as_ref()
-            .map(|sw| {
-                let j = serde_json::to_value(sw).unwrap_or(JsonValue::Null);
-                json_to_struct(&j)
-            }),
-        complete_task: a
-            .complete_task
-            .as_ref()
-            .map(|ct| {
-                let j = serde_json::to_value(ct).unwrap_or(JsonValue::Null);
-                json_to_struct(&j)
-            }),
-        fail_task: a
-            .fail_task
-            .as_ref()
-            .map(|ft| {
-                let j = serde_json::to_value(ft).unwrap_or(JsonValue::Null);
-                json_to_struct(&j)
-            }),
-        terminate_workflow: a
-            .terminate_workflow
-            .as_ref()
-            .map(|tw| {
-                let j = serde_json::to_value(tw).unwrap_or(JsonValue::Null);
-                json_to_struct(&j)
-            }),
-        update_workflow_variables: a
-            .update_workflow_variables
-            .as_ref()
-            .map(|uw| {
-                let j = serde_json::to_value(uw).unwrap_or(JsonValue::Null);
-                json_to_struct(&j)
-            }),
+            .map(|at| format!("{:?}", at))
+            .unwrap_or_default(),
+        start_workflow: a.start_workflow.as_ref().map(|sw| {
+            let j = serde_json::to_value(sw).unwrap_or(JsonValue::Null);
+            json_to_struct(&j)
+        }),
+        complete_task: a.complete_task.as_ref().map(|ct| {
+            let j = serde_json::to_value(ct).unwrap_or(JsonValue::Null);
+            json_to_struct(&j)
+        }),
+        fail_task: a.fail_task.as_ref().map(|ft| {
+            let j = serde_json::to_value(ft).unwrap_or(JsonValue::Null);
+            json_to_struct(&j)
+        }),
+        terminate_workflow: a.terminate_workflow.as_ref().map(|tw| {
+            let j = serde_json::to_value(tw).unwrap_or(JsonValue::Null);
+            json_to_struct(&j)
+        }),
+        update_workflow_variables: a.update_workflow_variables.as_ref().map(|uw| {
+            let j = serde_json::to_value(uw).unwrap_or(JsonValue::Null);
+            json_to_struct(&j)
+        }),
     }
 }
 
@@ -794,8 +901,16 @@ pub fn workflow_def_from_official(p: &opb::OfWorkflowDefPb) -> models::WorkflowD
         variables: opt_struct_to_hashmap(&p.variables),
         input_template: opt_struct_to_hashmap(&p.input_template),
         owner_app: opt_string(&p.owner_app),
-        create_time: if p.create_time == 0 { None } else { Some(p.create_time) },
-        update_time: if p.update_time == 0 { None } else { Some(p.update_time) },
+        create_time: if p.create_time == 0 {
+            None
+        } else {
+            Some(p.create_time)
+        },
+        update_time: if p.update_time == 0 {
+            None
+        } else {
+            Some(p.update_time)
+        },
         created_by: None,
         updated_by: None,
         workflow_status_listener_sink: None,
@@ -822,11 +937,14 @@ fn workflow_task_to_official(t: &models::WorkflowTask) -> opb::OfWorkflowTaskPb 
         input_parameters: hashmap_to_opt_struct(&t.input_parameters),
         optional: t.optional,
         start_delay: t.start_delay,
-        sub_workflow_param: t.sub_workflow_param.as_ref().map(|s| opb::OfSubWorkflowParamsPb {
-            name: s.name.clone(),
-            version: s.version.unwrap_or(0),
-            task_to_domain: s.task_to_domain.clone().unwrap_or_default(),
-        }),
+        sub_workflow_param: t
+            .sub_workflow_param
+            .as_ref()
+            .map(|s| opb::OfSubWorkflowParamsPb {
+                name: s.name.clone(),
+                version: s.version.unwrap_or(0),
+                task_to_domain: s.task_to_domain.clone().unwrap_or_default(),
+            }),
         join_on: t.join_on.clone(),
         fork_tasks: t
             .fork_tasks
@@ -847,7 +965,11 @@ fn workflow_task_to_official(t: &models::WorkflowTask) -> opb::OfWorkflowTaskPb 
                 )
             })
             .collect(),
-        default_case: t.default_case.iter().map(workflow_task_to_official).collect(),
+        default_case: t
+            .default_case
+            .iter()
+            .map(workflow_task_to_official)
+            .collect(),
         case_expression: t.case_expression.clone().unwrap_or_default(),
         case_value_param: t.case_value_param.clone().unwrap_or_default(),
         sink: t.sink.clone().unwrap_or_default(),
@@ -864,20 +986,35 @@ fn workflow_task_from_official(p: &opb::OfWorkflowTaskPb) -> models::WorkflowTas
     models::WorkflowTask {
         name: p.name.clone(),
         task_reference_name: p.task_reference_name.clone(),
-        task_type: if p.r#type.is_empty() { "SIMPLE".into() } else { p.r#type.clone() },
+        task_type: if p.r#type.is_empty() {
+            "SIMPLE".into()
+        } else {
+            p.r#type.clone()
+        },
         description: opt_string(&p.description),
         input_parameters: opt_struct_to_hashmap(&p.input_parameters),
         optional: p.optional,
         start_delay: p.start_delay,
-        sub_workflow_param: p.sub_workflow_param.as_ref().map(|s| models::SubWorkflowParams {
-            name: s.name.clone(),
-            version: if s.version == 0 { None } else { Some(s.version) },
-            task_to_domain: if s.task_to_domain.is_empty() { None } else { Some(s.task_to_domain.clone()) },
-            idempotency_key: None,
-            idempotency_strategy: None,
-            priority: None,
-            workflow_definition: None,
-        }),
+        sub_workflow_param: p
+            .sub_workflow_param
+            .as_ref()
+            .map(|s| models::SubWorkflowParams {
+                name: s.name.clone(),
+                version: if s.version == 0 {
+                    None
+                } else {
+                    Some(s.version)
+                },
+                task_to_domain: if s.task_to_domain.is_empty() {
+                    None
+                } else {
+                    Some(s.task_to_domain.clone())
+                },
+                idempotency_key: None,
+                idempotency_strategy: None,
+                priority: None,
+                workflow_definition: None,
+            }),
         join_on: p.join_on.clone(),
         fork_tasks: p
             .fork_tasks
@@ -887,14 +1024,27 @@ fn workflow_task_from_official(p: &opb::OfWorkflowTaskPb) -> models::WorkflowTas
         decision_cases: p
             .decision_cases
             .iter()
-            .map(|(k, v)| (k.clone(), v.tasks.iter().map(workflow_task_from_official).collect()))
+            .map(|(k, v)| {
+                (
+                    k.clone(),
+                    v.tasks.iter().map(workflow_task_from_official).collect(),
+                )
+            })
             .collect(),
-        default_case: p.default_case.iter().map(workflow_task_from_official).collect(),
+        default_case: p
+            .default_case
+            .iter()
+            .map(workflow_task_from_official)
+            .collect(),
         case_expression: opt_string(&p.case_expression),
         case_value_param: opt_string(&p.case_value_param),
         loop_condition: None,
         loop_over: vec![],
-        retry_count: if p.retry_count == 0 { None } else { Some(p.retry_count) },
+        retry_count: if p.retry_count == 0 {
+            None
+        } else {
+            Some(p.retry_count)
+        },
         evaluator_type: opt_string(&p.evaluator_type),
         expression: opt_string(&p.expression),
         script_expression: opt_string(&p.script_expression),
@@ -951,19 +1101,43 @@ pub fn task_def_from_official(p: &opb::OfTaskDefPb) -> models::TaskDef {
         timeout_seconds: p.timeout_seconds,
         timeout_policy: Default::default(),
         response_timeout_seconds: p.response_timeout_seconds,
-        concurrent_exec_limit: if p.concurrent_exec_limit == 0 { None } else { Some(p.concurrent_exec_limit) },
+        concurrent_exec_limit: if p.concurrent_exec_limit == 0 {
+            None
+        } else {
+            Some(p.concurrent_exec_limit)
+        },
         input_keys: p.input_keys.clone(),
         output_keys: p.output_keys.clone(),
         input_template: opt_struct_to_hashmap(&p.input_template),
-        rate_limit_per_frequency: if p.rate_limit_per_frequency == 0 { None } else { Some(p.rate_limit_per_frequency) },
-        rate_limit_frequency_in_seconds: if p.rate_limit_frequency_in_seconds == 0 { None } else { Some(p.rate_limit_frequency_in_seconds) },
+        rate_limit_per_frequency: if p.rate_limit_per_frequency == 0 {
+            None
+        } else {
+            Some(p.rate_limit_per_frequency)
+        },
+        rate_limit_frequency_in_seconds: if p.rate_limit_frequency_in_seconds == 0 {
+            None
+        } else {
+            Some(p.rate_limit_frequency_in_seconds)
+        },
         owner_email: opt_string(&p.owner_email),
-        poll_timeout_seconds: if p.poll_timeout_seconds == 0 { None } else { Some(p.poll_timeout_seconds) },
+        poll_timeout_seconds: if p.poll_timeout_seconds == 0 {
+            None
+        } else {
+            Some(p.poll_timeout_seconds)
+        },
         backoff_scale_factor: p.backoff_scale_factor,
         total_timeout_seconds: None,
         owner_app: opt_string(&p.owner_app),
-        create_time: if p.create_time == 0 { None } else { Some(p.create_time) },
-        update_time: if p.update_time == 0 { None } else { Some(p.update_time) },
+        create_time: if p.create_time == 0 {
+            None
+        } else {
+            Some(p.create_time)
+        },
+        update_time: if p.update_time == 0 {
+            None
+        } else {
+            Some(p.update_time)
+        },
         created_by: None,
         updated_by: None,
         base_type: None,
@@ -979,7 +1153,9 @@ pub fn task_def_from_official(p: &opb::OfTaskDefPb) -> models::TaskDef {
 
 // ── Official StartWorkflow ──
 
-pub fn start_workflow_from_official(p: opb::OfStartWorkflowRequest) -> models::StartWorkflowRequest {
+pub fn start_workflow_from_official(
+    p: opb::OfStartWorkflowRequest,
+) -> models::StartWorkflowRequest {
     models::StartWorkflowRequest {
         name: p.name,
         version: p.version,
@@ -988,7 +1164,9 @@ pub fn start_workflow_from_official(p: opb::OfStartWorkflowRequest) -> models::S
         priority: p.priority,
         task_to_domain: p.task_to_domain,
         workflow_def: None,
-        external_input_payload_storage_path: opt_string_owned(p.external_input_payload_storage_path),
+        external_input_payload_storage_path: opt_string_owned(
+            p.external_input_payload_storage_path,
+        ),
         created_by: opt_string_owned(p.created_by),
         idempotency_key: opt_string_owned(p.idempotency_key),
         idempotency_strategy: None,
@@ -1068,7 +1246,9 @@ pub fn poll_task_to_official(t: models::PollTask) -> opb::OfPollTaskPb {
 // ── Official TaskUpdate ──
 
 #[allow(clippy::result_large_err)]
-pub fn task_update_from_official(p: opb::OfUpdateTaskRequest) -> Result<models::TaskUpdateRequest, Status> {
+pub fn task_update_from_official(
+    p: opb::OfUpdateTaskRequest,
+) -> Result<models::TaskUpdateRequest, Status> {
     let status = parse_task_status(&p.status)?;
     Ok(models::TaskUpdateRequest {
         task_id: p.task_id,
@@ -1126,9 +1306,21 @@ pub fn workflow_summary_to_official(s: &models::WorkflowSummary) -> opb::OfWorkf
         workflow_type: s.workflow_type.clone(),
         version: s.version,
         status: s.status.to_string(),
-        start_time: s.start_time.as_ref().and_then(|t| t.parse::<i64>().ok()).unwrap_or(0),
-        update_time: s.update_time.as_ref().and_then(|t| t.parse::<i64>().ok()).unwrap_or(0),
-        end_time: s.end_time.as_ref().and_then(|t| t.parse::<i64>().ok()).unwrap_or(0),
+        start_time: s
+            .start_time
+            .as_ref()
+            .and_then(|t| t.parse::<i64>().ok())
+            .unwrap_or(0),
+        update_time: s
+            .update_time
+            .as_ref()
+            .and_then(|t| t.parse::<i64>().ok())
+            .unwrap_or(0),
+        end_time: s
+            .end_time
+            .as_ref()
+            .and_then(|t| t.parse::<i64>().ok())
+            .unwrap_or(0),
         correlation_id: s.correlation_id.clone().unwrap_or_default(),
         reason_for_incompletion: s.reason_for_incompletion.clone().unwrap_or_default(),
         priority: s.priority,
@@ -1145,11 +1337,31 @@ pub fn task_summary_to_official(s: &models::TaskSummary) -> opb::OfTaskSummaryPb
         task_type: s.task_type.clone().unwrap_or_default(),
         task_def_name: s.task_def_name.clone().unwrap_or_default(),
         reference_task_name: String::new(),
-        status: s.status.as_ref().map(|st| st.to_string()).unwrap_or_default(),
-        scheduled_time: s.scheduled_time.as_ref().and_then(|t| t.parse::<i64>().ok()).unwrap_or(0),
-        start_time: s.start_time.as_ref().and_then(|t| t.parse::<i64>().ok()).unwrap_or(0),
-        end_time: s.end_time.as_ref().and_then(|t| t.parse::<i64>().ok()).unwrap_or(0),
-        update_time: s.update_time.as_ref().and_then(|t| t.parse::<i64>().ok()).unwrap_or(0),
+        status: s
+            .status
+            .as_ref()
+            .map(|st| st.to_string())
+            .unwrap_or_default(),
+        scheduled_time: s
+            .scheduled_time
+            .as_ref()
+            .and_then(|t| t.parse::<i64>().ok())
+            .unwrap_or(0),
+        start_time: s
+            .start_time
+            .as_ref()
+            .and_then(|t| t.parse::<i64>().ok())
+            .unwrap_or(0),
+        end_time: s
+            .end_time
+            .as_ref()
+            .and_then(|t| t.parse::<i64>().ok())
+            .unwrap_or(0),
+        update_time: s
+            .update_time
+            .as_ref()
+            .and_then(|t| t.parse::<i64>().ok())
+            .unwrap_or(0),
     }
 }
 
@@ -1160,9 +1372,15 @@ pub fn event_handler_to_official(h: &models::EventHandler) -> opb::OfEventHandle
         name: h.name.clone(),
         event: h.event.clone(),
         condition: h.condition.clone().unwrap_or_default(),
-        actions: h.actions.iter().map(|a| {
-            opb::OfEventActionPb {
-                action: a.action.as_ref().map(|at| format!("{:?}", at)).unwrap_or_default(),
+        actions: h
+            .actions
+            .iter()
+            .map(|a| opb::OfEventActionPb {
+                action: a
+                    .action
+                    .as_ref()
+                    .map(|at| format!("{:?}", at))
+                    .unwrap_or_default(),
                 start_workflow: a.start_workflow.as_ref().map(|sw| {
                     let j = serde_json::to_value(sw).unwrap_or(JsonValue::Null);
                     json_to_struct(&j)
@@ -1183,8 +1401,8 @@ pub fn event_handler_to_official(h: &models::EventHandler) -> opb::OfEventHandle
                     let j = serde_json::to_value(uw).unwrap_or(JsonValue::Null);
                     json_to_struct(&j)
                 }),
-            }
-        }).collect(),
+            })
+            .collect(),
         active: h.active,
         evaluator_type: h.evaluator_type.clone().unwrap_or_default(),
     }
@@ -1195,17 +1413,34 @@ pub fn event_handler_from_official(p: &opb::OfEventHandlerPb) -> models::EventHa
         name: p.name.clone(),
         event: p.event.clone(),
         condition: opt_string(&p.condition),
-        actions: p.actions.iter().map(|a| {
-            models::EventAction {
+        actions: p
+            .actions
+            .iter()
+            .map(|a| models::EventAction {
                 action: None,
-                start_workflow: a.start_workflow.as_ref().and_then(|s| serde_json::from_value(struct_to_json(s)).ok()),
-                complete_task: a.complete_task.as_ref().and_then(|s| serde_json::from_value(struct_to_json(s)).ok()),
-                fail_task: a.fail_task.as_ref().and_then(|s| serde_json::from_value(struct_to_json(s)).ok()),
+                start_workflow: a
+                    .start_workflow
+                    .as_ref()
+                    .and_then(|s| serde_json::from_value(struct_to_json(s)).ok()),
+                complete_task: a
+                    .complete_task
+                    .as_ref()
+                    .and_then(|s| serde_json::from_value(struct_to_json(s)).ok()),
+                fail_task: a
+                    .fail_task
+                    .as_ref()
+                    .and_then(|s| serde_json::from_value(struct_to_json(s)).ok()),
                 expand_inline_json: None,
-                terminate_workflow: a.terminate_workflow.as_ref().and_then(|s| serde_json::from_value(struct_to_json(s)).ok()),
-                update_workflow_variables: a.update_workflow_variables.as_ref().and_then(|s| serde_json::from_value(struct_to_json(s)).ok()),
-            }
-        }).collect(),
+                terminate_workflow: a
+                    .terminate_workflow
+                    .as_ref()
+                    .and_then(|s| serde_json::from_value(struct_to_json(s)).ok()),
+                update_workflow_variables: a
+                    .update_workflow_variables
+                    .as_ref()
+                    .and_then(|s| serde_json::from_value(struct_to_json(s)).ok()),
+            })
+            .collect(),
         active: p.active,
         evaluator_type: opt_string(&p.evaluator_type),
     }
@@ -1216,5 +1451,9 @@ pub fn event_handler_from_official(p: &opb::OfEventHandlerPb) -> models::EventHa
 // ─────────────────────────────────────────────────────────────────────────────
 
 fn opt_string(s: &str) -> Option<String> {
-    if s.is_empty() { None } else { Some(s.to_string()) }
+    if s.is_empty() {
+        None
+    } else {
+        Some(s.to_string())
+    }
 }

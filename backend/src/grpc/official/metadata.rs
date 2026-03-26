@@ -1,10 +1,10 @@
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
+use super::pb;
 use crate::engine::WorkflowEngine;
 use crate::grpc::metadata::engine_err_to_status;
 use crate::grpc::proto_conv;
-use super::pb;
 
 pub struct OfficialMetadataServiceImpl {
     engine: Arc<WorkflowEngine>,
@@ -23,7 +23,9 @@ impl pb::metadata_service_server::MetadataService for OfficialMetadataServiceImp
         request: Request<pb::CreateWorkflowRequest>,
     ) -> Result<Response<pb::CreateWorkflowResponse>, Status> {
         let inner = request.into_inner();
-        let wf_def = inner.workflow_def.ok_or_else(|| Status::invalid_argument("Missing workflow_def"))?;
+        let wf_def = inner
+            .workflow_def
+            .ok_or_else(|| Status::invalid_argument("Missing workflow_def"))?;
         let def = proto_conv::workflow_def_from_official(&wf_def);
         self.engine
             .register_workflow_def(&def)
@@ -37,7 +39,9 @@ impl pb::metadata_service_server::MetadataService for OfficialMetadataServiceImp
         request: Request<pb::ValidateWorkflowRequest>,
     ) -> Result<Response<pb::ValidateWorkflowResponse>, Status> {
         let inner = request.into_inner();
-        let _wf_def = inner.workflow_def.ok_or_else(|| Status::invalid_argument("Missing workflow_def"))?;
+        let _wf_def = inner
+            .workflow_def
+            .ok_or_else(|| Status::invalid_argument("Missing workflow_def"))?;
         Ok(Response::new(pb::ValidateWorkflowResponse {}))
     }
 
@@ -61,7 +65,11 @@ impl pb::metadata_service_server::MetadataService for OfficialMetadataServiceImp
         request: Request<pb::GetWorkflowDefRequest>,
     ) -> Result<Response<pb::GetWorkflowDefResponse>, Status> {
         let req = request.into_inner();
-        let version = if req.version == 0 { None } else { Some(req.version) };
+        let version = if req.version == 0 {
+            None
+        } else {
+            Some(req.version)
+        };
         let def = self
             .engine
             .get_workflow_def(&req.name, version)
@@ -92,7 +100,9 @@ impl pb::metadata_service_server::MetadataService for OfficialMetadataServiceImp
         request: Request<pb::UpdateTaskDefRequest>,
     ) -> Result<Response<pb::UpdateTaskDefResponse>, Status> {
         let inner = request.into_inner();
-        let td_pb = inner.task_def.ok_or_else(|| Status::invalid_argument("Missing task_def"))?;
+        let td_pb = inner
+            .task_def
+            .ok_or_else(|| Status::invalid_argument("Missing task_def"))?;
         let def = proto_conv::task_def_from_official(&td_pb);
         self.engine
             .register_task_def(&def)

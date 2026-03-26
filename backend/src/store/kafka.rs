@@ -1,7 +1,7 @@
+use rdkafka::Message;
 use rdkafka::config::ClientConfig;
 use rdkafka::consumer::{CommitMode, Consumer, StreamConsumer};
 use rdkafka::producer::{FutureProducer, FutureRecord};
-use rdkafka::Message;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -9,7 +9,8 @@ use tokio::sync::Mutex;
 
 const CONSUMER_POOL_SIZE: usize = 1;
 
-type ConsumerPoolMap = Arc<std::sync::RwLock<HashMap<String, Arc<Vec<Arc<Mutex<StreamConsumer>>>>>>>;
+type ConsumerPoolMap =
+    Arc<std::sync::RwLock<HashMap<String, Arc<Vec<Arc<Mutex<StreamConsumer>>>>>>>;
 
 /// Kafka-backed task queue. Each task type maps to a Kafka topic
 /// (`conductor.task.{task_type}`). Provides durable, at-least-once delivery
@@ -59,7 +60,10 @@ impl KafkaTaskQueue {
     /// Returns one consumer from the pool via round-robin to reduce contention.
     fn get_or_create_consumer(&self, task_type: &str) -> Arc<Mutex<StreamConsumer>> {
         let pool = self.get_or_create_pool(task_type);
-        let idx = self.next_idx.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % pool.len();
+        let idx = self
+            .next_idx
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            % pool.len();
         pool[idx].clone()
     }
 
@@ -111,9 +115,7 @@ impl KafkaTaskQueue {
         let topic = Self::topic_name(task_type);
         self.producer
             .send(
-                FutureRecord::to(&topic)
-                    .key(task_id)
-                    .payload(task_id),
+                FutureRecord::to(&topic).key(task_id).payload(task_id),
                 Duration::from_secs(5),
             )
             .await
@@ -133,9 +135,7 @@ impl KafkaTaskQueue {
     pub async fn produce(&self, topic: &str, payload: &str) -> Result<(), String> {
         self.producer
             .send(
-                FutureRecord::to(topic)
-                    .key(topic)
-                    .payload(payload),
+                FutureRecord::to(topic).key(topic).payload(payload),
                 Duration::from_secs(5),
             )
             .await
@@ -208,11 +208,13 @@ impl KafkaTaskQueue {
     /// Check that the Kafka brokers are reachable.
     pub async fn health_check(&self) -> bool {
         // Try a metadata fetch with a short timeout
-        let admin_client: Result<rdkafka::admin::AdminClient<rdkafka::client::DefaultClientContext>, _> =
-            ClientConfig::new()
-                .set("bootstrap.servers", &self.brokers)
-                .set("request.timeout.ms", "3000")
-                .create();
+        let admin_client: Result<
+            rdkafka::admin::AdminClient<rdkafka::client::DefaultClientContext>,
+            _,
+        > = ClientConfig::new()
+            .set("bootstrap.servers", &self.brokers)
+            .set("request.timeout.ms", "3000")
+            .create();
         match admin_client {
             Ok(client) => {
                 let metadata = client.inner().fetch_metadata(None, Duration::from_secs(3));
