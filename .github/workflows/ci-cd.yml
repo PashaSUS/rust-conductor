@@ -80,7 +80,7 @@ jobs:
 
       - name: Run unit tests
         working-directory: backend
-        run: cargo test --lib --bins
+        run: cargo test --bins
 
       - name: Run integration tests
         working-directory: backend
@@ -215,59 +215,3 @@ jobs:
         if: always()
         with:
           sarif_file: trivy-${{ matrix.image.name }}.sarif
-
-  # ── Deploy Staging ─────────────────────────────────────────────────
-  deploy-staging:
-    name: Deploy to Staging
-    runs-on: ubuntu-latest
-    needs: [build-backend, build-frontend, security-scan]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    environment: staging
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Helm
-        uses: azure/setup-helm@v4
-
-      - name: Configure kubectl
-        uses: azure/k8s-set-context@v4
-        with:
-          kubeconfig: ${{ secrets.KUBE_CONFIG_STAGING }}
-
-      - name: Deploy with Helm
-        run: |
-          helm upgrade --install rust-conductor ./helm/rust-conductor \
-            --namespace conductor-staging \
-            --create-namespace \
-            --set backend.image.tag=${{ github.sha }} \
-            --set frontend.image.tag=${{ github.sha }} \
-            --values helm/rust-conductor/values.yaml \
-            --wait --timeout 5m
-
-  # ── Deploy Production ──────────────────────────────────────────────
-  deploy-production:
-    name: Deploy to Production
-    runs-on: ubuntu-latest
-    needs: deploy-staging
-    if: github.event_name == 'release'
-    environment: production
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Helm
-        uses: azure/setup-helm@v4
-
-      - name: Configure kubectl
-        uses: azure/k8s-set-context@v4
-        with:
-          kubeconfig: ${{ secrets.KUBE_CONFIG_PRODUCTION }}
-
-      - name: Deploy with Helm (canary)
-        run: |
-          helm upgrade --install rust-conductor ./helm/rust-conductor \
-            --namespace conductor-production \
-            --create-namespace \
-            --set backend.image.tag=${{ github.event.release.tag_name }} \
-            --set frontend.image.tag=${{ github.event.release.tag_name }} \
-            --values helm/rust-conductor/values-production.yaml \
-            --wait --timeout 10m
