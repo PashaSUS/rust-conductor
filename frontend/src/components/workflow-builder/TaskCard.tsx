@@ -2,7 +2,7 @@ import type { TaskDef } from "@/api/conductor";
 import type { TaskFormState } from "./types";
 import { TASK_TYPES, getInputSources } from "./types";
 import { TaskInputFields } from "./TaskInputFields";
-import { SubWorkflowFields, ForkJoinFields, DecisionFields, DoWhileFields } from "./TaskTypeFields";
+import { SubWorkflowFields, ForkJoinFields, DecisionFields, DoWhileFields, DynamicForkJoinFields } from "./TaskTypeFields";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -121,6 +121,7 @@ export function TaskCard({
           {task.type === "FORK_JOIN" && <ForkJoinFields task={task} onUpdate={onUpdate} />}
           {task.type === "DECISION" && <DecisionFields task={task} onUpdate={onUpdate} />}
           {task.type === "DO_WHILE" && <DoWhileFields task={task} onUpdate={onUpdate} />}
+          {task.type === "DYNAMIC_FORK_JOIN" && <DynamicForkJoinFields task={task} onUpdate={onUpdate} />}
         </div>
       )}
     </div>

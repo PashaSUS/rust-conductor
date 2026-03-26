@@ -1079,6 +1079,257 @@ impl WorkflowEngine {
         Ok(())
     }
 
+    // ── DYNAMIC_FORK_JOIN ────────────────────────────────────────────────
+
+    /// DYNAMIC_FORK_JOIN — dynamically fork multiple tasks based on input
+    /// parameters resolved at runtime, then auto-create a JOIN that waits
+    /// for all forked tasks to complete.
+    ///
+    /// Supports two input formats:
+    ///
+    /// **Format 1** (`dynamicForkJoinTasksParam`): A single input parameter
+    /// containing an array of `{ "taskRefName", "taskType", "name", "input" }`.
+    ///
+    /// **Format 2** (`dynamicForkTasksParam` + `dynamicForkTasksInputParamName`):
+    /// One param holds an array of WorkflowTask definitions, another holds a
+    /// map of `{ refName: inputObject }`.
+    pub(crate) async fn handle_dynamic_fork_join_task(
+        &self,
+        workflow_id: &str,
+        task_def: &WorkflowTask,
+        parent_tasks: &[WorkflowTask],
+        input: &Value,
+        seq: i32,
+    ) -> Result<(), EngineError> {
+        let resolved_input = self.resolve_task_input(workflow_id, task_def, input).await?;
+
+        // Collect the dynamic tasks and their inputs
+        let mut forked_tasks: Vec<(WorkflowTask, Value)> = Vec::new();
+
+        if let Some(param_name) = &task_def.dynamic_fork_join_tasks_param {
+            // Format 1: single param with array of {taskRefName, taskType, name, input}
+            let tasks_value = resolved_input.get(param_name.as_str())
+                .ok_or_else(|| {
+                    tracing::error!(
+                        workflow_id = %workflow_id,
+                        ref_name = %task_def.task_reference_name,
+                        param = %param_name,
+                        "DYNAMIC_FORK_JOIN: could not find param in resolved input"
+                    );
+                    EngineError::NotFound(format!(
+                        "DYNAMIC_FORK_JOIN '{}': param '{}' not found in input",
+                        task_def.task_reference_name, param_name
+                    ))
+                })?;
+
+            let tasks_arr = tasks_value.as_array().ok_or_else(|| {
+                EngineError::InvalidState(format!(
+                    "DYNAMIC_FORK_JOIN '{}': param '{}' is not an array",
+                    task_def.task_reference_name, param_name
+                ))
+            })?;
+
+            for item in tasks_arr {
+                let ref_name = item.get("taskReferenceName")
+                    .or_else(|| item.get("taskRefName"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
+                let task_type = item.get("type")
+                    .or_else(|| item.get("taskType"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("SIMPLE");
+                let task_name = item.get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(ref_name);
+                let task_input = item.get("input")
+                    .or_else(|| item.get("inputParameters"))
+                    .cloned()
+                    .unwrap_or(Value::Object(Default::default()));
+
+                let wt = WorkflowTask {
+                    name: task_name.to_string(),
+                    task_reference_name: ref_name.to_string(),
+                    task_type: task_type.to_string(),
+                    description: None,
+                    input_parameters: Default::default(),
+                    optional: false,
+                    start_delay: 0,
+                    sub_workflow_param: None,
+                    join_on: Vec::new(),
+                    fork_tasks: Vec::new(),
+                    decision_cases: Default::default(),
+                    default_case: Vec::new(),
+                    case_expression: None,
+                    case_value_param: None,
+                    loop_condition: None,
+                    loop_over: Vec::new(),
+                    retry_count: None,
+                    evaluator_type: None,
+                    expression: None,
+                    script_expression: None,
+                    dynamic_task_name_param: None,
+                    dynamic_fork_join_tasks_param: None,
+                    dynamic_fork_tasks_param: None,
+                    dynamic_fork_tasks_input_param_name: None,
+                    sink: None,
+                    task_definition: None,
+                    rate_limited: None,
+                    default_exclusive_join_task: Vec::new(),
+                    async_complete: false,
+                    on_state_change: None,
+                    join_status: None,
+                    cache_config: None,
+                    permissive: None,
+                };
+                forked_tasks.push((wt, task_input));
+            }
+        } else if let Some(tasks_param) = &task_def.dynamic_fork_tasks_param {
+            // Format 2: separate task defs + input map
+            let tasks_value = resolved_input.get(tasks_param.as_str())
+                .ok_or_else(|| {
+                    EngineError::NotFound(format!(
+                        "DYNAMIC_FORK_JOIN '{}': param '{}' not found",
+                        task_def.task_reference_name, tasks_param
+                    ))
+                })?;
+
+            let input_param_name = task_def.dynamic_fork_tasks_input_param_name
+                .as_deref()
+                .unwrap_or("forkedTasksInputs");
+
+            let inputs_map = resolved_input.get(input_param_name)
+                .and_then(|v| v.as_object())
+                .cloned()
+                .unwrap_or_default();
+
+            let tasks_arr = tasks_value.as_array().ok_or_else(|| {
+                EngineError::InvalidState(format!(
+                    "DYNAMIC_FORK_JOIN '{}': param '{}' is not an array",
+                    task_def.task_reference_name, tasks_param
+                ))
+            })?;
+
+            for item in tasks_arr {
+                let wt: WorkflowTask = serde_json::from_value(item.clone()).map_err(|e| {
+                    EngineError::InvalidState(format!(
+                        "DYNAMIC_FORK_JOIN: invalid task definition: {e}"
+                    ))
+                })?;
+                let task_input = inputs_map
+                    .get(&wt.task_reference_name)
+                    .cloned()
+                    .unwrap_or(Value::Object(Default::default()));
+                forked_tasks.push((wt, task_input));
+            }
+        } else {
+            return Err(EngineError::InvalidState(format!(
+                "DYNAMIC_FORK_JOIN '{}': requires dynamicForkJoinTasksParam or dynamicForkTasksParam",
+                task_def.task_reference_name
+            )));
+        }
+
+        if forked_tasks.is_empty() {
+            return Err(EngineError::InvalidState(format!(
+                "DYNAMIC_FORK_JOIN '{}': resolved to zero tasks",
+                task_def.task_reference_name
+            )));
+        }
+
+        // Complete the fork task itself
+        let fork_output = serde_json::json!({
+            "forkedBranches": forked_tasks.len(),
+            "forkedTaskRefs": forked_tasks.iter().map(|(t, _)| &t.task_reference_name).collect::<Vec<_>>(),
+        });
+        let (_task_id, is_new) = self
+            .insert_task_record(workflow_id, task_def, &resolved_input, seq, "COMPLETED", &fork_output, None)
+            .await?;
+
+        if !is_new {
+            return Ok(());
+        }
+
+        // Schedule all forked tasks in parallel
+        let join_on: Vec<String> = forked_tasks.iter().map(|(t, _)| t.task_reference_name.clone()).collect();
+        let fork_count = forked_tasks.len();
+
+        // Prepare owned task arrays so they live long enough for async scheduling
+        let prepared: Vec<(Vec<WorkflowTask>, Value, i32)> = forked_tasks
+            .into_iter()
+            .enumerate()
+            .map(|(idx, (wt, task_input))| {
+                (vec![wt], task_input, seq + 1 + idx as i32)
+            })
+            .collect();
+
+        let branch_futs: Vec<_> = prepared
+            .iter()
+            .map(|(tasks, task_input, branch_seq)| {
+                Box::pin(self.schedule_tasks(workflow_id, tasks, task_input, *branch_seq))
+            })
+            .collect();
+
+        let results = futures::future::join_all(branch_futs).await;
+        for result in results {
+            result?;
+        }
+
+        // Auto-create and schedule a JOIN task — check if the next task in the
+        // definition is already a JOIN, otherwise synthesize one.
+        let join_task = if parent_tasks.len() > 1 && parent_tasks[1].task_type == "JOIN" {
+            let mut jt = parent_tasks[1].clone();
+            jt.join_on = join_on.clone();
+            jt
+        } else {
+            WorkflowTask {
+                name: format!("{}_join", task_def.task_reference_name),
+                task_reference_name: format!("{}_join", task_def.task_reference_name),
+                task_type: "JOIN".to_string(),
+                description: None,
+                input_parameters: Default::default(),
+                optional: false,
+                start_delay: 0,
+                sub_workflow_param: None,
+                join_on: join_on.clone(),
+                fork_tasks: Vec::new(),
+                decision_cases: Default::default(),
+                default_case: Vec::new(),
+                case_expression: None,
+                case_value_param: None,
+                loop_condition: None,
+                loop_over: Vec::new(),
+                retry_count: None,
+                evaluator_type: None,
+                expression: None,
+                script_expression: None,
+                dynamic_task_name_param: None,
+                dynamic_fork_join_tasks_param: None,
+                dynamic_fork_tasks_param: None,
+                dynamic_fork_tasks_input_param_name: None,
+                sink: None,
+                task_definition: None,
+                rate_limited: None,
+                default_exclusive_join_task: Vec::new(),
+                async_complete: false,
+                on_state_change: None,
+                join_status: None,
+                cache_config: None,
+                permissive: None,
+            }
+        };
+
+        self.handle_join_task(workflow_id, &join_task, input, seq + 1000)
+            .await?;
+
+        tracing::info!(
+            workflow_id = %workflow_id,
+            ref_name = %task_def.task_reference_name,
+            branches = fork_count,
+            "DYNAMIC_FORK_JOIN scheduled – {} parallel tasks",
+            fork_count
+        );
+        Ok(())
+    }
+
     // ── LAMBDA / INLINE ──────────────────────────────────────────────────
 
     pub(crate) async fn handle_lambda_task(

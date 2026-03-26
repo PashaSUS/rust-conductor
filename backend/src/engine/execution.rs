@@ -123,6 +123,10 @@ impl WorkflowEngine {
                 self.handle_dynamic_task(workflow_id, task_def, input, start_seq)
                     .await?;
             }
+            "DYNAMIC_FORK_JOIN" => {
+                self.handle_dynamic_fork_join_task(workflow_id, task_def, tasks, input, start_seq)
+                    .await?;
+            }
             _ => {
                 if task_type != "SIMPLE" {
                     tracing::warn!(

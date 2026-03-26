@@ -29,7 +29,10 @@ export default function WorkflowDetail() {
   const [selectedDiagramTask, setSelectedDiagramTask] = useState<TaskResult | null>(null);
   const [replayOpen, setReplayOpen] = useState(false);
 
-  const { pauseMut, resumeMut, terminateMut, restartMut, retryMut } = useWorkflowMutations([["workflow", id!]]);
+  const { pauseMut, resumeMut, terminateMut, restartMut, retryMut } = useWorkflowMutations(
+    [["workflow", id!]],
+    (newId) => navigate(`/workflows/${newId}`),
+  );
 
   const toggleTask = (taskId: string) => {
     setExpandedTasks((prev) => {

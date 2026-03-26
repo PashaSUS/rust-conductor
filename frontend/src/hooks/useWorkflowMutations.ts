@@ -9,7 +9,7 @@ import { useThemeText } from "@/components/ThemeContext";
  *
  * @param invalidateKeys — additional query keys to invalidate on success
  */
-export function useWorkflowMutations(invalidateKeys: string[][] = []) {
+export function useWorkflowMutations(invalidateKeys: string[][] = [], onNewWorkflow?: (newId: string) => void) {
   const queryClient = useQueryClient();
   const t = useThemeText();
 
@@ -36,12 +36,12 @@ export function useWorkflowMutations(invalidateKeys: string[][] = []) {
 
   const restartMut = useMutation({
     mutationFn: (id: string) => workflowApi.restart(id),
-    onSuccess: () => { toast.success(t.toastWorkflowRestarted); invalidate(); },
+    onSuccess: (newId) => { toast.success(t.toastWorkflowRestarted); invalidate(); if (newId && onNewWorkflow) onNewWorkflow(newId); },
   });
 
   const retryMut = useMutation({
     mutationFn: (id: string) => workflowApi.retry(id),
-    onSuccess: () => { toast.success(t.toastWorkflowRetried); invalidate(); },
+    onSuccess: (newId) => { toast.success(t.toastWorkflowRetried); invalidate(); if (newId && onNewWorkflow) onNewWorkflow(newId); },
   });
 
   return { pauseMut, resumeMut, terminateMut, restartMut, retryMut };

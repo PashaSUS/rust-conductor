@@ -11,6 +11,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .route("", web::post().to(start_workflow))
             .route("/stats", web::get().to(workflow_stats))
             .route("/search", web::get().to(search_workflows))
+            .route("/metrics/{name}", web::get().to(workflow_metrics))
             .route("/running/{name}", web::get().to(get_running_workflows))
             .route("/{workflowId}", web::get().to(get_workflow))
             .route("/{workflowId}", web::delete().to(terminate_workflow))
@@ -78,16 +79,16 @@ async fn restart_workflow(
     engine: web::Data<WorkflowEngine>,
     path: web::Path<String>,
 ) -> Result<HttpResponse, crate::engine::EngineError> {
-    engine.restart_workflow(&path.into_inner()).await?;
-    Ok(HttpResponse::Ok().finish())
+    let new_id = engine.restart_workflow(&path.into_inner()).await?;
+    Ok(HttpResponse::Ok().json(new_id))
 }
 
 async fn retry_workflow(
     engine: web::Data<WorkflowEngine>,
     path: web::Path<String>,
 ) -> Result<HttpResponse, crate::engine::EngineError> {
-    engine.retry_workflow(&path.into_inner()).await?;
-    Ok(HttpResponse::Ok().finish())
+    let new_id = engine.retry_workflow(&path.into_inner()).await?;
+    Ok(HttpResponse::Ok().json(new_id))
 }
 
 async fn workflow_stats(
@@ -253,6 +254,14 @@ async fn start_workflow_by_name(
     };
     let id = engine.start_workflow(&req).await?;
     Ok(HttpResponse::Ok().json(id))
+}
+
+async fn workflow_metrics(
+    engine: web::Data<WorkflowEngine>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, crate::engine::EngineError> {
+    let metrics = engine.workflow_metrics(&path.into_inner()).await?;
+    Ok(HttpResponse::Ok().json(metrics))
 }
 
 #[derive(serde::Deserialize)]

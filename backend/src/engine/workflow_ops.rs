@@ -210,35 +210,39 @@ impl WorkflowEngine {
         Ok(())
     }
 
-    pub async fn restart_workflow(&self, workflow_id: &str) -> Result<(), EngineError> {
+    pub async fn restart_workflow(&self, workflow_id: &str) -> Result<String, EngineError> {
         let wf = self.get_workflow(workflow_id).await?;
         let def = self
             .get_workflow_def(&wf.workflow_name, Some(wf.workflow_version))
             .await?;
-        let db = self.shards.shard_for(workflow_id);
+        let new_id = Uuid::new_v4().to_string();
+        let now = Utc::now();
+        let db = self.shards.shard_for(&new_id);
 
         sqlx::query(
-            "UPDATE workflow SET status = 'RUNNING', end_time = NULL, update_time = NOW(), output = '{}', reason_for_incompletion = NULL WHERE workflow_id = $1",
+            "INSERT INTO workflow (workflow_id, workflow_name, workflow_version, status, input, correlation_id, start_time, update_time, priority, workflow_def)
+             VALUES ($1, $2, $3, 'RUNNING', $4, $5, $6, $6, $7, $8)",
         )
-        .bind(workflow_id)
+        .bind(&new_id)
+        .bind(&wf.workflow_name)
+        .bind(wf.workflow_version)
+        .bind(&wf.input)
+        .bind(&wf.correlation_id)
+        .bind(now)
+        .bind(wf.priority)
+        .bind(serde_json::to_value(&def).ok())
         .execute(db)
         .await
         .map_err(|e| EngineError::Database(e.to_string()))?;
 
-        sqlx::query("DELETE FROM task WHERE workflow_instance_id = $1")
-            .bind(workflow_id)
-            .execute(db)
-            .await
-            .map_err(|e| EngineError::Database(e.to_string()))?;
-
-        self.schedule_tasks(workflow_id, &def.tasks, &wf.input, 0)
+        self.schedule_tasks(&new_id, &def.tasks, &wf.input, 0)
             .await?;
 
-        tracing::info!(workflow_id = %workflow_id, "Workflow restarted");
-        Ok(())
+        tracing::info!(workflow_id = %new_id, original_id = %workflow_id, "Workflow restarted as new execution");
+        Ok(new_id)
     }
 
-    pub async fn retry_workflow(&self, workflow_id: &str) -> Result<(), EngineError> {
+    pub async fn retry_workflow(&self, workflow_id: &str) -> Result<String, EngineError> {
         let wf = self.get_workflow(workflow_id).await?;
         if wf.status != WorkflowStatus::Failed {
             tracing::error!(workflow_id = %workflow_id, status = ?wf.status, "Retry called on non-FAILED workflow");
@@ -246,41 +250,34 @@ impl WorkflowEngine {
                 "Can only retry FAILED workflows".into(),
             ));
         }
-        let db = self.shards.shard_for(workflow_id);
+        let def = self
+            .get_workflow_def(&wf.workflow_name, Some(wf.workflow_version))
+            .await?;
+        let new_id = Uuid::new_v4().to_string();
+        let now = Utc::now();
+        let db = self.shards.shard_for(&new_id);
 
         sqlx::query(
-            "UPDATE workflow SET status = 'RUNNING', end_time = NULL, update_time = NOW(), reason_for_incompletion = NULL WHERE workflow_id = $1",
+            "INSERT INTO workflow (workflow_id, workflow_name, workflow_version, status, input, correlation_id, start_time, update_time, priority, workflow_def)
+             VALUES ($1, $2, $3, 'RUNNING', $4, $5, $6, $6, $7, $8)",
         )
-        .bind(workflow_id)
+        .bind(&new_id)
+        .bind(&wf.workflow_name)
+        .bind(wf.workflow_version)
+        .bind(&wf.input)
+        .bind(&wf.correlation_id)
+        .bind(now)
+        .bind(wf.priority)
+        .bind(serde_json::to_value(&def).ok())
         .execute(db)
         .await
         .map_err(|e| EngineError::Database(e.to_string()))?;
 
-        let failed_tasks: Vec<(String, String)> = sqlx::query_as(
-            "SELECT task_id, task_def_name FROM task WHERE workflow_instance_id = $1 AND status = 'FAILED'",
-        )
-        .bind(workflow_id)
-        .fetch_all(db)
-        .await
-        .map_err(|e| EngineError::Database(e.to_string()))?;
+        self.schedule_tasks(&new_id, &def.tasks, &wf.input, 0)
+            .await?;
 
-        for (task_id, task_def_name) in &failed_tasks {
-            sqlx::query(
-                "UPDATE task SET status = 'SCHEDULED', start_time = NULL, end_time = NULL, update_time = NOW(), retry_count = retry_count + 1 WHERE task_id = $1",
-            )
-            .bind(task_id)
-            .execute(db)
-            .await
-            .map_err(|e| EngineError::Database(e.to_string()))?;
-
-            self.set_task_routing(task_id, workflow_id).await?;
-            self.queue
-                .enqueue(task_def_name, task_id)
-                .await
-                .map_err(EngineError::Redis)?;
-        }
-
-        Ok(())
+        tracing::info!(workflow_id = %new_id, original_id = %workflow_id, "Workflow retried as new execution");
+        Ok(new_id)
     }
 
     pub async fn search_workflows(
@@ -428,6 +425,100 @@ impl WorkflowEngine {
         }
 
         Ok(stats)
+    }
+
+    pub async fn workflow_metrics(&self, name: &str) -> Result<WorkflowMetrics, EngineError> {
+        let query = r#"
+            SELECT status, start_time, end_time
+            FROM workflow
+            WHERE workflow_name = $1
+            ORDER BY start_time DESC
+            LIMIT 100
+        "#;
+
+        let read_shards = self.shards.read_shards();
+        let futs: Vec<_> = read_shards.iter().map(|shard| {
+            async move {
+                sqlx::query_as::<_, (String, chrono::DateTime<Utc>, Option<chrono::DateTime<Utc>>)>(query)
+                    .bind(name)
+                    .fetch_all(shard)
+                    .await
+                    .map_err(|e| EngineError::Database(e.to_string()))
+            }
+        }).collect();
+
+        let results = join_all(futs).await;
+        let mut all_rows: Vec<(String, chrono::DateTime<Utc>, Option<chrono::DateTime<Utc>>)> = Vec::new();
+        for result in results {
+            all_rows.extend(result?);
+        }
+
+        // Sort by start_time desc and take top 100 across all shards
+        all_rows.sort_by(|a, b| b.1.cmp(&a.1));
+        all_rows.truncate(100);
+
+        let total = all_rows.len() as i64;
+        if total == 0 {
+            return Ok(WorkflowMetrics {
+                workflow_name: name.to_string(),
+                sample_size: 0,
+                status_distribution: HashMap::new(),
+                success_rate: 0.0,
+                failure_rate: 0.0,
+                avg_duration_ms: None,
+                min_duration_ms: None,
+                max_duration_ms: None,
+                p50_duration_ms: None,
+                p95_duration_ms: None,
+            });
+        }
+
+        let mut status_dist: HashMap<String, i64> = HashMap::new();
+        let mut durations: Vec<i64> = Vec::new();
+        let mut completed = 0i64;
+        let mut failed = 0i64;
+
+        for (status, start, end) in &all_rows {
+            *status_dist.entry(status.clone()).or_insert(0) += 1;
+            match status.as_str() {
+                "COMPLETED" => completed += 1,
+                "FAILED" | "TIMED_OUT" => failed += 1,
+                _ => {}
+            }
+            if let Some(e) = end {
+                let dur = (*e - *start).num_milliseconds();
+                if dur >= 0 {
+                    durations.push(dur);
+                }
+            }
+        }
+
+        durations.sort();
+
+        let avg = if durations.is_empty() { None } else {
+            Some(durations.iter().sum::<i64>() / durations.len() as i64)
+        };
+        let min_d = durations.first().copied();
+        let max_d = durations.last().copied();
+        let p50 = if durations.is_empty() { None } else {
+            Some(durations[durations.len() / 2])
+        };
+        let p95 = if durations.is_empty() { None } else {
+            Some(durations[(durations.len() as f64 * 0.95) as usize].min(*durations.last().unwrap()))
+        };
+
+        Ok(WorkflowMetrics {
+            workflow_name: name.to_string(),
+            sample_size: total,
+            status_distribution: status_dist,
+            success_rate: completed as f64 / total as f64 * 100.0,
+            failure_rate: failed as f64 / total as f64 * 100.0,
+            avg_duration_ms: avg,
+            min_duration_ms: min_d,
+            max_duration_ms: max_d,
+            p50_duration_ms: p50,
+            p95_duration_ms: p95,
+        })
     }
 
     pub async fn decide_workflow(&self, workflow_id: &str) -> Result<(), EngineError> {
@@ -614,7 +705,10 @@ impl WorkflowEngine {
     pub async fn bulk_retry(&self, workflow_ids: &[String]) -> Result<BulkResponse, EngineError> {
         let futs: Vec<_> = workflow_ids.iter().map(|id| {
             let id = id.clone();
-            async move { (id.clone(), self.retry_workflow(&id).await) }
+            async move {
+                let result = self.retry_workflow(&id).await.map(|_| ());
+                (id, result)
+            }
         }).collect();
         Ok(collect_bulk_results(join_all(futs).await))
     }
@@ -622,7 +716,10 @@ impl WorkflowEngine {
     pub async fn bulk_restart(&self, workflow_ids: &[String]) -> Result<BulkResponse, EngineError> {
         let futs: Vec<_> = workflow_ids.iter().map(|id| {
             let id = id.clone();
-            async move { (id.clone(), self.restart_workflow(&id).await) }
+            async move {
+                let result = self.restart_workflow(&id).await.map(|_| ());
+                (id, result)
+            }
         }).collect();
         Ok(collect_bulk_results(join_all(futs).await))
     }

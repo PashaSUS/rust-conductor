@@ -4,10 +4,14 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
+ARG VITE_API_BASE=""
+ENV VITE_API_BASE=$VITE_API_BASE
 RUN npm run build
 
-# Production stage — nginx serves static files + proxies /api to backend
-FROM nginx:alpine
-COPY --from=builder /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Production stage — serve static files
+FROM node:20-alpine
+RUN npm install -g serve@latest
+WORKDIR /app
+COPY --from=builder /app/dist ./dist
 EXPOSE 3170
+CMD ["serve", "dist", "-l", "3170", "-s"]

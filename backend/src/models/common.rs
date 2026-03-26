@@ -74,6 +74,26 @@ pub struct BulkResponse {
     pub bulk_successful_results: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowMetrics {
+    pub workflow_name: String,
+    pub sample_size: i64,
+    pub status_distribution: HashMap<String, i64>,
+    pub success_rate: f64,
+    pub failure_rate: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avg_duration_ms: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_duration_ms: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_duration_ms: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub p50_duration_ms: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub p95_duration_ms: Option<i64>,
+}
+
 // ── External Storage ──
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

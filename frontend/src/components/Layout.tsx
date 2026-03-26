@@ -20,6 +20,8 @@ import {
   PencilRuler,
   Menu,
   X,
+  BarChart3,
+  Flame,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -58,16 +60,18 @@ export default function Layout() {
     { to: "/taskdefs", label: t.taskDefs, icon: ListChecks, shortcut: "4" },
     { to: "/queues", label: t.taskQueues, icon: Layers, shortcut: "5" },
     { to: "/schedules", label: t.schedules, icon: Calendar, shortcut: "6" },
+    { to: "/metrics", label: "Metrics", icon: BarChart3, shortcut: "7" },
     // Analysis & Visualization
     { to: "---", label: "divider", icon: null as never, shortcut: "" },
-    { to: "/dependencies", label: t.dependencyGraph, icon: GitBranch, shortcut: "7" },
-    { to: "/compare", label: "Compare", icon: GitCompare, shortcut: "" },
-    { to: "/diff", label: "Diff", icon: Diff, shortcut: "" },
+    { to: "/dependencies", label: t.dependencyGraph, icon: GitBranch, shortcut: "8" },
+    { to: "/compare", label: "Compare", icon: GitCompare, shortcut: "9" },
+    { to: "/diff", label: "Diff", icon: Diff, shortcut: "0" },
     // Tools
     { to: "---2", label: "divider", icon: null as never, shortcut: "" },
-    { to: "/designer", label: "Designer", icon: PencilRuler, shortcut: "" },
-    { to: "/templates", label: "Templates", icon: BookTemplate, shortcut: "" },
-    { to: "/about", label: t.about, icon: Info, shortcut: "8" },
+    { to: "/designer", label: "Designer", icon: PencilRuler, shortcut: "d" },
+    { to: "/stresser", label: "Stresser", icon: Flame, shortcut: "s" },
+    { to: "/templates", label: "Templates", icon: BookTemplate, shortcut: "t" },
+    { to: "/about", label: t.about, icon: Info, shortcut: "a" },
   ], [t]);
 
   useEffect(() => {
@@ -109,9 +113,33 @@ export default function Layout() {
             break;
           case "7":
             e.preventDefault();
-            navigate("/dependencies");
+            navigate("/metrics");
             break;
           case "8":
+            e.preventDefault();
+            navigate("/dependencies");
+            break;
+          case "9":
+            e.preventDefault();
+            navigate("/compare");
+            break;
+          case "0":
+            e.preventDefault();
+            navigate("/diff");
+            break;
+          case "d":
+            e.preventDefault();
+            navigate("/designer");
+            break;
+          case "s":
+            e.preventDefault();
+            navigate("/stresser");
+            break;
+          case "t":
+            e.preventDefault();
+            navigate("/templates");
+            break;
+          case "a":
             e.preventDefault();
             navigate("/about");
             break;

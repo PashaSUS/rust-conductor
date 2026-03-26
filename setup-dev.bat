@@ -183,44 +183,7 @@ set "NLB=nginx-lb.conf"
 >> "!NLB!" echo     }
 >> "!NLB!" echo }
 
-REM -- Generate frontend/nginx.conf --
-echo Generating frontend/nginx.conf...
-set "FNG=frontend\nginx.conf"
-> "!FNG!" echo server {
->> "!FNG!" echo     listen 3170;
->> "!FNG!" echo     server_name _;
->> "!FNG!" echo     root /usr/share/nginx/html;
->> "!FNG!" echo     index index.html;
->> "!FNG!" echo.
->> "!FNG!" echo     gzip on;
->> "!FNG!" echo     gzip_types text/plain text/css application/json application/javascript text/xml application/xml text/javascript image/svg+xml;
->> "!FNG!" echo     gzip_min_length 256;
->> "!FNG!" echo.
->> "!FNG!" echo     location / {
->> "!FNG!" echo         try_files $uri $uri/ /index.html;
->> "!FNG!" echo     }
->> "!FNG!" echo.
->> "!FNG!" echo     location /api/ {
->> "!FNG!" echo         proxy_pass http://backend:!BACKEND_PORT!/api/;
->> "!FNG!" echo         proxy_http_version 1.1;
->> "!FNG!" echo         proxy_set_header Host $host;
->> "!FNG!" echo         proxy_set_header X-Real-IP $remote_addr;
->> "!FNG!" echo         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
->> "!FNG!" echo         proxy_set_header X-Forwarded-Proto $scheme;
->> "!FNG!" echo         proxy_read_timeout 300s;
->> "!FNG!" echo     }
->> "!FNG!" echo.
->> "!FNG!" echo     location /health {
->> "!FNG!" echo         proxy_pass http://backend:!BACKEND_PORT!/health;
->> "!FNG!" echo         proxy_http_version 1.1;
->> "!FNG!" echo         proxy_set_header Host $host;
->> "!FNG!" echo     }
->> "!FNG!" echo.
->> "!FNG!" echo     location ~* \.(js^|css^|png^|jpg^|jpeg^|gif^|ico^|svg^|woff^|woff2^|ttf^|eot)$ {
->> "!FNG!" echo         expires 30d;
->> "!FNG!" echo         add_header Cache-Control "public, immutable";
->> "!FNG!" echo     }
->> "!FNG!" echo }
+REM -- frontend/nginx.conf no longer needed (using serve) --
 
 echo.
 echo Configuring DEV mode - 1 shard...
@@ -376,6 +339,8 @@ REM -- Frontend --
 >> "%FILE%" echo     build:
 >> "%FILE%" echo       context: ./frontend
 >> "%FILE%" echo       dockerfile: Dockerfile
+>> "%FILE%" echo       args:
+>> "%FILE%" echo         VITE_API_BASE: "http://localhost:!BACKEND_PORT!"
 >> "%FILE%" echo     restart: unless-stopped
 >> "%FILE%" echo     ports:
 >> "%FILE%" echo       - "!FRONTEND_PORT!:3170"

@@ -5,6 +5,7 @@ export const TASK_TYPES = [
   { value: "HTTP", label: "HTTP", description: "HTTP API call" },
   { value: "SUB_WORKFLOW", label: "Sub-Workflow", description: "Execute another workflow" },
   { value: "FORK_JOIN", label: "Fork/Join", description: "Parallel execution" },
+  { value: "DYNAMIC_FORK_JOIN", label: "Dynamic Fork/Join", description: "Dynamic parallel execution from input" },
   { value: "DECISION", label: "Decision/Switch", description: "Conditional branching" },
   { value: "DO_WHILE", label: "Do While Loop", description: "Loop until condition" },
   { value: "WAIT", label: "Wait", description: "Wait for external signal" },
@@ -30,6 +31,9 @@ export interface TaskFormState {
   decisionCases: { caseName: string; tasks: TaskFormState[] }[];
   defaultCaseTasks: TaskFormState[];
   loopTasks: TaskFormState[];
+  dynamicForkJoinTasksParam: string;
+  dynamicForkTasksParam: string;
+  dynamicForkTasksInputParamName: string;
   inputMode: "fields" | "json";
   inputFields: Record<string, string>;
 }
@@ -58,6 +62,9 @@ export function createEmptyTask(): TaskFormState {
     decisionCases: [{ caseName: "case1", tasks: [] }],
     defaultCaseTasks: [],
     loopTasks: [],
+    dynamicForkJoinTasksParam: "dynamicTasks",
+    dynamicForkTasksParam: "",
+    dynamicForkTasksInputParamName: "",
     inputMode: "fields",
     inputFields: {},
   };
@@ -119,6 +126,18 @@ export function taskFormToWorkflowTask(form: TaskFormState): WorkflowTask {
     task.loopOver = form.loopTasks.map(taskFormToWorkflowTask);
   }
 
+  if (form.type === "DYNAMIC_FORK_JOIN") {
+    if (form.dynamicForkJoinTasksParam) {
+      task.dynamicForkJoinTasksParam = form.dynamicForkJoinTasksParam;
+    }
+    if (form.dynamicForkTasksParam) {
+      task.dynamicForkTasksParam = form.dynamicForkTasksParam;
+    }
+    if (form.dynamicForkTasksInputParamName) {
+      task.dynamicForkTasksInputParamName = form.dynamicForkTasksInputParamName;
+    }
+  }
+
   return task;
 }
 
@@ -176,6 +195,10 @@ export function workflowTaskToForm(task: WorkflowTask): TaskFormState {
 
   if (task.loopCondition) form.loopCondition = task.loopCondition;
   if (task.loopOver) form.loopTasks = task.loopOver.map(workflowTaskToForm);
+
+  if (task.dynamicForkJoinTasksParam) form.dynamicForkJoinTasksParam = task.dynamicForkJoinTasksParam;
+  if (task.dynamicForkTasksParam) form.dynamicForkTasksParam = task.dynamicForkTasksParam;
+  if (task.dynamicForkTasksInputParamName) form.dynamicForkTasksInputParamName = task.dynamicForkTasksInputParamName;
 
   return form;
 }

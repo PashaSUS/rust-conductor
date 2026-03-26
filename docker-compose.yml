@@ -222,6 +222,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        VITE_API_BASE: "http://localhost:8090"
     restart: unless-stopped
     ports:
       - "3170:3170"

@@ -59,10 +59,10 @@ export const workflowApi = {
     request<void>(`/workflow/${encodeURIComponent(id)}/resume`, { method: "PUT" }),
 
   restart: (id: string) =>
-    request<void>(`/workflow/${encodeURIComponent(id)}/restart`, { method: "POST" }),
+    request<string>(`/workflow/${encodeURIComponent(id)}/restart`, { method: "POST" }),
 
   retry: (id: string) =>
-    request<void>(`/workflow/${encodeURIComponent(id)}/retry`, { method: "POST" }),
+    request<string>(`/workflow/${encodeURIComponent(id)}/retry`, { method: "POST" }),
 
   stats: () => request<Record<string, number>>("/workflow/stats"),
 
@@ -73,8 +73,12 @@ export const workflowApi = {
     if (params?.freeText) qs.set("freeText", params.freeText);
     if (params?.start !== undefined) qs.set("start", String(params.start));
     if (params?.size !== undefined) qs.set("size", String(params.size));
+    if (params?.tags) qs.set("tags", params.tags);
     return request<SearchResult<WorkflowSummary>>(`/workflow/search?${qs}`);
   },
+
+  metrics: (name: string) =>
+    request<WorkflowMetrics>(`/workflow/metrics/${encodeURIComponent(name)}`),
 };
 
 // ── Tasks ──
@@ -195,6 +199,9 @@ export interface WorkflowTask {
   loopOver?: WorkflowTask[];
   subWorkflowParam?: { name: string; version?: number };
   dynamicTaskNameParam?: string;
+  dynamicForkJoinTasksParam?: string;
+  dynamicForkTasksParam?: string;
+  dynamicForkTasksInputParamName?: string;
   sink?: string;
   asyncComplete?: boolean;
 }
@@ -320,4 +327,18 @@ export interface SearchParams {
   freeText?: string;
   start?: number;
   size?: number;
+  tags?: string;
+}
+
+export interface WorkflowMetrics {
+  workflowName: string;
+  sampleSize: number;
+  statusDistribution: Record<string, number>;
+  successRate: number;
+  failureRate: number;
+  avgDurationMs?: number;
+  minDurationMs?: number;
+  maxDurationMs?: number;
+  p50DurationMs?: number;
+  p95DurationMs?: number;
 }

@@ -13,6 +13,7 @@ import TaskDefs from "./pages/TaskDefs";
 import TaskQueues from "./pages/TaskQueues";
 import WorkflowDependencyGraph from "./pages/WorkflowDependencyGraph";
 import Schedules from "./pages/Schedules";
+import WorkflowMetrics from "./pages/WorkflowMetrics";
 import About from "./pages/About";
 import CreateWorkflowDef from "./pages/CreateWorkflowDef";
 import CreateTaskDef from "./pages/CreateTaskDef";
@@ -22,6 +23,7 @@ const ExecutionComparison = lazy(() => import("./pages/ExecutionComparison"));
 const WorkflowDiff = lazy(() => import("./pages/WorkflowDiff"));
 const TemplateMarketplace = lazy(() => import("./pages/TemplateMarketplace"));
 const WorkflowDesigner = lazy(() => import("./pages/WorkflowDesigner"));
+const WorkflowStresser = lazy(() => import("./pages/WorkflowStresser"));
 
 function LazyFallback() {
   return (
@@ -56,7 +58,9 @@ export default function App() {
               <Route path="/diff" element={<Suspense fallback={<LazyFallback />}><WorkflowDiff /></Suspense>} />
               <Route path="/templates" element={<Suspense fallback={<LazyFallback />}><TemplateMarketplace /></Suspense>} />
               <Route path="/designer" element={<Suspense fallback={<LazyFallback />}><WorkflowDesigner /></Suspense>} />
+              <Route path="/stresser" element={<Suspense fallback={<LazyFallback />}><WorkflowStresser /></Suspense>} />
               <Route path="/schedules" element={<Schedules />} />
+              <Route path="/metrics" element={<WorkflowMetrics />} />
               <Route path="/about" element={<About />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>

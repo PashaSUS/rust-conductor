@@ -8,11 +8,12 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Search, XCircle, Pause, Play, RotateCcw, Plus, RefreshCw } from "lucide-react";
+import { Search, XCircle, Pause, Play, RotateCcw, Plus, RefreshCw, Tag } from "lucide-react";
 import { CopyButton } from "@/components/CopyButton";
 import { StartWorkflowDialog } from "@/components/StartWorkflowDialog";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { TagInput } from "@/components/TagInput";
 import { RelativeTime } from "@/components/RelativeTime";
 import { PaginationControls } from "@/components/PaginationControls";
 import { useThemeText } from "@/components/ThemeContext";
@@ -29,6 +30,7 @@ function useFilterParams() {
     freeText: searchParams.get("freeText") || undefined,
     start: searchParams.has("start") ? Number(searchParams.get("start")) : 0,
     size: PAGE_SIZE,
+    tags: searchParams.get("tags") || undefined,
   }), [searchParams]);
 
   const setParams = useCallback((updater: (prev: SearchParams) => SearchParams) => {
@@ -39,6 +41,7 @@ function useFilterParams() {
         freeText: prev.get("freeText") || undefined,
         start: prev.has("start") ? Number(prev.get("start")) : 0,
         size: PAGE_SIZE,
+        tags: prev.get("tags") || undefined,
       };
       const next = updater(current);
       const qs = new URLSearchParams();
@@ -46,6 +49,7 @@ function useFilterParams() {
       if (next.workflowType) qs.set("workflowType", next.workflowType);
       if (next.freeText) qs.set("freeText", next.freeText);
       if (next.start) qs.set("start", String(next.start));
+      if (next.tags) qs.set("tags", next.tags);
       return qs;
     });
   }, [setSearchParams]);
@@ -59,6 +63,7 @@ export default function Workflows() {
   const { params, setParams } = useFilterParams();
   const [search, setSearch] = useState(params.freeText ?? "");
   const [workflowName, setWorkflowName] = useState(params.workflowType ?? "");
+  const [filterTags, setFilterTags] = useState<string[]>(params.tags ? params.tags.split(",").filter(Boolean) : []);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [startOpen, setStartOpen] = useState(false);
   const [terminateTarget, setTerminateTarget] = useState<string | null>(null);
@@ -96,6 +101,7 @@ export default function Workflows() {
       ...p,
       freeText: search || undefined,
       workflowType: workflowName || undefined,
+      tags: filterTags.length > 0 ? filterTags.join(",") : undefined,
       start: 0,
     }));
   };
@@ -166,6 +172,19 @@ export default function Workflows() {
                 {s || t.allStatuses}
               </Button>
             ))}
+          </div>
+          <div className="flex items-center gap-2">
+            <Tag className="h-4 w-4 text-muted-foreground shrink-0" />
+            <div className="flex-1 max-w-md">
+              <TagInput
+                tags={filterTags}
+                onChange={(tags) => {
+                  setFilterTags(tags);
+                  setParams((p) => ({ ...p, tags: tags.length > 0 ? tags.join(",") : undefined, start: 0 }));
+                }}
+                placeholder="Filter by tags..."
+              />
+            </div>
           </div>
         </CardContent>
       </Card>

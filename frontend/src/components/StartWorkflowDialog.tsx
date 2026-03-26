@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { SearchableSelect } from "@/components/SearchableSelect";
+import { TagInput } from "@/components/TagInput";
 import { Code, FormInput } from "lucide-react";
 import { useThemeText } from "@/components/ThemeContext";
 
@@ -63,6 +64,7 @@ export function StartWorkflowDialog({
     prefilledInput ? "json" : "fields"
   );
   const [correlationId, setCorrelationId] = useState("");
+  const [tags, setTags] = useState<string[]>([]);
 
   // Sync when preselectedDef changes (e.g. play button on a different workflow)
   useEffect(() => {
@@ -141,6 +143,7 @@ export function StartWorkflowDialog({
       setFieldValues({});
       setInputMode(prefilledInput ? "json" : "fields");
       setCorrelationId("");
+      setTags([]);
     }
     onOpenChange(open);
   };
@@ -172,6 +175,7 @@ export function StartWorkflowDialog({
         version: Number(selectedVersion) || undefined,
         input,
         correlationId: correlationId || undefined,
+        tags: tags.length > 0 ? tags : undefined,
       });
     },
     onSuccess: (workflowId) => {
@@ -317,6 +321,15 @@ export function StartWorkflowDialog({
               onChange={(e) => setCorrelationId(e.target.value)}
               placeholder="my-correlation-id"
               disabled={!selectedName}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Tags</Label>
+            <TagInput
+              tags={tags}
+              onChange={setTags}
+              placeholder="Add tags..."
             />
           </div>
 

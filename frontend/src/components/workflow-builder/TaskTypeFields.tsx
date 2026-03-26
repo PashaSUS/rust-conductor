@@ -325,3 +325,54 @@ export function DoWhileFields({ task, onUpdate }: TypeFieldProps) {
     </div>
   );
 }
+
+export function DynamicForkJoinFields({ task, onUpdate }: TypeFieldProps) {
+  return (
+    <div className="border-t pt-3 space-y-3">
+      <p className="text-xs font-semibold text-muted-foreground">Dynamic Fork/Join Configuration</p>
+      <p className="text-[10px] text-muted-foreground">
+        Dynamically forks multiple tasks at runtime based on input parameters. Provide either a
+        single param with task definitions or separate task list and input map params.
+      </p>
+
+      <Separator />
+      <p className="text-xs font-medium">Format 1: Combined tasks param</p>
+      <div className="space-y-2">
+        <Label>Dynamic Fork/Join Tasks Param</Label>
+        <Input
+          value={task.dynamicForkJoinTasksParam}
+          onChange={(e) => onUpdate({ dynamicForkJoinTasksParam: e.target.value })}
+          placeholder="dynamicTasks"
+        />
+        <p className="text-[10px] text-muted-foreground">
+          Name of the input parameter containing an array of {'{'} taskReferenceName, type, name, input {'}'} objects.
+        </p>
+      </div>
+
+      <Separator />
+      <p className="text-xs font-medium">Format 2: Separate task defs + inputs</p>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label>Dynamic Fork Tasks Param</Label>
+          <Input
+            value={task.dynamicForkTasksParam}
+            onChange={(e) => onUpdate({ dynamicForkTasksParam: e.target.value })}
+            placeholder="forkedTasks"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Tasks Input Param Name</Label>
+          <Input
+            value={task.dynamicForkTasksInputParamName}
+            onChange={(e) => onUpdate({ dynamicForkTasksInputParamName: e.target.value })}
+            placeholder="forkedTasksInputs"
+          />
+        </div>
+      </div>
+      <p className="text-[10px] text-muted-foreground">
+        One param holds an array of WorkflowTask definitions, the other holds a map of
+        {'{'} taskReferenceName: inputObject {'}'}.
+      </p>
+    </div>
+  );
+}
