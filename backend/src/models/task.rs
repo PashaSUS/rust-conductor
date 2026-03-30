@@ -200,6 +200,9 @@ pub struct TaskResult {
     pub workflow_task: Option<Value>,
     #[serde(default)]
     pub task_definition: Option<Value>,
+    /// Last heartbeat timestamp (epoch ms) from the worker.
+    #[serde(default)]
+    pub last_heartbeat_time: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

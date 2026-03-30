@@ -30,6 +30,10 @@ rand = { version = "0.9", features = ["std", "small_rng"] }
 anyhow = "1.0.102"
 lru = "0.16"
 
+# Prometheus metrics exposition
+prometheus = "0.13"
+lazy_static = "1"
+
 # GraphQL (optional — enable with `graphql` feature)
 async-graphql = { version = "7", features = ["chrono", "uuid"], optional = true }
 async-graphql-actix-web = { version = "7", optional = true }

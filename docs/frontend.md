@@ -91,16 +91,26 @@ No other React library handles this as well. D3-based alternatives require much 
 ### Routing
 
 ```
-/                     → Dashboard (stats, recent executions, health)
-/executions           → Workflow search (filter by status, name, free text)
-/executions/:id       → Workflow detail (tasks, timeline, diagram, I/O)
-/definitions          → Workflow definitions (visual builder, JSON editor)
+/                     → Dashboard (stats, recent executions, health, customizable widgets)
+/executions           → Workflow search (filter by status, name, free text, tags, bulk ops)
+/executions/:id       → Workflow detail (tasks, timeline, flame chart, diagram, replay, I/O)
+/definitions          → Workflow definitions (version history, clone, diagram preview)
+/definitions/create   → Create/edit workflow definition (full-page editor)
 /taskdefs             → Task definitions (CRUD, test run)
-/queues               → Task queue depths
-/dependencies         → Workflow dependency graph
-/schedules            → CRON schedule management
-/about                → System info
+/taskdefs/create      → Create task definition (full-page editor)
+/queues               → Task queue depths (alert thresholds, utilization gauges)
+/schedules            → CRON schedule management (timezone support)
+/metrics              → Workflow execution metrics (percentiles, success rates)
+/dependencies         → Workflow dependency graph (root/leaf node identification)
+/compare              → Execution comparison (side-by-side diff, timeline overlay) [lazy]
+/diff                 → Workflow definition version diff (LCS-based visual diff) [lazy]
+/designer             → Visual workflow designer (drag-and-drop, React Flow) [lazy]
+/stresser             → Workflow stress tester (load testing, random data) [lazy]
+/templates            → Workflow template marketplace (built-in patterns) [lazy]
+/about                → System info & tech stack
 ```
+
+Routes marked `[lazy]` are code-split via `React.lazy()` with a Suspense fallback.
 
 ### API Client
 
@@ -213,15 +223,31 @@ location / { try_files $uri /index.html; }   # SPA fallback
 |------|------|
 | `src/App.tsx` | Route definitions, providers (QueryClient, Theme, Router) |
 | `src/api/conductor.ts` | Typed API client — all backend communication |
-| `src/components/Layout.tsx` | Sidebar + navbar shell |
+| `src/components/Layout.tsx` | Sidebar + navbar shell, keyboard shortcuts |
 | `src/components/ThemeContext.tsx` | Theme provider, localized text |
-| `src/components/StatusBadge.tsx` | Shared status badge components |
+| `src/components/StatusBadge.tsx` | Color-coded status badges for workflows and tasks |
 | `src/components/WorkflowDiagram.tsx` | XYFlow-based DAG rendering |
 | `src/components/WorkflowBuilder.tsx` | Visual workflow definition editor |
-| `src/hooks/useWorkflowMutations.ts` | Shared mutation hooks |
+| `src/components/FlameChart.tsx` | Execution flame chart visualization |
+| `src/components/TaskDependencyGraph.tsx` | Task dependency graph with critical path |
+| `src/components/DataExplorer.tsx` | Nested JSON data explorer with breadcrumbs |
+| `src/components/ReplayPlayer.tsx` | Execution replay animation |
+| `src/components/NotificationBell.tsx` | Real-time failure/SLA alert notifications |
+| `src/components/ErrorBoundary.tsx` | Error boundary with retry UI |
+| `src/components/CommandPalette.tsx` | Keyboard-driven command palette |
+| `src/components/StartWorkflowDialog.tsx` | Quick workflow start dialog |
+| `src/hooks/useWorkflowMutations.ts` | Shared mutation hooks (pause, resume, terminate, etc.) |
+| `src/hooks/useBulkWorkflowMutations.ts` | Bulk workflow operation hooks |
+| `src/hooks/usePagination.ts` | Client-side pagination hook |
 | `src/lib/field-parser.ts` | Input field parsing utilities |
-| `src/pages/Dashboard.tsx` | Overview stats, health, recent executions |
+| `src/pages/Dashboard.tsx` | Overview stats, health, customizable widgets |
 | `src/pages/Workflows.tsx` | Workflow search + bulk actions |
-| `src/pages/WorkflowDetail.tsx` | Execution detail (tasks, timeline, diagram) |
+| `src/pages/WorkflowDetail.tsx` | Execution detail (9 tabs: tasks, timeline, flame chart, etc.) |
 | `src/pages/TaskDefs.tsx` | Task definition management |
 | `src/pages/Schedules.tsx` | CRON schedule management |
+| `src/pages/WorkflowMetrics.tsx` | Execution analytics (percentiles, rates) |
+| `src/pages/ExecutionComparison.tsx` | Side-by-side execution diff |
+| `src/pages/WorkflowDiff.tsx` | Definition version diff (LCS-based) |
+| `src/pages/WorkflowDesigner.tsx` | Drag-and-drop visual workflow builder |
+| `src/pages/WorkflowStresser.tsx` | Load testing tool |
+| `src/pages/TemplateMarketplace.tsx` | Built-in workflow template library |

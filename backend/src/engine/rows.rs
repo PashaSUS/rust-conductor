@@ -108,6 +108,7 @@ impl From<TaskRow> for TaskResult {
             queue_wait_time: None,
             workflow_task: None,
             task_definition: None,
+            last_heartbeat_time: None,
         }
     }
 }

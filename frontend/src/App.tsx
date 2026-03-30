@@ -24,6 +24,8 @@ const WorkflowDiff = lazy(() => import("./pages/WorkflowDiff"));
 const TemplateMarketplace = lazy(() => import("./pages/TemplateMarketplace"));
 const WorkflowDesigner = lazy(() => import("./pages/WorkflowDesigner"));
 const WorkflowStresser = lazy(() => import("./pages/WorkflowStresser"));
+const WorkflowValidation = lazy(() => import("./pages/WorkflowValidation"));
+const WorkflowSignals = lazy(() => import("./pages/WorkflowSignals"));
 
 function LazyFallback() {
   return (
@@ -59,6 +61,8 @@ export default function App() {
               <Route path="/templates" element={<Suspense fallback={<LazyFallback />}><TemplateMarketplace /></Suspense>} />
               <Route path="/designer" element={<Suspense fallback={<LazyFallback />}><WorkflowDesigner /></Suspense>} />
               <Route path="/stresser" element={<Suspense fallback={<LazyFallback />}><WorkflowStresser /></Suspense>} />
+              <Route path="/validate" element={<Suspense fallback={<LazyFallback />}><WorkflowValidation /></Suspense>} />
+              <Route path="/signals" element={<Suspense fallback={<LazyFallback />}><WorkflowSignals /></Suspense>} />
               <Route path="/schedules" element={<Schedules />} />
               <Route path="/metrics" element={<WorkflowMetrics />} />
               <Route path="/about" element={<About />} />

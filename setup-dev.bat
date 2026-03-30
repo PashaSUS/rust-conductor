@@ -85,6 +85,21 @@ REM -- API v2 --
 set "USE_V2=N"
 set /p USE_V2="Enable API v2 endpoints? (y/N): "
 
+REM -- Prometheus + Grafana monitoring --
+set "USE_MONITORING=N"
+set /p USE_MONITORING="Enable Prometheus + Grafana monitoring? (y/N): "
+if /i "!USE_MONITORING!"=="y" (
+    set "PROMETHEUS_PORT=9090"
+    set "GRAFANA_PORT=3000"
+    set /p "PROMETHEUS_PORT=Prometheus port [!PROMETHEUS_PORT!]: " || set "PROMETHEUS_PORT=!PROMETHEUS_PORT!"
+    set /p "GRAFANA_PORT=Grafana port [!GRAFANA_PORT!]: " || set "GRAFANA_PORT=!GRAFANA_PORT!"
+    echo.
+    echo Monitoring will be available at:
+    echo   Prometheus: http://localhost:!PROMETHEUS_PORT!
+    echo   Grafana:    http://localhost:!GRAFANA_PORT!  (admin/admin)
+    echo.
+)
+
 REM -- External payload storage (RustFS / S3) --
 echo.
 echo ========================================
@@ -372,6 +387,42 @@ if /i "!BUILD_MODE!"=="build" (
 >> "%FILE%" echo       - backend
 >> "%FILE%" echo.
 
+REM -- Prometheus (optional) --
+if /i "!USE_MONITORING!"=="y" (
+    >> "%FILE%" echo   # Prometheus - metrics collection
+    >> "%FILE%" echo   prometheus:
+    >> "%FILE%" echo     image: prom/prometheus:latest
+    >> "%FILE%" echo     restart: unless-stopped
+    >> "%FILE%" echo     ports:
+    >> "%FILE%" echo       - "!PROMETHEUS_PORT!:9090"
+    >> "%FILE%" echo     volumes:
+    >> "%FILE%" echo       - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    >> "%FILE%" echo       - prometheusdata:/prometheus
+    >> "%FILE%" echo     depends_on:
+    >> "%FILE%" echo       - backend
+    >> "%FILE%" echo.
+)
+
+REM -- Grafana (optional) --
+if /i "!USE_MONITORING!"=="y" (
+    >> "%FILE%" echo   # Grafana - metrics dashboard
+    >> "%FILE%" echo   grafana:
+    >> "%FILE%" echo     image: grafana/grafana:latest
+    >> "%FILE%" echo     restart: unless-stopped
+    >> "%FILE%" echo     ports:
+    >> "%FILE%" echo       - "!GRAFANA_PORT!:3000"
+    >> "%FILE%" echo     environment:
+    >> "%FILE%" echo       GF_SECURITY_ADMIN_USER: admin
+    >> "%FILE%" echo       GF_SECURITY_ADMIN_PASSWORD: admin
+    >> "%FILE%" echo     volumes:
+    >> "%FILE%" echo       - grafanadata:/var/lib/grafana
+    >> "%FILE%" echo       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    >> "%FILE%" echo       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    >> "%FILE%" echo     depends_on:
+    >> "%FILE%" echo       - prometheus
+    >> "%FILE%" echo.
+)
+
 REM -- Volumes --
 >> "%FILE%" echo volumes:
 >> "%FILE%" echo   pgdata_shard0:
@@ -379,6 +430,10 @@ REM -- Volumes --
 if /i "!USE_MINIO!"=="y" (
     >> "%FILE%" echo   rustfsdata:
     >> "%FILE%" echo   rustfslogs:
+)
+if /i "!USE_MONITORING!"=="y" (
+    >> "%FILE%" echo   prometheusdata:
+    >> "%FILE%" echo   grafanadata:
 )
 
 
@@ -396,6 +451,10 @@ echo    CORS:       !PUBLIC_URL!
 echo    PgBouncer:  OFF
 echo    Nginx LB:   OFF
 echo    Features:   !CARGO_FEATURES!
+if /i "!USE_MONITORING!"=="y" (
+    echo    Prometheus: http://localhost:!PROMETHEUS_PORT!
+    echo    Grafana:    http://localhost:!GRAFANA_PORT!  (admin/admin)
+)
 if /i "!USE_MINIO!"=="y" (
     echo    RustFS API: http://localhost:!MINIO_PORT!
     echo    RustFS UI:  http://localhost:!MINIO_CONSOLE_PORT!
@@ -403,7 +462,10 @@ if /i "!USE_MINIO!"=="y" (
 REM Base: postgres + redis + backend-migrate + backend + frontend = 5
 set /a CONTAINER_COUNT=5
 if /i "!USE_MINIO!"=="y" (
-    set /a CONTAINER_COUNT=6
+    set /a CONTAINER_COUNT=!CONTAINER_COUNT! + 1
+)
+if /i "!USE_MONITORING!"=="y" (
+    set /a CONTAINER_COUNT=!CONTAINER_COUNT! + 2
 )
 echo.
 echo    Total containers: !CONTAINER_COUNT!
@@ -430,6 +492,10 @@ if /i "%WIPE_DB%"=="y" (
     if /i "!USE_MINIO!"=="y" (
         docker volume rm rust-conductor_rustfsdata 2>nul
         docker volume rm rust-conductor_rustfslogs 2>nul
+    )
+    if /i "!USE_MONITORING!"=="y" (
+        docker volume rm rust-conductor_prometheusdata 2>nul
+        docker volume rm rust-conductor_grafanadata 2>nul
     )
     echo Volumes removed.
 ) else (
@@ -461,6 +527,10 @@ echo    API:        !PUBLIC_URL!/api
 echo    gRPC:       localhost:!GRPC_PORT!
 echo    Postgres:   localhost:5432
 echo    Redis:      localhost:6379
+if /i "!USE_MONITORING!"=="y" (
+    echo    Prometheus: http://localhost:!PROMETHEUS_PORT!
+    echo    Grafana:    http://localhost:!GRAFANA_PORT!  (admin/admin)
+)
 if /i "!USE_MINIO!"=="y" (
     echo    RustFS API: http://localhost:!MINIO_PORT!
     echo    RustFS UI:  http://localhost:!MINIO_CONSOLE_PORT!

@@ -72,7 +72,7 @@
 - [ ] 53. Implement config hot-reload — update sweeper intervals, log levels without restart.
 - [ ] 54. Add shard rebalancing tooling — migrate workflows between shards without downtime.
 - [ ] 55. Implement automated database vacuum/analyze scheduling for PostgreSQL.
-- [ ] 56. Add Grafana dashboard templates for key operational metrics.
+- [x] 56. Add Grafana dashboard templates for key operational metrics.
 
 ## Frontend: UX
 
@@ -142,16 +142,16 @@
 
 ## Backend: Advanced Workflow Engine
 
-- [ ] 101. Add workflow pause/resume functionality — freeze execution mid-flight and continue later.
-- [ ] 102. Implement dynamic workflow modification — add/remove tasks from a running workflow.
-- [ ] 103. Add workflow inter-communication — allow running workflows to send messages to each other.
-- [ ] 104. Implement saga pattern support — automatic compensating transactions on workflow failure.
-- [ ] 105. Add workflow checkpointing — save execution state snapshots for fast recovery after crashes.
-- [ ] 106. Implement conditional branching with complex boolean expressions (AND/OR/NOT combinators).
-- [ ] 107. Add MAP task type — fan-out across a dynamic list of items with configurable parallelism.
-- [ ] 108. Implement workflow inheritance — define base workflow templates that child workflows extend.
-- [ ] 109. Add task dependency graph validation at definition time — detect cycles, unreachable tasks.
-- [ ] 110. Implement long-running task heartbeat mechanism — workers report liveness, engine detects stale tasks.
+- [x] 101. Add workflow pause/resume functionality — freeze execution mid-flight and continue later.
+- [x] 102. Implement dynamic workflow modification — add/remove tasks from a running workflow.
+- [x] 103. Add workflow inter-communication — allow running workflows to send messages to each other.
+- [x] 104. Implement saga pattern support — automatic compensating transactions on workflow failure.
+- [x] 105. Add workflow checkpointing — save execution state snapshots for fast recovery after crashes.
+- [x] 106. Implement conditional branching with complex boolean expressions (AND/OR/NOT combinators).
+- [x] 107. Add MAP task type — fan-out across a dynamic list of items with configurable parallelism.
+- [x] 108. Implement workflow inheritance — define base workflow templates that child workflows extend.
+- [x] 109. Add task dependency graph validation at definition time — detect cycles, unreachable tasks.
+- [x] 110. Implement long-running task heartbeat mechanism — workers report liveness, engine detects stale tasks.
 
 ## Backend: Task System
 
@@ -236,11 +236,11 @@
 - [x] 171. Add workflow execution flame chart — hierarchical task duration visualization.
 - [x] 172. Implement task dependency graph with critical path highlighting.
 - [x] 173. Add execution comparison view — overlay two workflow runs to spot differences.
-- [x] 174. Implement real-time workflow topology map — show live status of all running workflows.
+- [ ] 174. Implement real-time workflow topology map — show live status of all running workflows.
 - [x] 175. Add task output data explorer — navigate nested JSON with breadcrumbs and search.
 - [x] 176. Implement workflow definition visual diff — side-by-side comparison with syntax highlighting.
 - [x] 177. Add execution replay animation — step through workflow execution frame by frame.
-- [x] 178. Implement heatmap view — show task execution hotspots across time periods.
+- [ ] 178. Implement heatmap view — show task execution hotspots across time periods.
 - [x] 179. Add workflow template marketplace — browse and import community workflow definitions.
 - [x] 180. Implement drag-and-drop workflow designer with auto-layout and connection snapping.
 
@@ -358,7 +358,7 @@
 - [x] 263. Add queue utilization gauge bars to TaskQueues page.
 - [x] 264. Add responsive mobile drawer for sidebar navigation.
 - [x] 265. Implement workflow execution progress bar based on completed/total tasks.
-- [x] 266. Add code-splitting with React.lazy() for heavy pages (Designer, Topology, Heatmap).
+- [x] 266. Add code-splitting with React.lazy() for heavy pages (Designer, Compare, Diff, Stresser, Templates).
 - [x] 267. Implement dark mode graph/chart color schemes for better contrast.
 - [x] 268. Add workflow execution timeline comparison overlay.
 - [x] 269. Implement task output diff viewer for re-run comparisons.

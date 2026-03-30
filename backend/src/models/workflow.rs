@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
-use super::common::{CacheConfig, IdempotencyStrategy, RateLimitConfig, SchemaDef};
+use super::common::{CacheConfig, ConditionNode, IdempotencyStrategy, RateLimitConfig, SchemaDef};
 use super::task::TaskResult;
 
 //  Defaults
@@ -88,11 +88,20 @@ pub struct WorkflowDef {
     /// SLA deadline in seconds from workflow start. Breaches are detected by the sweeper.
     #[serde(default)]
     pub sla_deadline_seconds: Option<i64>,
+    /// Enable saga pattern — run compensation tasks in reverse on failure.
+    #[serde(default)]
+    pub saga_enabled: bool,
+    /// Base workflow name for inheritance. The child extends the parent's tasks.
+    #[serde(default)]
+    pub base_workflow: Option<String>,
+    /// Base workflow version (defaults to latest if omitted).
+    #[serde(default)]
+    pub base_workflow_version: Option<i32>,
 }
 
 //  Workflow Task
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkflowTask {
     pub name: String,
@@ -159,6 +168,25 @@ pub struct WorkflowTask {
     pub cache_config: Option<CacheConfig>,
     #[serde(default)]
     pub permissive: Option<bool>,
+    /// Compensation task to run if this task fails (saga pattern).
+    #[serde(default)]
+    pub compensation_task: Option<Box<WorkflowTask>>,
+    /// For MAP tasks: the array items to iterate over (from input param name).
+    #[serde(default)]
+    pub map_items_param: Option<String>,
+    /// For MAP tasks: max parallel sub-tasks (0 = unlimited).
+    #[serde(default)]
+    pub map_parallelism: Option<i32>,
+    /// For MAP tasks: the template task to fan-out for each item.
+    #[serde(default)]
+    pub map_task: Option<Box<WorkflowTask>>,
+    /// Heartbeat timeout in seconds. Workers must heartbeat within this.
+    #[serde(default)]
+    pub heartbeat_timeout_seconds: Option<i64>,
+    /// Composite condition tree for advanced branching (AND/OR/NOT combinators).
+    /// Used when evaluator_type = "composite" on DECISION/SWITCH tasks.
+    #[serde(default)]
+    pub condition_tree: Option<ConditionNode>,
 }
 
 fn default_task_type_str() -> String {
@@ -396,4 +424,60 @@ pub struct InstantiateTemplateRequest {
     pub parameter_values: HashMap<String, Value>,
     #[serde(default)]
     pub input: Value,
+}
+
+//  Dynamic Workflow Modification
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModifyWorkflowRequest {
+    /// Tasks to append to the running workflow.
+    #[serde(default)]
+    pub add_tasks: Vec<WorkflowTask>,
+    /// Reference names of tasks to remove (only unscheduled tasks).
+    #[serde(default)]
+    pub remove_task_refs: Vec<String>,
+}
+
+//  Workflow Signal (inter-communication)
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SendSignalRequest {
+    /// Signal name.
+    pub signal_name: String,
+    /// Payload to deliver with the signal.
+    #[serde(default)]
+    pub payload: Value,
+}
+
+//  Workflow Checkpoint
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowCheckpoint {
+    pub checkpoint_id: String,
+    pub workflow_id: String,
+    pub created_at: i64,
+    /// Snapshot of workflow state at checkpoint time.
+    pub workflow_snapshot: Value,
+    /// Snapshot of all task states at checkpoint time.
+    pub tasks_snapshot: Value,
+    /// Snapshot of workflow variables.
+    pub variables_snapshot: Value,
+    /// Optional label for the checkpoint.
+    #[serde(default)]
+    pub label: Option<String>,
+}
+
+//  Graph Validation Result
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ValidationResult {
+    pub valid: bool,
+    #[serde(default)]
+    pub errors: Vec<String>,
+    #[serde(default)]
+    pub warnings: Vec<String>,
 }

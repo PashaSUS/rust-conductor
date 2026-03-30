@@ -2,6 +2,7 @@ mod api;
 mod config;
 mod engine;
 mod grpc;
+mod metrics;
 mod models;
 #[cfg(feature = "seq")]
 mod seq;
@@ -132,6 +133,9 @@ async fn main() -> std::io::Result<()> {
     )
     .with_sweeper_config(cfg.sweeper_min_interval_secs, cfg.sweeper_max_interval_secs);
 
+    // Register Prometheus metrics
+    metrics::register_metrics();
+
     // Start background sweeper for orphaned/stale tasks
     engine::WorkflowEngine::start_background_sweeper(std::sync::Arc::new(engine.clone()));
 
@@ -211,7 +215,8 @@ async fn main() -> std::io::Result<()> {
             .wrap(cors)
             .wrap(TracingLogger::default())
             .wrap(middleware::Compress::default())
-            .wrap(middleware::Condition::new(rate_limit_enabled, rate_limiter));
+            .wrap(middleware::Condition::new(rate_limit_enabled, rate_limiter))
+            .wrap(metrics::PrometheusMetricsMiddleware);
 
         let app = app
             .app_data(json_cfg)

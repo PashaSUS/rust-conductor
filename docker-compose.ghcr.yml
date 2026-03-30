@@ -9,6 +9,8 @@
 # Swagger:   http://localhost:8090/swagger-ui/
 # gRPC:      localhost:50055
 # Seq Logs:  http://localhost:9321
+# Prometheus: http://localhost:9090
+# Grafana:   http://localhost:3000  (admin/admin)
 
 services:
   # ── PostgreSQL ───────────────────────────────────────────────────────
@@ -221,6 +223,45 @@ services:
     depends_on:
       - backend
 
+  # ── Prometheus ──────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheusdata:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Grafana ─────────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafanadata:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      prometheus:
+        condition: service_healthy
+
 volumes:
   pgdata_shard0:
   redisdata-0:
@@ -228,3 +269,5 @@ volumes:
   seqdata:
   rustfsdata:
   rustfslogs:
+  prometheusdata:
+  grafanadata:

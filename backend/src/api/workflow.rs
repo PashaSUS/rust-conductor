@@ -3,7 +3,10 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 use crate::engine::WorkflowEngine;
-use crate::models::{RerunWorkflowRequest, SkipTaskRequest, StartWorkflowRequest};
+use crate::models::{
+    ModifyWorkflowRequest, RerunWorkflowRequest, SendSignalRequest, SkipTaskRequest,
+    StartWorkflowRequest,
+};
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(
@@ -11,6 +14,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .route("", web::post().to(start_workflow))
             .route("/stats", web::get().to(workflow_stats))
             .route("/search", web::get().to(search_workflows))
+            .route("/signal", web::post().to(send_signal))
             .route("/metrics/{name}", web::get().to(workflow_metrics))
             .route("/running/{name}", web::get().to(get_running_workflows))
             .route("/{workflowId}", web::get().to(get_workflow))
@@ -23,6 +27,19 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .route("/{workflowId}/retry", web::post().to(retry_workflow))
             .route("/{workflowId}/rerun", web::post().to(rerun_workflow))
             .route("/{workflowId}/decide", web::put().to(decide_workflow))
+            .route("/{workflowId}/modify", web::post().to(modify_workflow))
+            .route(
+                "/{workflowId}/checkpoint",
+                web::post().to(create_checkpoint),
+            )
+            .route(
+                "/{workflowId}/checkpoints",
+                web::get().to(list_checkpoints),
+            )
+            .route(
+                "/{workflowId}/restore/{checkpointId}",
+                web::post().to(restore_checkpoint),
+            )
             .route(
                 "/{workflowId}/variables",
                 web::post().to(update_workflow_variables),
@@ -276,4 +293,70 @@ struct StartByNameQuery {
     version: Option<i32>,
     correlation_id: Option<String>,
     priority: Option<i32>,
+}
+
+// ── 102. Dynamic Workflow Modification ─────────────────────────────────
+
+async fn modify_workflow(
+    engine: web::Data<WorkflowEngine>,
+    path: web::Path<String>,
+    body: web::Json<ModifyWorkflowRequest>,
+) -> Result<HttpResponse, crate::engine::EngineError> {
+    let wf = engine
+        .modify_running_workflow(&path.into_inner(), &body)
+        .await?;
+    Ok(HttpResponse::Ok().json(wf))
+}
+
+// ── 103. Workflow Signals ──────────────────────────────────────────────
+
+async fn send_signal(
+    engine: web::Data<WorkflowEngine>,
+    body: web::Json<SendSignalRequest>,
+) -> Result<HttpResponse, crate::engine::EngineError> {
+    let count = engine
+        .send_signal(&body.signal_name, &body.payload)
+        .await?;
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "signalName": body.signal_name,
+        "deliveredTo": count,
+    })))
+}
+
+// ── 105. Workflow Checkpointing ────────────────────────────────────────
+
+#[derive(serde::Deserialize)]
+struct CheckpointRequest {
+    label: Option<String>,
+}
+
+async fn create_checkpoint(
+    engine: web::Data<WorkflowEngine>,
+    path: web::Path<String>,
+    body: Option<web::Json<CheckpointRequest>>,
+) -> Result<HttpResponse, crate::engine::EngineError> {
+    let label = body.as_ref().and_then(|b| b.label.as_deref());
+    let cp = engine
+        .create_checkpoint(&path.into_inner(), label)
+        .await?;
+    Ok(HttpResponse::Ok().json(cp))
+}
+
+async fn list_checkpoints(
+    engine: web::Data<WorkflowEngine>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, crate::engine::EngineError> {
+    let checkpoints = engine.list_checkpoints(&path.into_inner()).await?;
+    Ok(HttpResponse::Ok().json(checkpoints))
+}
+
+async fn restore_checkpoint(
+    engine: web::Data<WorkflowEngine>,
+    path: web::Path<(String, String)>,
+) -> Result<HttpResponse, crate::engine::EngineError> {
+    let (workflow_id, checkpoint_id) = path.into_inner();
+    let new_id = engine
+        .restore_checkpoint(&workflow_id, &checkpoint_id)
+        .await?;
+    Ok(HttpResponse::Ok().json(new_id))
 }

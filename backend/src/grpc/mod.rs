@@ -4,6 +4,7 @@ pub mod events;
 pub mod metadata;
 pub mod official;
 pub mod proto_conv;
+pub mod proto_conv_official;
 pub mod tasks;
 pub mod workflow;
 

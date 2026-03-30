@@ -1,8 +1,11 @@
 mod admin;
 mod advance;
+mod advanced;
+mod bulk_ops;
 mod error;
 mod events;
 mod execution;
+pub(crate) mod expression;
 mod metadata;
 mod rows;
 mod scheduler;

@@ -22,6 +22,8 @@ import {
   X,
   BarChart3,
   Flame,
+  ShieldCheck,
+  Radio,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -71,6 +73,8 @@ export default function Layout() {
     { to: "/designer", label: "Designer", icon: PencilRuler, shortcut: "d" },
     { to: "/stresser", label: "Stresser", icon: Flame, shortcut: "s" },
     { to: "/templates", label: "Templates", icon: BookTemplate, shortcut: "t" },
+    { to: "/validate", label: "Validate", icon: ShieldCheck, shortcut: "v" },
+    { to: "/signals", label: "Signals", icon: Radio, shortcut: "g" },
     { to: "/about", label: t.about, icon: Info, shortcut: "a" },
   ], [t]);
 

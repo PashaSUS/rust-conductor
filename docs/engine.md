@@ -115,6 +115,8 @@ These are evaluated during advancement — no queue round-trip:
 | `TERMINATE` | End workflow with status | State transition only |
 | `WAIT` | Wait for duration or event | Sets a timer, no external work |
 | `EVENT` | Wait for external event | Registers a listener, no external work |
+| `MAP` | Fan-out across array items | Creates N sub-tasks + auto-JOIN — configurable parallelism |
+| `WAIT_FOR_SIGNAL` | Wait for inter-workflow signal | Creates IN_PROGRESS task, completed by `send_signal()` |
 
 **Why this split?** System tasks take microseconds. Enqueuing them to Kafka and back would add milliseconds of latency per task for no benefit.
 
@@ -217,11 +219,12 @@ WHERE status NOT IN ('COMPLETED', 'FAILED', ...);
 |------|------|
 | `engine/mod.rs` | `WorkflowEngine` struct and constructor |
 | `engine/advance.rs` | Workflow advancement state machine |
+| `engine/advanced.rs` | Advanced features: signals, saga, checkpoints, inheritance, validation, heartbeat |
 | `engine/execution.rs` | Workflow start, get, search |
 | `engine/workflow_ops.rs` | Pause, resume, terminate, restart, retry |
 | `engine/task_ops.rs` | Task poll, update, routing |
-| `engine/system_tasks.rs` | FORK, JOIN, DECISION, SUB_WORKFLOW, etc. |
-| `engine/sweeper.rs` | Background recovery + CRON scheduler |
+| `engine/system_tasks.rs` | FORK, JOIN, DECISION, SUB_WORKFLOW, MAP, WAIT_FOR_SIGNAL, etc. |
+| `engine/sweeper.rs` | Background recovery + CRON scheduler + heartbeat timeout |
 | `engine/scheduler.rs` | CRON expression evaluation |
 | `engine/events.rs` | Event handler registration and triggering |
 | `engine/metadata.rs` | Definition CRUD |
@@ -229,3 +232,49 @@ WHERE status NOT IN ('COMPLETED', 'FAILED', ...);
 | `engine/error.rs` | Typed error variants |
 | `engine/rows.rs` | SQL row mapping helpers |
 | `engine/shard.rs` | Shard routing (see [sharding.md](sharding.md)) |
+
+---
+
+## Advanced Workflow Engine Features
+
+### Dynamic Workflow Modification (102)
+
+Running workflows can be modified via `POST /api/workflow/{id}/modify`. Only tasks that have not yet been scheduled can be added or removed. The modified definition is validated, and the workflow is re-advanced to pick up new tasks.
+
+### Workflow Inter-Communication — Signals (103)
+
+The `WAIT_FOR_SIGNAL` task type creates an IN_PROGRESS task that blocks until a matching signal is received. Signals are sent via `POST /api/workflow/signal` with a `signalName` and `payload`. All waiting workflows across all shards with matching signal names are completed.
+
+**Frontend path:** `/signals`
+
+### Saga Pattern (104)
+
+Workflow definitions with `sagaEnabled: true` automatically run compensation tasks in reverse order when the workflow fails. Each task can define a `compensationTask` that runs with the original task's output as input.
+
+### Workflow Checkpointing (105)
+
+Create snapshots of workflow state via `POST /api/workflow/{id}/checkpoint`. List all checkpoints via `GET /api/workflow/{id}/checkpoints`. Restore from a checkpoint (terminates current, starts new) via `POST /api/workflow/{id}/restore/{checkpointId}`.
+
+**Frontend:** Checkpoints tab on workflow detail page (`/executions/:id`).
+
+### Conditional Branching Combinators (106)
+
+DECISION tasks can use a `conditionTree` field with nested AND/OR/NOT/Compare nodes instead of simple `caseValueParam`. The `Compare` node supports operators: Eq, Neq, Gt, Gte, Lt, Lte, Contains, StartsWith, EndsWith.
+
+### MAP Task Type (107)
+
+The `MAP` task fans out across an array of items. Specify `mapItemsParam` (name of array field in input), `mapTask` (template task), and optional `mapParallelism`. Creates N sub-tasks with `mapItem` and `mapIndex` injected into input, plus an auto-JOIN.
+
+### Workflow Inheritance (108)
+
+Workflow definitions can specify `baseWorkflow` and `baseWorkflowVersion` to inherit tasks from a parent definition. Inheritance is resolved at `start_workflow` time. Child tasks override parent tasks with the same reference name. Maximum chain depth: 10. Circular inheritance is detected and rejected.
+
+### Task Dependency Graph Validation (109)
+
+Validate workflow definitions via `POST /api/metadata/workflow/validate`. Checks for: empty names, duplicate references, invalid JOIN references, FORK structure, DECISION cases, SUB_WORKFLOW params, MAP params, cycle detection (DFS), and unreachable tasks.
+
+**Frontend path:** `/validate`
+
+### Long-Running Task Heartbeat (110)
+
+Workers can report liveness via `POST /api/tasks/{taskId}/heartbeat`. Tasks with `heartbeatTimeoutSeconds` set in their definition are monitored by the sweeper — if `update_time` exceeds the timeout, the task is marked TIMED_OUT. Heartbeats are also stored in Redis with a 10-minute TTL for fast lookup.

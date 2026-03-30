@@ -39,6 +39,13 @@ export const metadataApi = {
 
   deleteTaskDef: (name: string) =>
     request<void>(`/metadata/taskdefs/${encodeURIComponent(name)}`, { method: "DELETE" }),
+
+  // 109. Workflow validation
+  validateWorkflow: (def: WorkflowDef) =>
+    request<ValidationResult>("/metadata/workflow/validate", {
+      method: "POST",
+      body: JSON.stringify(def),
+    }),
 };
 
 // ── Workflow ──
@@ -79,6 +86,36 @@ export const workflowApi = {
 
   metrics: (name: string) =>
     request<WorkflowMetrics>(`/workflow/metrics/${encodeURIComponent(name)}`),
+
+  // 102. Dynamic modification
+  modify: (id: string, req: ModifyWorkflowRequest) =>
+    request<Workflow>(`/workflow/${encodeURIComponent(id)}/modify`, {
+      method: "POST",
+      body: JSON.stringify(req),
+    }),
+
+  // 103. Signals
+  sendSignal: (req: SendSignalRequest) =>
+    request<SignalResponse>("/workflow/signal", {
+      method: "POST",
+      body: JSON.stringify(req),
+    }),
+
+  // 105. Checkpoints
+  createCheckpoint: (id: string, label?: string) =>
+    request<WorkflowCheckpoint>(`/workflow/${encodeURIComponent(id)}/checkpoint`, {
+      method: "POST",
+      body: JSON.stringify({ label }),
+    }),
+
+  listCheckpoints: (id: string) =>
+    request<WorkflowCheckpoint[]>(`/workflow/${encodeURIComponent(id)}/checkpoints`),
+
+  restoreCheckpoint: (workflowId: string, checkpointId: string) =>
+    request<string>(
+      `/workflow/${encodeURIComponent(workflowId)}/restore/${encodeURIComponent(checkpointId)}`,
+      { method: "POST" }
+    ),
 };
 
 // ── Tasks ──
@@ -94,6 +131,12 @@ export const taskApi = {
     request<TaskResult>(`/tasks/${encodeURIComponent(taskId)}`),
 
   queueSizes: () => request<Record<string, number>>("/tasks/queue/sizes"),
+
+  // 110. Heartbeat
+  heartbeat: (taskId: string) =>
+    request<{ acknowledged: boolean }>(`/tasks/${encodeURIComponent(taskId)}/heartbeat`, {
+      method: "POST",
+    }),
 };
 
 // ── Health ──
@@ -179,6 +222,9 @@ export interface WorkflowDef {
   onFailureWebhook?: string;
   tags?: string[];
   slaDeadlineSeconds?: number;
+  sagaEnabled?: boolean;
+  baseWorkflow?: string;
+  baseWorkflowVersion?: number;
 }
 
 export interface WorkflowTask {
@@ -204,6 +250,12 @@ export interface WorkflowTask {
   dynamicForkTasksInputParamName?: string;
   sink?: string;
   asyncComplete?: boolean;
+  compensationTask?: WorkflowTask;
+  mapItemsParam?: string;
+  mapParallelism?: number;
+  mapTask?: WorkflowTask;
+  heartbeatTimeoutSeconds?: number;
+  conditionTree?: ConditionNode;
 }
 
 export interface TaskDef {
@@ -342,3 +394,53 @@ export interface WorkflowMetrics {
   p50DurationMs?: number;
   p95DurationMs?: number;
 }
+
+// ── Advanced Engine Types (101-110) ─────────────────────────────────
+
+export interface ModifyWorkflowRequest {
+  addTasks: WorkflowTask[];
+  removeTaskRefs: string[];
+}
+
+export interface SendSignalRequest {
+  signalName: string;
+  payload: unknown;
+}
+
+export interface SignalResponse {
+  signalName: string;
+  deliveredTo: number;
+}
+
+export interface WorkflowCheckpoint {
+  checkpointId: string;
+  workflowId: string;
+  createdAt: number;
+  workflowSnapshot: unknown;
+  tasksSnapshot: unknown;
+  variablesSnapshot: unknown;
+  label?: string;
+}
+
+export interface ValidationResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
+export type ConditionNode =
+  | { And: ConditionNode[] }
+  | { Or: ConditionNode[] }
+  | { Not: ConditionNode }
+  | { Compare: { field: string; op: CompareOp; value: unknown } };
+
+export type CompareOp =
+  | "Eq"
+  | "Neq"
+  | "Gt"
+  | "Gte"
+  | "Lt"
+  | "Lte"
+  | "Contains"
+  | "StartsWith"
+  | "EndsWith";

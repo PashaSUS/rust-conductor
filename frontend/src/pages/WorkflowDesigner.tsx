@@ -342,8 +342,6 @@ interface DesignerTask {
   optional?: boolean;
 }
 
-let nextId = 1;
-
 export default function WorkflowDesigner() {
   return (
     <ReactFlowProvider>
@@ -355,6 +353,9 @@ export default function WorkflowDesigner() {
 function WorkflowDesignerInner() {
   const queryClient = useQueryClient();
   const { screenToFlowPosition, fitView } = useReactFlow();
+
+  // Stable ID counter (survives re-renders, resets on remount)
+  const nextIdRef = useRef(1);
 
   // Workflow metadata
   const [workflowName, setWorkflowName] = useState("my_workflow");
@@ -380,6 +381,13 @@ function WorkflowDesignerInner() {
   } | null>(null);
 
   const reactFlowRef = useRef<HTMLDivElement>(null);
+
+  // Stable callback refs — used inside node data so closures never go stale
+  const tasksRef = useRef(tasks);
+  tasksRef.current = tasks;
+  const setEditingTaskRef = useRef(setEditingTask);
+  setEditingTaskRef.current = setEditingTask;
+  const removeTaskRef = useRef<(id: string) => void>(() => {});
 
   // Resizable right panel
   const [rightPanelWidth, setRightPanelWidth] = useState(320);
@@ -570,9 +578,13 @@ function WorkflowDesignerInner() {
     stepNumber,
     inputKeys: Object.keys(task.inputParameters),
     outputKeys: task.outputKeys,
-    onEdit: () => setEditingTask(task),
-    onDelete: () => removeTask(task.id),
-  }), []); // eslint-disable-line react-hooks/exhaustive-deps
+    onEdit: () => {
+      // Use ref to always get the freshest task from the array
+      const fresh = tasksRef.current.find((t) => t.id === task.id);
+      setEditingTaskRef.current(fresh ?? task);
+    },
+    onDelete: () => removeTaskRef.current(task.id),
+  }), []);
 
   // ── Refresh step numbers on all task nodes ──
   const refreshStepNumbers = useCallback((taskList: DesignerTask[]) => {
@@ -591,17 +603,20 @@ function WorkflowDesignerInner() {
             label: task.taskReferenceName,
             inputKeys: Object.keys(task.inputParameters),
             outputKeys: task.outputKeys,
-            onEdit: () => setEditingTask(task),
-            onDelete: () => removeTask(task.id),
+            onEdit: () => {
+              const fresh = tasksRef.current.find((t) => t.id === task.id);
+              setEditingTaskRef.current(fresh ?? task);
+            },
+            onDelete: () => removeTaskRef.current(task.id),
           },
         };
       });
     });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Add task ──
   const addTask = useCallback((type: string, position?: { x: number; y: number }) => {
-    const id = `task_${nextId++}`;
+    const id = `task_${nextIdRef.current++}`;
     const refName = `${type.toLowerCase()}_${id}`;
 
     const task: DesignerTask = {
@@ -612,10 +627,8 @@ function WorkflowDesignerInner() {
 
     setTasks((prev) => {
       const newTasks = [...prev, task];
-      setTimeout(() => {
-        ensureStartEnd(newTasks.length);
-        refreshStepNumbers(newTasks);
-      }, 0);
+      ensureStartEnd(newTasks.length);
+      refreshStepNumbers(newTasks);
       return newTasks;
     });
 
@@ -646,18 +659,20 @@ function WorkflowDesignerInner() {
   const removeTask = useCallback((id: string) => {
     setTasks((prev) => {
       const newTasks = prev.filter((t) => t.id !== id);
-      setTimeout(() => refreshStepNumbers(newTasks), 0);
+      refreshStepNumbers(newTasks);
       return newTasks;
     });
     setNodes((prev) => prev.filter((n) => n.id !== id));
     setEdges((prev) => prev.filter((e) => e.source !== id && e.target !== id));
-    if (editingTask?.id === id) setEditingTask(null);
-  }, [editingTask, refreshStepNumbers]);
+    setEditingTask((cur) => cur?.id === id ? null : cur);
+  }, [refreshStepNumbers]);
+  // Keep the ref in sync so stale node-data closures always reach the latest removeTask
+  removeTaskRef.current = removeTask;
 
   const duplicateTask = useCallback((id: string) => {
-    const task = tasks.find((t) => t.id === id);
+    const task = tasksRef.current.find((t) => t.id === id);
     if (!task) return;
-    const newId = `task_${nextId++}`;
+    const newId = `task_${nextIdRef.current++}`;
     const newTask: DesignerTask = {
       ...task,
       id: newId,
@@ -667,11 +682,11 @@ function WorkflowDesignerInner() {
       const idx = prev.findIndex((t) => t.id === id);
       const newTasks = [...prev];
       newTasks.splice(idx + 1, 0, newTask);
-      setTimeout(() => refreshStepNumbers(newTasks), 0);
+      refreshStepNumbers(newTasks);
       return newTasks;
     });
-    const sourceNode = nodes.find((n) => n.id === id);
-    const pos = sourceNode ? { x: sourceNode.position.x + 40, y: sourceNode.position.y + 40 } : { x: 300, y: 200 };
+    const sourceNode = nodes.find((n) => n.id === id) ?? { position: { x: 300, y: 200 } };
+    const pos = { x: sourceNode.position.x + 40, y: sourceNode.position.y + 40 };
     setNodes((prev) => [...prev, {
       id: newId,
       type: "designerTask",
@@ -689,7 +704,7 @@ function WorkflowDesignerInner() {
       if (newIdx < 0 || newIdx >= prev.length) return prev;
       const newTasks = [...prev];
       [newTasks[idx], newTasks[newIdx]] = [newTasks[newIdx], newTasks[idx]];
-      setTimeout(() => refreshStepNumbers(newTasks), 0);
+      refreshStepNumbers(newTasks);
       return newTasks;
     });
   }, [refreshStepNumbers]);
@@ -697,7 +712,7 @@ function WorkflowDesignerInner() {
   const updateTask = useCallback((updated: DesignerTask) => {
     setTasks((prev) => {
       const newTasks = prev.map((t) => (t.id === updated.id ? updated : t));
-      setTimeout(() => refreshStepNumbers(newTasks), 0);
+      refreshStepNumbers(newTasks);
       return newTasks;
     });
     setEditingTask(null);
@@ -734,7 +749,7 @@ function WorkflowDesignerInner() {
 
     const newTasks: DesignerTask[] = [];
     const newNodes: Node[] = [];
-    nextId = 1;
+    nextIdRef.current = 1;
 
     newNodes.push({
       id: "__start__",
@@ -745,7 +760,7 @@ function WorkflowDesignerInner() {
     });
 
     def.tasks.forEach((wt, idx) => {
-      const id = `task_${nextId++}`;
+      const id = `task_${nextIdRef.current++}`;
       const td = taskDefMap.get(wt.name);
       const dt: DesignerTask = {
         id,
@@ -769,8 +784,11 @@ function WorkflowDesignerInner() {
           stepNumber: idx + 1,
           inputKeys: Object.keys(wt.inputParameters || {}),
           outputKeys: td?.outputKeys ?? [],
-          onEdit: () => setEditingTask(dt),
-          onDelete: () => removeTask(id),
+          onEdit: () => {
+            const fresh = tasksRef.current.find((t) => t.id === id);
+            setEditingTaskRef.current(fresh ?? dt);
+          },
+          onDelete: () => removeTaskRef.current(id),
         },
       });
     });
@@ -790,7 +808,7 @@ function WorkflowDesignerInner() {
     setEditingTask(null);
     setTimeout(() => fitView({ padding: 0.2 }), 100);
     toast.success(`Loaded "${def.name}" v${def.version}`);
-  }, [fitView, removeTask, taskDefMap]);
+  }, [fitView, taskDefMap]);
 
   // ── Auto-layout ──
   const autoLayout = useCallback(() => {
@@ -812,7 +830,7 @@ function WorkflowDesignerInner() {
 
   const clearAll = useCallback(() => {
     setTasks([]); setNodes([]); setEdges([]);
-    setEditingTask(null); nextId = 1;
+    setEditingTask(null); nextIdRef.current = 1;
   }, []);
 
   // ── Build ordered tasks: simple array order ──
@@ -887,13 +905,17 @@ function WorkflowDesignerInner() {
   const onNodeClick = useCallback(
     (_event: React.MouseEvent, node: Node) => {
       if (node.id === "__start__" || node.id === "__end__") {
+        setEditingTask(null);
         setShowSettings(true);
         return;
       }
-      const task = tasks.find((t) => t.id === node.id);
-      if (task) setEditingTask(task);
+      const task = tasksRef.current.find((t) => t.id === node.id);
+      if (task) {
+        setShowSettings(false);
+        setEditingTask(task);
+      }
     },
-    [tasks]
+    []
   );
 
   // ── Context menu handlers ──
@@ -937,9 +959,10 @@ function WorkflowDesignerInner() {
         });
         return;
       }
-      const task = tasks.find((t) => t.id === node.id);
+      const currentTasks = tasksRef.current;
+      const task = currentTasks.find((t) => t.id === node.id);
       if (!task) return;
-      const idx = tasks.indexOf(task);
+      const idx = currentTasks.indexOf(task);
       setCtxMenu({
         x: event.clientX, y: event.clientY,
         items: [
@@ -947,13 +970,13 @@ function WorkflowDesignerInner() {
           { label: "Duplicate", icon: <Copy className="h-3.5 w-3.5" />, onClick: () => duplicateTask(task.id) },
           { label: "", onClick: () => {}, separator: true },
           { label: "Move Up (run earlier)", icon: <ChevronUp className="h-3.5 w-3.5" />, onClick: () => moveTask(task.id, "up"), disabled: idx === 0 },
-          { label: "Move Down (run later)", icon: <ChevronDown className="h-3.5 w-3.5" />, onClick: () => moveTask(task.id, "down"), disabled: idx === tasks.length - 1 },
+          { label: "Move Down (run later)", icon: <ChevronDown className="h-3.5 w-3.5" />, onClick: () => moveTask(task.id, "down"), disabled: idx === currentTasks.length - 1 },
           { label: "", onClick: () => {}, separator: true },
           { label: "Delete Task", icon: <Trash2 className="h-3.5 w-3.5" />, onClick: () => removeTask(task.id), danger: true },
         ],
       });
     },
-    [tasks, duplicateTask, moveTask, removeTask]
+    [duplicateTask, moveTask, removeTask]
   );
 
   const onEdgeContextMenu = useCallback(
@@ -1059,6 +1082,9 @@ function WorkflowDesignerInner() {
             }}
             placeholder="Import workflow..."
           />
+          <Button variant={showSettings ? "secondary" : "outline"} size="sm" onClick={() => { setShowSettings(!showSettings); if (!showSettings) setEditingTask(null); }}>
+            <Settings2 className="h-3.5 w-3.5 mr-1" />Settings
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setShowPreview(!showPreview)}>
             <Eye className="h-3.5 w-3.5 mr-1" />{showPreview ? "Hide" : "JSON"}
           </Button>
@@ -1117,7 +1143,7 @@ function WorkflowDesignerInner() {
                     <div
                       key={task.id}
                       className={`flex items-center gap-1.5 px-2 py-1.5 hover:bg-muted/50 transition-colors cursor-pointer ${editingTask?.id === task.id ? "bg-primary/10" : ""}`}
-                      onClick={() => setEditingTask(task)}
+                      onClick={() => { setShowSettings(false); setEditingTask(task); }}
                     >
                       <span
                         className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0"
@@ -1161,75 +1187,6 @@ function WorkflowDesignerInner() {
               <Trash2 className="h-3 w-3 mr-1.5" /> Clear All
             </Button>
           </div>
-
-          {/* Settings section */}
-          {showSettings && (
-            <div className="border-t">
-              <button
-                className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-muted/50 transition-colors"
-                onClick={() => setShowSettings(false)}
-              >
-                <p className="text-xs font-semibold flex items-center gap-1.5"><Settings2 className="h-3.5 w-3.5" /> Workflow Settings</p>
-                <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
-              </button>
-              <div className="px-3 pb-3 space-y-2.5">
-                <div>
-                  <label className="text-[10px] text-muted-foreground mb-0.5 block">Name</label>
-                  <Input value={workflowName} onChange={(e) => setWorkflowName(e.target.value)} className="h-7 text-xs" />
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-[10px] text-muted-foreground mb-0.5 block">Version</label>
-                    <Input type="number" min={1} value={workflowVersion} onChange={(e) => setWorkflowVersion(Number(e.target.value))} className="h-7 text-xs" />
-                  </div>
-                  <div className="col-span-1" />
-                </div>
-                <div>
-                  <label className="text-[10px] text-muted-foreground mb-0.5 block">Description</label>
-                  <Input value={workflowDesc} onChange={(e) => setWorkflowDesc(e.target.value)} placeholder="Optional" className="h-7 text-xs" />
-                </div>
-                <div>
-                  <label className="text-[10px] text-muted-foreground mb-0.5 block">Input Parameters</label>
-                  <div className="flex gap-1 mb-1">
-                    <Input value={inputKeyDraft} onChange={(e) => setInputKeyDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addInputKey()} placeholder="Add input..." className="h-6 text-[10px]" />
-                    <Button variant="outline" size="sm" className="h-6 px-1.5" onClick={addInputKey}><Plus className="h-2.5 w-2.5" /></Button>
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {workflowInputKeys.map((k) => (
-                      <Badge key={k} variant="secondary" className="text-[10px] gap-0.5 h-5">{k}<button onClick={() => removeInputKey(k)} className="hover:text-destructive">×</button></Badge>
-                    ))}
-                  </div>
-                </div>
-                <div className="bg-muted/50 rounded p-2">
-                  <p className="text-[9px] text-muted-foreground">
-                    <b>Outputs:</b> {Object.keys(workflowOutputParams).length > 0
-                      ? Object.keys(workflowOutputParams).join(", ")
-                      : "Connect task outputs to END node"}
-                  </p>
-                </div>
-                {validationErrors.length > 0 && (
-                  <div className="bg-destructive/10 rounded p-1.5 space-y-0.5">
-                    {validationErrors.map((e, i) => (
-                      <p key={i} className="text-[10px] text-destructive flex items-center gap-1">
-                        <AlertTriangle className="h-2.5 w-2.5 shrink-0" /> {e}
-                      </p>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-          {!showSettings && (
-            <div className="border-t">
-              <button
-                className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-muted/50 transition-colors"
-                onClick={() => setShowSettings(true)}
-              >
-                <p className="text-xs font-semibold flex items-center gap-1.5"><Settings2 className="h-3.5 w-3.5" /> Workflow Settings</p>
-                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-              </button>
-            </div>
-          )}
 
           {/* Connection guide */}
           <div className="px-3 py-2.5 border-t shrink-0">
@@ -1298,8 +1255,8 @@ function WorkflowDesignerInner() {
           )}
         </div>
 
-        {/* Right: Task editor / JSON preview (resizable) */}
-        {(editingTask || showPreview) && (
+        {/* Right: Task editor / JSON preview / Workflow settings (resizable) */}
+        {(editingTask || showPreview || showSettings) && (
           <div className="relative flex shrink-0" style={{ width: rightPanelWidth }}>
             {/* Resize handle */}
             <div
@@ -1309,6 +1266,64 @@ function WorkflowDesignerInner() {
               <GripHorizontal className="h-4 w-4 text-muted-foreground/30 group-hover:text-muted-foreground/60 rotate-90" />
             </div>
           <div className="flex-1 border-l bg-background overflow-y-auto">
+            {/* Workflow Settings panel */}
+            {showSettings && !editingTask && (
+              <div className="p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-semibold text-sm flex items-center gap-1.5"><Settings2 className="h-4 w-4" /> Workflow Settings</h4>
+                  <Button variant="ghost" size="sm" className="h-6 px-1" onClick={() => setShowSettings(false)}>×</Button>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Name</label>
+                  <Input value={workflowName} onChange={(e) => setWorkflowName(e.target.value)} className="h-8 text-xs" />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">Version</label>
+                    <Input type="number" min={1} value={workflowVersion} onChange={(e) => setWorkflowVersion(Number(e.target.value))} className="h-8 text-xs" />
+                  </div>
+                  <div className="col-span-1" />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Description</label>
+                  <Input value={workflowDesc} onChange={(e) => setWorkflowDesc(e.target.value)} placeholder="Optional" className="h-8 text-xs" />
+                </div>
+                <div className="border-t pt-2">
+                  <label className="text-xs font-medium mb-1.5 block">Input Parameters</label>
+                  <div className="flex gap-1 mb-2">
+                    <Input value={inputKeyDraft} onChange={(e) => setInputKeyDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addInputKey()} placeholder="Add input key..." className="h-7 text-xs flex-1" />
+                    <Button variant="outline" size="sm" className="h-7 px-2" onClick={addInputKey}><Plus className="h-3 w-3" /></Button>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {workflowInputKeys.map((k) => (
+                      <Badge key={k} variant="secondary" className="text-[10px] gap-0.5 h-5">{k}<button onClick={() => removeInputKey(k)} className="hover:text-destructive ml-1">×</button></Badge>
+                    ))}
+                    {workflowInputKeys.length === 0 && <p className="text-[10px] text-muted-foreground">No input parameters defined</p>}
+                  </div>
+                </div>
+                <div className="border-t pt-2">
+                  <label className="text-xs font-medium mb-1.5 block">Output Parameters</label>
+                  <div className="bg-muted/50 rounded p-2">
+                    <p className="text-[10px] text-muted-foreground">
+                      {Object.keys(workflowOutputParams).length > 0
+                        ? Object.keys(workflowOutputParams).join(", ")
+                        : "Connect task outputs to END node to define workflow outputs"}
+                    </p>
+                  </div>
+                </div>
+                {validationErrors.length > 0 && (
+                  <div className="bg-destructive/10 rounded p-2 space-y-1 border-t pt-2">
+                    <p className="text-xs font-medium text-destructive mb-1">Validation Errors</p>
+                    {validationErrors.map((e, i) => (
+                      <p key={i} className="text-[10px] text-destructive flex items-center gap-1">
+                        <AlertTriangle className="h-2.5 w-2.5 shrink-0" /> {e}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {editingTask && (
               <div className="p-4 space-y-3">
                 <div className="flex items-center justify-between">

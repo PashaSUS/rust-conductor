@@ -246,6 +246,18 @@ pub async fn run_migrations(pool: &DbPool) {
             created_on  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_on  TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )"#,
+        // 105. Workflow checkpointing
+        r#"CREATE TABLE IF NOT EXISTS workflow_checkpoint (
+            checkpoint_id   TEXT PRIMARY KEY,
+            workflow_id     TEXT NOT NULL,
+            created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            workflow_snapshot JSONB NOT NULL,
+            tasks_snapshot  JSONB NOT NULL,
+            variables_snapshot JSONB NOT NULL,
+            label           TEXT
+        )"#,
+        "CREATE INDEX IF NOT EXISTS idx_checkpoint_workflow \
+         ON workflow_checkpoint (workflow_id, created_at DESC)",
     ];
 
     for stmt in statements {

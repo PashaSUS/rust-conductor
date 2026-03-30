@@ -78,5 +78,9 @@ async fn requeue_pending_tasks(
 }
 
 async fn pool_metrics(engine: web::Data<WorkflowEngine>) -> HttpResponse {
-    HttpResponse::Ok().json(engine.pool_metrics())
+    crate::metrics::collect_pool_metrics(&engine);
+    let body = crate::metrics::encode_metrics();
+    HttpResponse::Ok()
+        .content_type("text/plain; version=0.0.4; charset=utf-8")
+        .body(body)
 }

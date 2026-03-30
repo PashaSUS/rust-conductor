@@ -16,6 +16,7 @@ echo   - Structured logging (Seq)
 echo   - Connection pooling (PgBouncer)
 echo   - Load balancing (Nginx)
 echo   - Multi-shard scaling
+echo   - Prometheus + Grafana monitoring
 echo   - External storage (optional, RustFS/S3)
 echo.
 echo DEV mode uses only Redis Streams (no Kafka) and minimal features.
@@ -79,7 +80,7 @@ echo ========================================
 echo  Port Configuration
 echo ========================================
 echo.
-echo Default ports: Backend=8090, gRPC=50055, Frontend=3170, Seq=9321
+echo Default ports: Backend=8090, gRPC=50055, Frontend=3170, Seq=9321, Prometheus=9090, Grafana=3000
 echo.
 
 :ask_ports
@@ -92,12 +93,16 @@ if /i "!RANDOMIZE_PORTS!"=="y" (
     set /a GRPC_PORT=50100 + !T! %% 900
     set /a FRONTEND_PORT=3200 + !T! %% 800
     set /a SEQ_PORT=9400 + !T! %% 500
+    set /a PROMETHEUS_PORT=9100 + !T! %% 400
+    set /a GRAFANA_PORT=3100 + !T! %% 800
     echo.
     echo Generated ports:
     echo   Backend API:  !BACKEND_PORT!
     echo   gRPC:         !GRPC_PORT!
     echo   Frontend:     !FRONTEND_PORT!
     echo   Seq Logs:     !SEQ_PORT!
+    echo   Prometheus:   !PROMETHEUS_PORT!
+    echo   Grafana:      !GRAFANA_PORT!
     echo.
     set /p CONFIRM_PORTS="Accept these ports? (Y/n): "
     if /i "!CONFIRM_PORTS!"=="n" goto ask_ports
@@ -106,12 +111,16 @@ if /i "!RANDOMIZE_PORTS!"=="y" (
     set "GRPC_PORT=50055"
     set "FRONTEND_PORT=3170"
     set "SEQ_PORT=9321"
+    set "PROMETHEUS_PORT=9090"
+    set "GRAFANA_PORT=3000"
     echo.
     echo Using default ports. You can override each one:
     set /p "BACKEND_PORT=Backend API port [!BACKEND_PORT!]: " || set "BACKEND_PORT=!BACKEND_PORT!"
     set /p "GRPC_PORT=gRPC port [!GRPC_PORT!]: " || set "GRPC_PORT=!GRPC_PORT!"
     set /p "FRONTEND_PORT=Frontend port [!FRONTEND_PORT!]: " || set "FRONTEND_PORT=!FRONTEND_PORT!"
     set /p "SEQ_PORT=Seq log viewer port [!SEQ_PORT!]: " || set "SEQ_PORT=!SEQ_PORT!"
+    set /p "PROMETHEUS_PORT=Prometheus port [!PROMETHEUS_PORT!]: " || set "PROMETHEUS_PORT=!PROMETHEUS_PORT!"
+    set /p "GRAFANA_PORT=Grafana port [!GRAFANA_PORT!]: " || set "GRAFANA_PORT=!GRAFANA_PORT!"
 )
 
 
@@ -576,6 +585,49 @@ if /i "!BUILD_MODE!"=="build" (
 >> "%FILE%" echo       - backend
 >> "%FILE%" echo.
 
+REM -- Prometheus (always in PROD) --
+>> "%FILE%" echo   # -- Prometheus --
+>> "%FILE%" echo   prometheus:
+>> "%FILE%" echo     image: prom/prometheus:latest
+>> "%FILE%" echo     restart: unless-stopped
+>> "%FILE%" echo     ports:
+>> "%FILE%" echo       - "!PROMETHEUS_PORT!:9090"
+>> "%FILE%" echo     volumes:
+>> "%FILE%" echo       - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+>> "%FILE%" echo       - prometheusdata:/prometheus
+>> "%FILE%" echo     command:
+>> "%FILE%" echo       - "--config.file=/etc/prometheus/prometheus.yml"
+>> "%FILE%" echo       - "--storage.tsdb.retention.time=30d"
+>> "%FILE%" echo       - "--web.enable-lifecycle"
+>> "%FILE%" echo     depends_on:
+>> "%FILE%" echo       - backend
+>> "%FILE%" echo     healthcheck:
+>> "%FILE%" echo       test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+>> "%FILE%" echo       interval: 10s
+>> "%FILE%" echo       timeout: 5s
+>> "%FILE%" echo       retries: 5
+>> "%FILE%" echo.
+
+REM -- Grafana (always in PROD) --
+>> "%FILE%" echo   # -- Grafana --
+>> "%FILE%" echo   grafana:
+>> "%FILE%" echo     image: grafana/grafana:latest
+>> "%FILE%" echo     restart: unless-stopped
+>> "%FILE%" echo     ports:
+>> "%FILE%" echo       - "!GRAFANA_PORT!:3000"
+>> "%FILE%" echo     environment:
+>> "%FILE%" echo       GF_SECURITY_ADMIN_USER: admin
+>> "%FILE%" echo       GF_SECURITY_ADMIN_PASSWORD: admin
+>> "%FILE%" echo       GF_USERS_ALLOW_SIGN_UP: "false"
+>> "%FILE%" echo     volumes:
+>> "%FILE%" echo       - grafanadata:/var/lib/grafana
+>> "%FILE%" echo       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+>> "%FILE%" echo       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+>> "%FILE%" echo     depends_on:
+>> "%FILE%" echo       prometheus:
+>> "%FILE%" echo         condition: service_healthy
+>> "%FILE%" echo.
+
 REM -- Volumes --
 >> "%FILE%" echo volumes:
 for /l %%i in (0,1,%LAST_SHARD%) do (
@@ -588,6 +640,8 @@ for /l %%k in (0,1,%LAST_KAFKA%) do (
     >> "%FILE%" echo   kafkadata-%%k:
 )
 >> "%FILE%" echo   seqdata:
+>> "%FILE%" echo   prometheusdata:
+>> "%FILE%" echo   grafanadata:
 if /i "!USE_MINIO!"=="y" (
     >> "%FILE%" echo   rustfsdata:
     >> "%FILE%" echo   rustfslogs:
@@ -610,13 +664,15 @@ echo    Cargo:      !CARGO_FEATURES!
 echo    PgBouncer:  ON  - connection pooling per shard
 echo    Nginx LB:   ON  - load balancing %NUM_REPLICAS% replicas
 echo    Seq:        http://localhost:!SEQ_PORT!
+echo    Prometheus: http://localhost:!PROMETHEUS_PORT!
+echo    Grafana:    http://localhost:!GRAFANA_PORT!  (admin/admin)
 if /i "!USE_MINIO!"=="y" (
     echo    MinIO API:  http://localhost:!MINIO_PORT!
     echo    MinIO UI:   http://localhost:!MINIO_CONSOLE_PORT!
 )
 
-REM Container count: postgres(shards) + pgbouncer(shards) + redis(shards) + kafka(brokers) + seq + nginx-lb + backend-migrate + backend + frontend
-set /a CONTAINER_COUNT=%NUM_SHARDS% * 2 + %NUM_REDIS_SHARDS% + %NUM_KAFKA_BROKERS% + 5
+REM Container count: postgres(shards) + pgbouncer(shards) + redis(shards) + kafka(brokers) + seq + nginx-lb + backend-migrate + backend + frontend + prometheus + grafana
+set /a CONTAINER_COUNT=%NUM_SHARDS% * 2 + %NUM_REDIS_SHARDS% + %NUM_KAFKA_BROKERS% + 7
 if /i "!USE_MINIO!"=="y" (
     set /a CONTAINER_COUNT=!CONTAINER_COUNT! + 1
 )
@@ -651,6 +707,8 @@ if /i "%WIPE_DB%"=="y" (
         docker volume rm rust-conductor_kafkadata-%%k 2>nul
     )
     docker volume rm rust-conductor_seqdata 2>nul
+    docker volume rm rust-conductor_prometheusdata 2>nul
+    docker volume rm rust-conductor_grafanadata 2>nul
     if /i "!USE_MINIO!"=="y" (
         docker volume rm rust-conductor_rustfsdata 2>nul
         docker volume rm rust-conductor_rustfslogs 2>nul
@@ -695,6 +753,8 @@ echo    PgBouncer:  ports 6432-!LAST_PGB_PORT!
 echo    Kafka:      ports 9092-!LAST_KAFKA_PORT! - %NUM_KAFKA_BROKERS% brokers
 echo    Redis:      localhost:6379
 echo    Seq:        http://localhost:!SEQ_PORT!
+echo    Prometheus: http://localhost:!PROMETHEUS_PORT!
+echo    Grafana:    http://localhost:!GRAFANA_PORT!  (admin/admin)
 if /i "!USE_MINIO!"=="y" (
     echo    RustFS API: http://localhost:!MINIO_PORT!
     echo    RustFS UI:  http://localhost:!MINIO_CONSOLE_PORT!

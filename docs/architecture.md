@@ -56,10 +56,18 @@ Each topic has its own dedicated document with design rationale, configuration, 
 
 ### Frontend & Testing
 
-| Document                | Description                                                                |
-| ----------------------- | -------------------------------------------------------------------------- |
-| [Frontend](frontend.md) | React dashboard — tech stack choices, state management, theme system       |
-| [Testing](testing.md)   | Four-layer strategy — unit, integration (testcontainers), benchmarks, fuzz |
+| Document                              | Description                                                                |
+| ------------------------------------- | -------------------------------------------------------------------------- |
+| [Frontend](frontend.md)               | React dashboard — tech stack choices, state management, theme system       |
+| [Testing](testing.md)                 | Four-layer strategy — unit, integration (testcontainers), benchmarks, fuzz |
+
+### Configuration & Operations
+
+| Document                                     | Description                                                                  |
+| -------------------------------------------- | ---------------------------------------------------------------------------- |
+| [Configuration](configuration.md)            | Complete environment variable reference with defaults                        |
+| [Feature Flags](feature-flags.md)            | Compile-time feature flags, build profiles, runtime toggles                  |
+| [Rate Limiting](rate-limiting.md)            | Token bucket rate limiter, CORS, payload limits                              |
 
 ---
 
@@ -89,9 +97,16 @@ Compile-time feature flags in `Cargo.toml`:
 
 | Flag               | Default | Purpose                                                                       |
 | ------------------ | ------- | ----------------------------------------------------------------------------- |
-| `kafka`            | **Yes** | Use Apache Kafka for task queues. When disabled, falls back to Redis Streams. |
 | `seq`              | **Yes** | Enable structured log shipping to Seq server.                                 |
+| `kafka`            | **Yes** | Use Apache Kafka for task queues. When disabled, falls back to Redis Streams. |
+| `graphql`          | **Yes** | Enable GraphQL API endpoint at `/api/graphql`.                                |
+| `sse`              | **Yes** | Enable Server-Sent Events for real-time workflow/queue streaming.             |
+| `websocket`        | **Yes** | Enable WebSocket API for bidirectional task/workflow feeds.                    |
+| `grpc-reflection`  | **Yes** | Enable gRPC reflection service for dynamic client discovery.                  |
+| `api-v2`           | **Yes** | Enable enhanced V2 REST API with envelope format, long-polling, and batching. |
 | `external-storage` | No      | Enable S3 external payload storage for large payloads.                        |
+
+See [Feature Flags & Build Profiles](feature-flags.md) for build profiles and detailed configuration.
 
 ---
 

@@ -29,7 +29,8 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .route("/{taskId}", web::get().to(get_task))
             .route("/{taskId}/ack", web::post().to(ack_task))
             .route("/{taskId}/log", web::get().to(get_task_logs))
-            .route("/{taskId}/log", web::post().to(add_task_log)),
+            .route("/{taskId}/log", web::post().to(add_task_log))
+            .route("/{taskId}/heartbeat", web::post().to(heartbeat_task)),
     );
 }
 
@@ -232,6 +233,16 @@ async fn poll_data_all(
 #[serde(rename_all = "camelCase")]
 struct PollDataQuery {
     task_type: Option<String>,
+}
+
+// ── 110. Task Heartbeat ────────────────────────────────────────────────
+
+async fn heartbeat_task(
+    engine: web::Data<WorkflowEngine>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, crate::engine::EngineError> {
+    engine.heartbeat_task(&path.into_inner()).await?;
+    Ok(HttpResponse::Ok().json(serde_json::json!({ "acknowledged": true })))
 }
 
 /// Dynamic task registration — workers can register a task type at runtime.

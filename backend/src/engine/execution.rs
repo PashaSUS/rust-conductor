@@ -8,7 +8,13 @@ use crate::models::*;
 
 impl WorkflowEngine {
     pub async fn start_workflow(&self, req: &StartWorkflowRequest) -> Result<String, EngineError> {
-        let def = self.get_workflow_def(&req.name, Some(req.version)).await?;
+        let mut def = self.get_workflow_def(&req.name, Some(req.version)).await?;
+
+        // 108. Resolve workflow inheritance before scheduling
+        if def.base_workflow.is_some() {
+            def = self.resolve_inheritance(&def).await?;
+        }
+
         let workflow_id = Uuid::new_v4().to_string();
         let now = Utc::now();
         let db = self.shards.shard_for(&workflow_id);
@@ -38,6 +44,8 @@ impl WorkflowEngine {
             tracing::error!(workflow_id = %workflow_id, name = %req.name, error = %e, "Failed to INSERT workflow row");
             EngineError::Database(e.to_string())
         })?;
+
+        crate::metrics::record_workflow_started();
 
         if let Err(e) = Box::pin(self.schedule_tasks(&workflow_id, &def.tasks, &req.input, 0)).await
         {
@@ -128,6 +136,14 @@ impl WorkflowEngine {
             }
             "DYNAMIC_FORK_JOIN" => {
                 self.handle_dynamic_fork_join_task(workflow_id, task_def, tasks, input, start_seq)
+                    .await?;
+            }
+            "MAP" => {
+                self.handle_map_task(workflow_id, task_def, input, start_seq)
+                    .await?;
+            }
+            "WAIT_FOR_SIGNAL" => {
+                self.handle_wait_for_signal_task(workflow_id, task_def, input, start_seq)
                     .await?;
             }
             _ => {

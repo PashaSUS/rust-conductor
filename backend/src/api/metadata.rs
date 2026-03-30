@@ -31,7 +31,9 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .route(
                 "/template/instantiate",
                 web::post().to(instantiate_template),
-            ),
+            )
+            // 109. Workflow validation
+            .route("/workflow/validate", web::post().to(validate_workflow)),
     );
 }
 
@@ -179,4 +181,14 @@ async fn instantiate_template(
 ) -> Result<HttpResponse, crate::engine::EngineError> {
     let wf_id = engine.instantiate_template(&body).await?;
     Ok(HttpResponse::Ok().json(wf_id))
+}
+
+// ── 109. Workflow Validation ───────────────────────────────────────────
+
+async fn validate_workflow(
+    engine: web::Data<WorkflowEngine>,
+    body: web::Json<WorkflowDef>,
+) -> Result<HttpResponse, crate::engine::EngineError> {
+    let result = engine.validate_workflow_def(&body);
+    Ok(HttpResponse::Ok().json(result))
 }

@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use super::WorkflowEngine;
 use super::error::EngineError;
+use super::expression::{evaluate_condition_tree, evaluate_loop_condition, resolve_value};
 use crate::models::*;
 
 impl WorkflowEngine {
@@ -325,8 +326,17 @@ impl WorkflowEngine {
         Ok(())
     }
 
-    /// Evaluate case_value_param / case_expression against the task input.
+    /// Evaluate case_value_param / case_expression / condition_tree against the task input.
     pub(crate) fn evaluate_case_value(&self, task_def: &WorkflowTask, input: &Value) -> String {
+        // 106: Composite condition tree takes precedence when present
+        if let Some(ref tree) = task_def.condition_tree {
+            return if evaluate_condition_tree(tree, input) {
+                "true".to_string()
+            } else {
+                "false".to_string()
+            };
+        }
+
         if let Some(param) = &task_def.case_value_param {
             if let Some(val) = input.get(param) {
                 return match val {
@@ -1315,6 +1325,7 @@ impl WorkflowEngine {
                     join_status: None,
                     cache_config: None,
                     permissive: None,
+                    ..Default::default()
                 };
                 forked_tasks.push((wt, task_input));
             }
@@ -1459,6 +1470,7 @@ impl WorkflowEngine {
                 join_status: None,
                 cache_config: None,
                 permissive: None,
+                ..Default::default()
             }
         };
 
@@ -1471,6 +1483,167 @@ impl WorkflowEngine {
             branches = fork_count,
             "DYNAMIC_FORK_JOIN scheduled – {} parallel tasks",
             fork_count
+        );
+        Ok(())
+    }
+
+    // ── MAP ──────────────────────────────────────────────────────────────
+
+    /// MAP task: fan-out over an array, creating one sub-task per item,
+    /// then auto-JOIN to collect results.
+    pub(crate) async fn handle_map_task(
+        &self,
+        workflow_id: &str,
+        task_def: &WorkflowTask,
+        input: &Value,
+        seq: i32,
+    ) -> Result<(), EngineError> {
+        let task_input = self
+            .resolve_task_input(workflow_id, task_def, input)
+            .await?;
+
+        let items_param = task_def.map_items_param.as_deref().unwrap_or("items");
+        let items = task_input
+            .get(items_param)
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+
+        let map_template = task_def.map_task.as_ref().ok_or_else(|| {
+            EngineError::InvalidState(format!(
+                "MAP task '{}' missing map_task template",
+                task_def.task_reference_name
+            ))
+        })?;
+
+        let parallelism = task_def
+            .map_parallelism
+            .unwrap_or(items.len() as i32)
+            .max(1) as usize;
+
+        // Record the MAP task itself as COMPLETED
+        let map_output = serde_json::json!({
+            "itemCount": items.len(),
+            "parallelism": parallelism,
+        });
+        let (_map_task_id, is_new) = self
+            .insert_task_record(
+                workflow_id,
+                task_def,
+                &task_input,
+                seq,
+                "COMPLETED",
+                &map_output,
+                None,
+            )
+            .await?;
+
+        if !is_new {
+            return Ok(());
+        }
+
+        // Create sub-tasks for each item
+        let mut fork_refs = Vec::new();
+        for (idx, item) in items.iter().enumerate() {
+            let mut sub_task = map_template.as_ref().clone();
+            sub_task.task_reference_name =
+                format!("{}__map_{}", task_def.task_reference_name, idx);
+            sub_task.name = format!("{}_map_{}", map_template.name, idx);
+
+            // Inject the item and index into sub-task input
+            let mut sub_input = task_input.clone();
+            if let Some(obj) = sub_input.as_object_mut() {
+                obj.insert("mapItem".to_string(), item.clone());
+                obj.insert("mapIndex".to_string(), Value::Number(idx.into()));
+            }
+
+            let sub_seq = seq + 1 + idx as i32;
+            fork_refs.push(sub_task.task_reference_name.clone());
+
+            // Schedule sub-task (respect parallelism: schedule up to `parallelism` at once)
+            if idx < parallelism {
+                self.create_and_queue_worker_task(workflow_id, &sub_task, &sub_input, sub_seq)
+                    .await?;
+            } else {
+                // Create as SCHEDULED but don't queue — will be picked up by advance
+                self.insert_task_record(
+                    workflow_id,
+                    &sub_task,
+                    &sub_input,
+                    sub_seq,
+                    "SCHEDULED",
+                    &Value::Object(Default::default()),
+                    None,
+                )
+                .await?;
+            }
+        }
+
+        // Create an auto-JOIN task that waits for all sub-tasks
+        let join_task = WorkflowTask {
+            name: format!("{}_join", task_def.name),
+            task_reference_name: format!("{}__map_join", task_def.task_reference_name),
+            task_type: "JOIN".into(),
+            join_on: fork_refs,
+            ..Default::default()
+        };
+        self.handle_join_task(workflow_id, &join_task, input, seq + items.len() as i32 + 100)
+            .await?;
+
+        tracing::info!(
+            workflow_id = %workflow_id,
+            ref_name = %task_def.task_reference_name,
+            items = items.len(),
+            parallelism = parallelism,
+            "MAP task scheduled"
+        );
+        Ok(())
+    }
+
+    // ── WAIT_FOR_SIGNAL ──────────────────────────────────────────────────
+
+    /// Create an IN_PROGRESS task that waits for an external signal.
+    /// Completed by `send_signal()` in advanced.rs.
+    pub(crate) async fn handle_wait_for_signal_task(
+        &self,
+        workflow_id: &str,
+        task_def: &WorkflowTask,
+        input: &Value,
+        seq: i32,
+    ) -> Result<(), EngineError> {
+        let task_input = self
+            .resolve_task_input(workflow_id, task_def, input)
+            .await?;
+
+        // Extract the signal name from input parameters
+        let signal_name = task_input
+            .get("signalName")
+            .and_then(|v| v.as_str())
+            .unwrap_or(&task_def.task_reference_name);
+
+        let input_with_signal = serde_json::json!({
+            "signalName": signal_name,
+            "waitingSince": Utc::now().timestamp_millis(),
+            "originalInput": task_input,
+        });
+
+        let (_task_id, _is_new) = self
+            .insert_task_record(
+                workflow_id,
+                task_def,
+                &input_with_signal,
+                seq,
+                "IN_PROGRESS",
+                &Value::Object(Default::default()),
+                None,
+            )
+            .await?;
+
+        tracing::info!(
+            workflow_id = %workflow_id,
+            ref_name = %task_def.task_reference_name,
+            signal_name = %signal_name,
+            "WAIT_FOR_SIGNAL task created, awaiting signal"
         );
         Ok(())
     }
@@ -1596,185 +1769,5 @@ impl WorkflowEngine {
             }
         }
         Ok(depth)
-    }
-}
-
-// ── Template expression resolution ──────────────────────────────────────────
-
-/// Recursively resolve `${...}` template expressions in a JSON value.
-///
-/// Supported expressions:
-///   ${workflow.input.field.path}  — value from the workflow input
-///   ${workflow.workflowId}        — the workflow's ID
-///   ${refName.output.field.path}  — output of a completed task by reference name
-pub(crate) fn resolve_value(
-    val: &Value,
-    workflow_input: &Value,
-    task_outputs: &HashMap<String, Value>,
-    workflow_id: &str,
-) -> Value {
-    match val {
-        Value::String(s) => resolve_string_value(s, workflow_input, task_outputs, workflow_id),
-        Value::Object(map) => {
-            let resolved: serde_json::Map<String, Value> = map
-                .iter()
-                .map(|(k, v)| {
-                    (
-                        k.clone(),
-                        resolve_value(v, workflow_input, task_outputs, workflow_id),
-                    )
-                })
-                .collect();
-            Value::Object(resolved)
-        }
-        Value::Array(arr) => Value::Array(
-            arr.iter()
-                .map(|v| resolve_value(v, workflow_input, task_outputs, workflow_id))
-                .collect(),
-        ),
-        other => other.clone(),
-    }
-}
-
-pub(crate) fn resolve_string_value(
-    s: &str,
-    workflow_input: &Value,
-    task_outputs: &HashMap<String, Value>,
-    workflow_id: &str,
-) -> Value {
-    // If the entire string is a single ${...} expression, preserve the resolved type
-    let trimmed = s.trim();
-    if trimmed.starts_with("${") && trimmed.ends_with('}') {
-        let inner = &trimmed[2..trimmed.len() - 1];
-        if !inner.contains("${")
-            && let Some(resolved) =
-                resolve_expression(inner, workflow_input, task_outputs, workflow_id)
-        {
-            return resolved;
-        }
-    }
-
-    if !s.contains("${") {
-        return Value::String(s.to_string());
-    }
-
-    // String interpolation for mixed content like "prefix-${workflow.input.id}-suffix"
-    let mut result = String::new();
-    let mut remaining = s;
-
-    while let Some(start) = remaining.find("${") {
-        result.push_str(&remaining[..start]);
-        let after = &remaining[start + 2..];
-        if let Some(end) = after.find('}') {
-            let expr = &after[..end];
-            match resolve_expression(expr, workflow_input, task_outputs, workflow_id) {
-                Some(Value::String(v)) => result.push_str(&v),
-                Some(Value::Null) => result.push_str("null"),
-                Some(v) => result.push_str(&v.to_string()),
-                None => {
-                    result.push_str("${");
-                    result.push_str(expr);
-                    result.push('}');
-                }
-            }
-            remaining = &after[end + 1..];
-        } else {
-            result.push_str(&remaining[start..]);
-            remaining = "";
-        }
-    }
-    result.push_str(remaining);
-    Value::String(result)
-}
-
-pub(crate) fn resolve_expression(
-    expr: &str,
-    workflow_input: &Value,
-    task_outputs: &HashMap<String, Value>,
-    _workflow_id: &str,
-) -> Option<Value> {
-    let parts: Vec<&str> = expr.split('.').collect();
-    if parts.len() < 2 {
-        return None;
-    }
-
-    if parts[0] == "workflow" {
-        return match parts[1] {
-            "workflowId" => Some(Value::String(_workflow_id.to_string())),
-            "input" => {
-                if parts.len() == 2 {
-                    Some(workflow_input.clone())
-                } else {
-                    navigate_json(workflow_input, &parts[2..])
-                }
-            }
-            _ => None,
-        };
-    }
-
-    // Task reference: refName.output.field.path
-    if parts[1] == "output"
-        && let Some(output) = task_outputs.get(parts[0])
-    {
-        if parts.len() == 2 {
-            return Some(output.clone());
-        }
-        return navigate_json(output, &parts[2..]);
-    }
-
-    None
-}
-
-pub(crate) fn navigate_json(val: &Value, path: &[&str]) -> Option<Value> {
-    let mut current = val;
-    for &segment in path {
-        current = current.get(segment)?;
-    }
-    Some(current.clone())
-}
-
-/// Evaluate a DO_WHILE loop condition. Supports:
-///   - `"iteration < N"` — continue while iteration count is below N
-///   - `"true"` / `"false"` — literal
-///   - Otherwise: check if the last task output's `result` field is truthy
-pub(crate) fn evaluate_loop_condition(
-    condition: &str,
-    last_output: &Value,
-    iteration: usize,
-) -> bool {
-    let trimmed = condition.trim();
-
-    if trimmed == "false" || trimmed.is_empty() {
-        return false;
-    }
-    if trimmed == "true" {
-        return true;
-    }
-
-    // Simple "iteration < N" pattern
-    if let Some(rest) = trimmed.strip_prefix("iteration") {
-        let rest = rest.trim();
-        if let Some(n_str) = rest.strip_prefix('<')
-            && let Ok(n) = n_str.trim().parse::<usize>()
-        {
-            return iteration < n;
-        }
-        if let Some(n_str) = rest.strip_prefix("<=")
-            && let Ok(n) = n_str.trim().parse::<usize>()
-        {
-            return iteration <= n;
-        }
-    }
-
-    // Check last task output for a truthy "result" field
-    match last_output
-        .get("shouldContinue")
-        .or_else(|| last_output.get("result"))
-    {
-        Some(Value::Bool(b)) => *b,
-        Some(Value::String(s)) => s != "false" && !s.is_empty(),
-        Some(Value::Number(n)) => n.as_f64().unwrap_or(0.0) != 0.0,
-        Some(Value::Null) => false,
-        _ => false,
     }
 }

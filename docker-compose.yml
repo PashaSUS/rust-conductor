@@ -132,7 +132,6 @@ services:
       retries: 5
 
   backend-migrate:
-    image: ghcr.io/pashasus/rust-conductor/backend:latest
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -166,7 +165,6 @@ services:
         condition: service_healthy
 
   backend:
-    image: ghcr.io/pashasus/rust-conductor/backend:latest
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -221,7 +219,6 @@ services:
       - backend
 
   frontend:
-    image: ghcr.io/pashasus/rust-conductor/frontend:latest
     build:
       context: ./frontend
       dockerfile: Dockerfile
@@ -233,10 +230,51 @@ services:
     depends_on:
       - backend
 
+  # -- Prometheus --
+  prometheus:
+    image: prom/prometheus:latest
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheusdata:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # -- Grafana --
+  grafana:
+    image: grafana/grafana:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafanadata:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      prometheus:
+        condition: service_healthy
+
 volumes:
   pgdata_shard0:
   redisdata-0:
   kafkadata-0:
   seqdata:
+  prometheusdata:
+  grafanadata:
   rustfsdata:
   rustfslogs:

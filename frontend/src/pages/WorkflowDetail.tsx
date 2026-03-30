@@ -1,7 +1,7 @@
 import { useState, useEffect, Fragment } from "react";
 import { useParams, useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { workflowApi, metadataApi, formatTs, type TaskResult } from "@/api/conductor";
+import { workflowApi, metadataApi, formatTs, type TaskResult, type WorkflowCheckpoint } from "@/api/conductor";
 import WorkflowDiagram from "@/components/WorkflowDiagram";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -111,6 +111,7 @@ export default function WorkflowDetail() {
           <TabsTrigger value="input">{t.input}</TabsTrigger>
           <TabsTrigger value="output">{t.output}</TabsTrigger>
           <TabsTrigger value="explorer">Data Explorer</TabsTrigger>
+          <TabsTrigger value="checkpoints">Checkpoints</TabsTrigger>
           <TabsTrigger value="info">{t.info}</TabsTrigger>
         </TabsList>
 
@@ -376,6 +377,10 @@ export default function WorkflowDetail() {
           </Card>
         </TabsContent>
 
+        <TabsContent value="checkpoints">
+          <CheckpointsTab workflowId={wf.workflowId} isRunning={wf.status === "RUNNING"} />
+        </TabsContent>
+
         <TabsContent value="info">
           <Card>
             <CardContent className="pt-6 space-y-2 text-sm">
@@ -404,6 +409,12 @@ export default function WorkflowDetail() {
               )}
               {wfDef?.onFailureWebhook && (
                 <InfoRow label={t.onFailureWebhook} value={wfDef.onFailureWebhook} />
+              )}
+              {wfDef?.sagaEnabled && (
+                <InfoRow label="Saga" value="Enabled" />
+              )}
+              {wfDef?.baseWorkflow && (
+                <InfoRow label="Base Workflow" value={`${wfDef.baseWorkflow}${wfDef.baseWorkflowVersion ? ` v${wfDef.baseWorkflowVersion}` : ""}`} />
               )}
             </CardContent>
           </Card>
@@ -453,6 +464,79 @@ function DurationBadge({ startTime, endTime, status }: { startTime: number; endT
       <Clock className="h-3 w-3" />
       {formatted}
     </span>
+  );
+}
+
+function CheckpointsTab({ workflowId, isRunning }: { workflowId: string; isRunning: boolean }) {
+  const navigate = useNavigate();
+  const { data: checkpoints, isLoading, refetch } = useQuery({
+    queryKey: ["checkpoints", workflowId],
+    queryFn: () => workflowApi.listCheckpoints(workflowId),
+  });
+
+  const handleCreate = async () => {
+    const label = prompt("Checkpoint label (optional):");
+    try {
+      await workflowApi.createCheckpoint(workflowId, label || undefined);
+      refetch();
+    } catch (e) {
+      alert(`Failed to create checkpoint: ${e instanceof Error ? e.message : e}`);
+    }
+  };
+
+  const handleRestore = async (cpId: string) => {
+    if (!confirm("This will terminate the current execution and start a new one from this checkpoint. Continue?")) return;
+    try {
+      const newId = await workflowApi.restoreCheckpoint(workflowId, cpId);
+      navigate(`/executions/${newId}`);
+    } catch (e) {
+      alert(`Failed to restore: ${e instanceof Error ? e.message : e}`);
+    }
+  };
+
+  return (
+    <Card>
+      <CardContent className="pt-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-semibold">Workflow Checkpoints</h3>
+          {isRunning && (
+            <Button variant="outline" size="sm" onClick={handleCreate}>
+              Create Checkpoint
+            </Button>
+          )}
+        </div>
+        {isLoading ? (
+          <div className="text-sm text-muted-foreground">Loading...</div>
+        ) : !checkpoints?.length ? (
+          <div className="text-sm text-muted-foreground">No checkpoints</div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Checkpoint ID</TableHead>
+                <TableHead>Label</TableHead>
+                <TableHead>Created At</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {checkpoints.map((cp: WorkflowCheckpoint) => (
+                <TableRow key={cp.checkpointId}>
+                  <TableCell className="font-mono text-xs">{cp.checkpointId.substring(0, 8)}...</TableCell>
+                  <TableCell>{cp.label || "—"}</TableCell>
+                  <TableCell>{formatTs(cp.createdAt)}</TableCell>
+                  <TableCell className="text-right">
+                    <Button variant="ghost" size="sm" onClick={() => handleRestore(cp.checkpointId)}>
+                      <RotateCcw className="h-3 w-3 mr-1" /> Restore
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

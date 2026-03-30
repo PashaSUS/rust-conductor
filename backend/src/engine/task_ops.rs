@@ -30,6 +30,7 @@ impl WorkflowEngine {
         task_type: &str,
         worker_id: Option<&str>,
     ) -> Result<Option<PollTask>, EngineError> {
+        crate::metrics::record_task_poll(task_type);
         let task_id = match self.queue.dequeue(task_type).await {
             Some(id) => id,
             None => return Ok(None),

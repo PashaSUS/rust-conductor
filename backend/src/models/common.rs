@@ -114,3 +114,38 @@ pub enum IdempotencyStrategy {
     ReturnExisting,
     FailOnRunning,
 }
+
+// ── Composite Condition Combinators ──
+
+/// A composable boolean expression node for DECISION/SWITCH tasks.
+/// Used when evaluator_type = "composite".
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ConditionNode {
+    /// All children must be true.
+    And(Vec<ConditionNode>),
+    /// At least one child must be true.
+    Or(Vec<ConditionNode>),
+    /// Inverts the child result.
+    Not(Box<ConditionNode>),
+    /// Leaf comparison: field op value.
+    Compare {
+        field: String,
+        op: CompareOp,
+        value: Value,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum CompareOp {
+    Eq,
+    Neq,
+    Gt,
+    Gte,
+    Lt,
+    Lte,
+    Contains,
+    StartsWith,
+    EndsWith,
+}

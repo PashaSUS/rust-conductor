@@ -209,6 +209,29 @@ impl WorkflowEngine {
                 "Paused workflow not found: {workflow_id}"
             )));
         }
+
+        // Re-advance to schedule any pending tasks that were frozen during pause
+        if let Err(e) = self.advance_workflow(workflow_id).await {
+            tracing::warn!(workflow_id = %workflow_id, error = %e, "Advance after resume failed, sweeper will retry");
+        }
+
+        // Re-enqueue any SCHEDULED worker tasks that may have been orphaned
+        let orphans: Vec<(String, String)> = sqlx::query_as(
+            "SELECT task_id, task_def_name FROM task \
+             WHERE workflow_instance_id = $1 AND status = 'SCHEDULED' \
+             AND task_type NOT IN ('FORK','FORK_JOIN','JOIN','DECISION','SWITCH','SUB_WORKFLOW','DO_WHILE','TERMINATE','SET_VARIABLE','WAIT','LAMBDA','INLINE','EVENT')",
+        )
+        .bind(workflow_id)
+        .fetch_all(db)
+        .await
+        .map_err(|e| EngineError::Database(e.to_string()))?;
+
+        for (task_id, task_def_name) in &orphans {
+            let _ = self.set_task_routing(task_id, workflow_id).await;
+            let _ = self.queue.enqueue(task_def_name, task_id).await;
+        }
+
+        tracing::info!(workflow_id = %workflow_id, re_queued = orphans.len(), "Workflow resumed");
         Ok(())
     }
 
@@ -747,73 +770,6 @@ impl WorkflowEngine {
         Ok(())
     }
 
-    // ── Bulk Operations ──
-
-    pub async fn bulk_pause(&self, workflow_ids: &[String]) -> Result<BulkResponse, EngineError> {
-        let futs: Vec<_> = workflow_ids
-            .iter()
-            .map(|id| {
-                let id = id.clone();
-                async move { (id.clone(), self.pause_workflow(&id).await) }
-            })
-            .collect();
-        Ok(collect_bulk_results(join_all(futs).await))
-    }
-
-    pub async fn bulk_resume(&self, workflow_ids: &[String]) -> Result<BulkResponse, EngineError> {
-        let futs: Vec<_> = workflow_ids
-            .iter()
-            .map(|id| {
-                let id = id.clone();
-                async move { (id.clone(), self.resume_workflow(&id).await) }
-            })
-            .collect();
-        Ok(collect_bulk_results(join_all(futs).await))
-    }
-
-    pub async fn bulk_retry(&self, workflow_ids: &[String]) -> Result<BulkResponse, EngineError> {
-        let futs: Vec<_> = workflow_ids
-            .iter()
-            .map(|id| {
-                let id = id.clone();
-                async move {
-                    let result = self.retry_workflow(&id).await.map(|_| ());
-                    (id, result)
-                }
-            })
-            .collect();
-        Ok(collect_bulk_results(join_all(futs).await))
-    }
-
-    pub async fn bulk_restart(&self, workflow_ids: &[String]) -> Result<BulkResponse, EngineError> {
-        let futs: Vec<_> = workflow_ids
-            .iter()
-            .map(|id| {
-                let id = id.clone();
-                async move {
-                    let result = self.restart_workflow(&id).await.map(|_| ());
-                    (id, result)
-                }
-            })
-            .collect();
-        Ok(collect_bulk_results(join_all(futs).await))
-    }
-
-    pub async fn bulk_terminate(
-        &self,
-        workflow_ids: &[String],
-        reason: Option<&str>,
-    ) -> Result<BulkResponse, EngineError> {
-        let futs: Vec<_> = workflow_ids
-            .iter()
-            .map(|id| {
-                let id = id.clone();
-                async move { (id.clone(), self.terminate_workflow(&id, reason).await) }
-            })
-            .collect();
-        Ok(collect_bulk_results(join_all(futs).await))
-    }
-
     // ── Workflow Status ──
 
     pub async fn get_workflow_status(
@@ -902,22 +858,5 @@ impl WorkflowEngine {
         .map_err(|e| EngineError::Database(e.to_string()))?;
 
         self.get_workflow(workflow_id).await
-    }
-}
-
-fn collect_bulk_results(results: Vec<(String, Result<(), EngineError>)>) -> BulkResponse {
-    let mut successful = vec![];
-    let mut errors = HashMap::new();
-    for (id, result) in results {
-        match result {
-            Ok(()) => successful.push(id),
-            Err(e) => {
-                errors.insert(id, e.to_string());
-            }
-        }
-    }
-    BulkResponse {
-        bulk_successful_results: successful,
-        bulk_error_results: errors,
     }
 }

@@ -18,7 +18,7 @@ impl WorkflowEngine {
             let orphans = sqlx::query_as::<_, OrphanedTaskRow>(
                 "SELECT task_id, task_def_name, workflow_instance_id FROM task \
                  WHERE status = 'SCHEDULED' \
-                   AND task_type NOT IN ('FORK','FORK_JOIN','JOIN','DECISION','SWITCH','SUB_WORKFLOW','DO_WHILE','TERMINATE','SET_VARIABLE','WAIT','LAMBDA','INLINE','EVENT') \
+                   AND task_type NOT IN ('FORK','FORK_JOIN','JOIN','DECISION','SWITCH','SUB_WORKFLOW','DO_WHILE','TERMINATE','SET_VARIABLE','WAIT','LAMBDA','INLINE','EVENT','MAP','WAIT_FOR_SIGNAL') \
                    AND scheduled_time < NOW() - INTERVAL '30 seconds'",
             )
             .fetch_all(shard)
@@ -70,7 +70,7 @@ impl WorkflowEngine {
                 "UPDATE task SET status = 'TIMED_OUT', end_time = $1, update_time = $1, \
                  reason_for_incompletion = 'Task timed out (sweep)' \
                  WHERE status = 'IN_PROGRESS' \
-                   AND task_type NOT IN ('FORK','FORK_JOIN','JOIN','DECISION','SWITCH','SUB_WORKFLOW','DO_WHILE','TERMINATE','SET_VARIABLE','WAIT','LAMBDA','INLINE','EVENT') \
+                   AND task_type NOT IN ('FORK','FORK_JOIN','JOIN','DECISION','SWITCH','SUB_WORKFLOW','DO_WHILE','TERMINATE','SET_VARIABLE','WAIT','LAMBDA','INLINE','EVENT','MAP','WAIT_FOR_SIGNAL') \
                    AND start_time < NOW() - INTERVAL '10 minutes' \
                  RETURNING workflow_instance_id",
             )
@@ -182,6 +182,56 @@ impl WorkflowEngine {
             for (wf_id,) in &failed_task_workflows {
                 if let Err(e) = self.advance_workflow(wf_id).await {
                     tracing::error!(workflow_id = %wf_id, error = %e, "Sweep advance for workflow with FAILED task failed");
+                }
+            }
+
+            // 6. Heartbeat timeout detection (110)
+            //    Fail IN_PROGRESS tasks with heartbeat_timeout_seconds set
+            //    whose update_time exceeds the timeout.
+            let heartbeat_timed_out: Vec<(String, String)> = sqlx::query_as(
+                "SELECT t.task_id, t.workflow_instance_id FROM task t \
+                 JOIN workflow w ON w.workflow_id = t.workflow_instance_id \
+                 WHERE t.status = 'IN_PROGRESS' \
+                   AND w.status = 'RUNNING' \
+                   AND w.workflow_def IS NOT NULL \
+                   AND t.update_time < NOW() - INTERVAL '1 second' * COALESCE( \
+                       (SELECT (elem->>'heartbeatTimeoutSeconds')::bigint \
+                        FROM jsonb_array_elements(w.workflow_def->'tasks') elem \
+                        WHERE elem->>'taskReferenceName' = t.reference_task_name \
+                          AND elem->>'heartbeatTimeoutSeconds' IS NOT NULL \
+                        LIMIT 1), \
+                       999999999)",
+            )
+            .fetch_all(shard)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "DB error scanning for heartbeat-timed-out tasks");
+                EngineError::Database(e.to_string())
+            })?;
+
+            if !heartbeat_timed_out.is_empty() {
+                let now = Utc::now();
+                tracing::warn!(
+                    count = heartbeat_timed_out.len(),
+                    "Found tasks with expired heartbeat, timing out"
+                );
+                let mut hb_seen = std::collections::HashSet::new();
+                for (task_id, wf_id) in &heartbeat_timed_out {
+                    let _ = sqlx::query(
+                        "UPDATE task SET status = 'TIMED_OUT', end_time = $2, update_time = $2, \
+                         reason_for_incompletion = 'Heartbeat timeout' \
+                         WHERE task_id = $1 AND status = 'IN_PROGRESS'",
+                    )
+                    .bind(task_id)
+                    .bind(now)
+                    .execute(shard)
+                    .await;
+
+                    if hb_seen.insert(wf_id.clone()) {
+                        if let Err(e) = self.advance_workflow(wf_id).await {
+                            tracing::error!(workflow_id = %wf_id, error = %e, "Sweep advance after heartbeat timeout failed");
+                        }
+                    }
                 }
             }
         }

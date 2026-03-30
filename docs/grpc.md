@@ -6,8 +6,8 @@ Rust Conductor exposes a **high-performance gRPC API** alongside the existing RE
 
 | Protocol | Default Port | Transport       | Use Case                         |
 |----------|-------------|-----------------|----------------------------------|
-| REST     | `8080`      | HTTP/1.1 + JSON | Browsers, curl, OpenAPI tooling  |
-| gRPC     | `50051`     | HTTP/2 + Protobuf | Microservice workers, SDKs, streaming-ready |
+| REST     | `8090`      | HTTP/1.1 + JSON | Browsers, curl, OpenAPI tooling  |
+| gRPC     | `50055`     | HTTP/2 + Protobuf | Microservice workers, SDKs, streaming-ready |
 
 ### Why gRPC?
 
@@ -23,11 +23,11 @@ Rust Conductor exposes a **high-performance gRPC API** alongside the existing RE
 
 ```
                        ┌──────────────────────┐
-   gRPC clients ──────►│  nginx-lb (:50051)   │──── grpc_pass ────►  backend:50051
+   gRPC clients ──────►│  nginx-lb (:50055)   │──── grpc_pass ────►  backend:50055
                        │  (HTTP/2 LB)         │                       (tonic)
                        └──────────────────────┘
                        ┌──────────────────────┐
-   REST clients ──────►│  nginx-lb (:8080)    │──── proxy_pass ───►  backend:8080
+   REST clients ──────►│  nginx-lb (:8090)    │──── proxy_pass ───►  backend:8090
                        │  (HTTP/1.1 LB)       │                       (actix-web)
                        └──────────────────────┘
 
@@ -168,7 +168,7 @@ message WorkflowStatsResponse {
 
 | Environment Variable | Default   | Description                          |
 |---------------------|-----------|--------------------------------------|
-| `GRPC_PORT`          | `50051`  | Port for the gRPC server             |
+| `GRPC_PORT`          | `50055`  | Port for the gRPC server             |
 | `HOST`               | `localhost` | Bind address (shared with HTTP)   |
 
 The gRPC server starts automatically alongside the HTTP server. No additional flags are needed.
@@ -219,35 +219,35 @@ npx grpc_tools_node_protoc --ts_out=. --grpc_out=. proto/conductor.proto
 
 ```bash
 # List services
-grpcurl -plaintext localhost:50051 list
+grpcurl -plaintext localhost:50055 list
 
 # Health check
-grpcurl -plaintext localhost:50051 conductor.AdminService/HealthCheck
+grpcurl -plaintext localhost:50055 conductor.AdminService/HealthCheck
 
 # Register a workflow definition
 grpcurl -plaintext -d '{
   "workflow_def_json": "{\"name\":\"my_workflow\",\"version\":1,\"tasks\":[{\"name\":\"task1\",\"taskReferenceName\":\"t1\",\"type\":\"SIMPLE\"}]}"
-}' localhost:50051 conductor.MetadataService/RegisterWorkflowDef
+}' localhost:50055 conductor.MetadataService/RegisterWorkflowDef
 
 # Start a workflow
 grpcurl -plaintext -d '{
   "start_workflow_json": "{\"name\":\"my_workflow\",\"version\":1,\"input\":{\"key\":\"value\"}}"
-}' localhost:50051 conductor.WorkflowService/StartWorkflow
+}' localhost:50055 conductor.WorkflowService/StartWorkflow
 
 # Poll for a task
 grpcurl -plaintext -d '{
   "task_type": "SIMPLE",
   "worker_id": "worker-1"
-}' localhost:50051 conductor.TaskService/PollTask
+}' localhost:50055 conductor.TaskService/PollTask
 
 # Get workflow stats
-grpcurl -plaintext localhost:50051 conductor.WorkflowService/GetWorkflowStats
+grpcurl -plaintext localhost:50055 conductor.WorkflowService/GetWorkflowStats
 
 # Bulk terminate
 grpcurl -plaintext -d '{
   "workflow_ids": ["id-1", "id-2"],
   "reason": "cleanup"
-}' localhost:50051 conductor.BulkService/BulkTerminate
+}' localhost:50055 conductor.BulkService/BulkTerminate
 ```
 
 ### Rust Client Example
@@ -265,7 +265,7 @@ use conductor::task_service_client::TaskServiceClient;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let channel = Channel::from_static("http://localhost:50051")
+    let channel = Channel::from_static("http://localhost:50055")
         .connect()
         .await?;
 
@@ -304,7 +304,7 @@ import json
 import conductor_pb2
 import conductor_pb2_grpc
 
-channel = grpc.insecure_channel("localhost:50051")
+channel = grpc.insecure_channel("localhost:50055")
 
 # Start a workflow
 wf_stub = conductor_pb2_grpc.WorkflowServiceStub(channel)
@@ -338,13 +338,13 @@ The gRPC port is automatically exposed through nginx as an HTTP/2 load balancer:
 # docker-compose.yml (relevant sections)
 backend:
   expose:
-    - "8080"    # REST
-    - "50051"   # gRPC
+    - "8090"    # REST
+    - "50055"   # gRPC
 
 nginx-lb:
   ports:
-    - "8080:8080"    # REST (external)
-    - "50051:50051"  # gRPC (external)
+    - "8090:8090"    # REST (external)
+    - "50055:50055"  # gRPC (external)
 ```
 
 The nginx gRPC block uses `grpc_pass` for native HTTP/2 proxying, providing load balancing across all 4 backend replicas.
@@ -385,7 +385,7 @@ ghz --insecure \
     --call conductor.TaskService.PollTask \
     -d '{"task_type":"SIMPLE","worker_id":"bench-1"}' \
     -c 100 -n 10000 \
-    localhost:50051
+    localhost:50055
 ```
 
 ---
@@ -395,7 +395,7 @@ ghz --insecure \
 | Tool     | Version | Purpose                    |
 |----------|---------|----------------------------|
 | `protoc` | ≥ 3.15  | Protobuf compiler          |
-| `rustc`  | ≥ 1.85  | Rust compiler (edition 2024) |
+| `rustc`  | ≥ 1.85  | Rust compiler (edition 2024)           |
 
 The `build.rs` script automatically invokes `protoc` via `tonic-build`. Set the `PROTOC` environment variable if protoc is not on your PATH:
 

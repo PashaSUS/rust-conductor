@@ -113,6 +113,8 @@ impl WorkflowEngine {
 
             tracing::info!(workflow_id = %workflow_id, "Workflow completed");
 
+            crate::metrics::record_workflow_completed();
+
             // Fire completion webhook if configured
             self.notify_webhooks(def, workflow_id, "COMPLETED", &output);
 
@@ -387,6 +389,49 @@ impl WorkflowEngine {
             reason = ?reason,
             "Failing workflow"
         );
+
+        // 104. Saga compensation — if the workflow definition has saga_enabled,
+        // run compensation tasks before marking the workflow as failed.
+        {
+            let db = self.shards.shard_for(workflow_id);
+            if let Some(def_json) = sqlx::query_scalar::<_, Option<Value>>(
+                "SELECT workflow_def FROM workflow WHERE workflow_id = $1",
+            )
+            .bind(workflow_id)
+            .fetch_optional(db)
+            .await
+            .ok()
+            .flatten()
+            .flatten()
+            {
+                if let Ok(def) = serde_json::from_value::<WorkflowDef>(def_json) {
+                    if def.saga_enabled {
+                        // Fetch completed tasks for compensation
+                        let completed_rows: Vec<TaskResult> = self
+                            .get_workflow(workflow_id)
+                            .await
+                            .map(|wf| {
+                                wf.tasks
+                                    .into_iter()
+                                    .filter(|t| t.status == TaskStatus::Completed)
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        if let Err(e) = self
+                            .run_saga_compensation(workflow_id, &def, &completed_rows)
+                            .await
+                        {
+                            tracing::error!(
+                                workflow_id = %workflow_id,
+                                error = %e,
+                                "Saga compensation failed"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
         // Only allow known terminal statuses to prevent SQL injection
         let safe_status = match terminal_status {
             "TIMED_OUT" => "TIMED_OUT",
@@ -407,6 +452,8 @@ impl WorkflowEngine {
             tracing::error!(workflow_id = %workflow_id, error = %e, "DB error while setting workflow to {}", safe_status);
             EngineError::Database(e.to_string())
         })?;
+
+        crate::metrics::record_workflow_failed();
 
         sqlx::query(
             "UPDATE task SET status = 'CANCELED', end_time = $2, update_time = $2 WHERE workflow_instance_id = $1 AND status IN ('SCHEDULED', 'IN_PROGRESS')",

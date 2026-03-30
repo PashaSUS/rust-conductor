@@ -15,6 +15,7 @@ The core Conductor-compatible REST API.
 | `POST` | `/api/metadata/workflow` | Create/register a workflow definition |
 | `PUT` | `/api/metadata/workflow` | Update a workflow definition |
 | `DELETE` | `/api/metadata/workflow/{name}/{version}` | Delete a workflow definition version |
+| `POST` | `/api/metadata/workflow/validate` | Validate a workflow definition graph (109) |
 
 ### Task Definitions
 | Method | Path | Description |
@@ -35,6 +36,27 @@ The core Conductor-compatible REST API.
 | `POST` | `/api/workflow/{workflowId}/restart` | Restart a failed workflow |
 | `POST` | `/api/workflow/{workflowId}/retry` | Retry a failed workflow |
 | `DELETE` | `/api/workflow/{workflowId}` | Terminate a workflow |
+| `POST` | `/api/workflow/{workflowId}/modify` | Modify a running workflow (102) |
+| `POST` | `/api/workflow/signal` | Send a signal to waiting workflows (103) |
+| `POST` | `/api/workflow/{workflowId}/checkpoint` | Create a workflow checkpoint/snapshot (105) |
+| `GET` | `/api/workflow/{workflowId}/checkpoints` | List checkpoints for a workflow (105) |
+| `POST` | `/api/workflow/{workflowId}/restore/{checkpointId}` | Restore workflow from checkpoint (105) |
+
+#### Advanced Endpoint Details
+
+**POST `/api/workflow/{workflowId}/modify`** — Adds, removes, or replaces tasks in a running workflow. Body: `ModifyWorkflowRequest { workflow_id, add_tasks[], remove_task_refs[], replace_tasks {} }`. Only non-terminal workflows can be modified.
+
+**POST `/api/workflow/signal`** — Delivers a named signal to all workflows with a `WAIT_FOR_SIGNAL` task listening for that signal name. Body: `SendSignalRequest { signal_name, payload }`. Returns `{ signal_name, delivered_count }`.
+
+**POST `/api/workflow/{workflowId}/checkpoint`** — Snapshots the current workflow state (tasks, variables). Body: `{ label? }`. Returns the created `WorkflowCheckpoint`.
+
+**GET `/api/workflow/{workflowId}/checkpoints`** — Lists all checkpoints for a workflow, ordered by creation time descending.
+
+**POST `/api/workflow/{workflowId}/restore/{checkpointId}`** — Resets the workflow to the state captured in the given checkpoint. The workflow is paused after restoration.
+
+**POST `/api/metadata/workflow/validate`** — Validates a workflow definition without registering it. Body: `WorkflowDef`. Returns `ValidationResult { valid, errors[], warnings[] }`. Checks for missing task definitions, unreachable tasks, cycles, and empty graphs.
+
+**POST `/api/tasks/{taskId}/heartbeat`** — Extends the heartbeat timeout for a long-running task. Workers should call this periodically (at less than `heartbeatTimeoutSeconds` intervals) to prevent the sweeper from timing out the task.
 
 ### Tasks
 | Method | Path | Description |
@@ -46,6 +68,7 @@ The core Conductor-compatible REST API.
 | `GET` | `/api/tasks/queue/sizes` | Get task queue sizes |
 | `GET` | `/api/tasks/{taskId}` | Get task details |
 | `GET` | `/api/tasks/{taskId}/log` | Get task execution logs |
+| `POST` | `/api/tasks/{taskId}/heartbeat` | Send task heartbeat (110) |
 
 ### Events
 | Method | Path | Description |
