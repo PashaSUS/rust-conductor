@@ -44,6 +44,7 @@ pub fn workflow_def_from_official(p: &opb::OfWorkflowDefPb) -> models::WorkflowD
         version: p.version,
         tasks: p.tasks.iter().map(workflow_task_from_official).collect(),
         input_parameters: p.input_parameters.clone(),
+        input_parameter_definitions: Vec::new(),
         output_parameters: opt_struct_to_hashmap(&p.output_parameters),
         failure_workflow: opt_string(&p.failure_workflow),
         schema_version: p.schema_version,
@@ -329,6 +330,8 @@ pub fn start_workflow_from_official(
         idempotency_key: opt_string_owned(p.idempotency_key),
         idempotency_strategy: None,
         tags: vec![],
+        parent_workflow_id: None,
+        parent_workflow_task_id: None,
     }
 }
 

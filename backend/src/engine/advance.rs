@@ -12,35 +12,110 @@ impl WorkflowEngine {
     pub(crate) async fn advance_workflow(&self, workflow_id: &str) -> Result<(), EngineError> {
         // Per-workflow distributed lock to prevent concurrent advance_workflow
         // calls from racing to schedule the same next task.
+        //
+        // IMPORTANT: We must NOT hold a Redis connection across the full
+        // `advance_workflow_inner` call. That function performs many SQL
+        // round-trips and other Redis ops, so holding the connection here
+        // pegs every concurrent advance to one slot in the deadpool, which
+        // exhausts the pool under high load (observed as
+        // "Timeout occurred while waiting for a slot to become available").
+        //
+        // Instead: acquire → SET NX → drop. Do the work. Acquire again → DEL.
+        //
+        // CONCURRENCY CORRECTNESS: a naive "skip if held" misses updates
+        // committed by other callers between our snapshot read and lock
+        // release. Concretely: branch A completes → acquires lock → reads
+        // workflow → B is still IN_PROGRESS → JOIN check fails → returns.
+        // Meanwhile B completes and tries to advance, but the lock is still
+        // held → skipped → JOIN is never re-evaluated and the workflow
+        // hangs until the sweeper rescues it.
+        //
+        // Fix: skipped callers SET a "dirty" flag. The lock holder clears
+        // the flag before running inner; after inner finishes, if dirty was
+        // set during the run we loop and run inner again. This is the
+        // canonical "leader-with-recheck" pattern.
         let lock_key = format!("conductor:advance_lock:{}", workflow_id);
+        let dirty_key = format!("conductor:advance_dirty:{}", workflow_id);
         let pool = self.redis.pool_for_key(workflow_id);
-        let mut conn = pool.get().await.map_err(|e| {
-            tracing::error!(workflow_id = %workflow_id, error = %e, "Redis conn failed for advance lock");
-            EngineError::Redis(e.to_string())
-        })?;
 
-        let acquired: Option<String> = redis::cmd("SET")
-            .arg(&lock_key)
-            .arg("1")
-            .arg("NX")
-            .arg("EX")
-            .arg(30_u32)
-            .query_async(&mut *conn)
-            .await
-            .unwrap_or(None);
+        let acquired = {
+            let mut conn = pool.get().await.map_err(|e| {
+                tracing::warn!(workflow_id = %workflow_id, error = %e, "Redis conn failed for advance lock; skipping this advance round");
+                EngineError::Redis(e.to_string())
+            })?;
+            let acquired: Option<String> = redis::cmd("SET")
+                .arg(&lock_key)
+                .arg("1")
+                .arg("NX")
+                .arg("EX")
+                .arg(30_u32)
+                .query_async(&mut *conn)
+                .await
+                .unwrap_or(None);
+            if acquired.is_none() {
+                // Could not acquire — flag the workflow dirty so the
+                // current holder will re-run inner before releasing.
+                let _: Result<(), _> = redis::cmd("SET")
+                    .arg(&dirty_key)
+                    .arg("1")
+                    .arg("EX")
+                    .arg(60_u32)
+                    .query_async(&mut *conn)
+                    .await;
+            }
+            acquired
+        };
 
         if acquired.is_none() {
-            tracing::debug!(workflow_id = %workflow_id, "advance_workflow skipped — lock held by another caller");
+            tracing::debug!(workflow_id = %workflow_id, "advance_workflow skipped — lock held by another caller; flagged dirty");
             return Ok(());
         }
 
-        let result = self.advance_workflow_inner(workflow_id).await;
+        // Loop: run inner; if any caller flagged dirty during the run,
+        // clear and run again. Bound the number of iterations to avoid
+        // pathological infinite loops under sustained contention.
+        let mut result: Result<(), EngineError> = Ok(());
+        for _ in 0..8 {
+            // Clear dirty flag *before* running inner so any flag set
+            // during this run causes a re-loop.
+            if let Ok(mut conn) = pool.get().await {
+                let _: Result<(), _> = redis::cmd("DEL")
+                    .arg(&dirty_key)
+                    .query_async(&mut *conn)
+                    .await;
+            }
 
-        // Release lock
-        let _: Result<(), _> = redis::cmd("DEL")
-            .arg(&lock_key)
-            .query_async(&mut *conn)
-            .await;
+            result = self.advance_workflow_inner(workflow_id).await;
+            if result.is_err() {
+                break;
+            }
+
+            // Was anything flagged during the inner run?
+            let dirty: Option<String> = if let Ok(mut conn) = pool.get().await {
+                redis::cmd("GET")
+                    .arg(&dirty_key)
+                    .query_async(&mut *conn)
+                    .await
+                    .unwrap_or(None)
+            } else {
+                None
+            };
+            if dirty.is_none() {
+                break;
+            }
+            tracing::debug!(workflow_id = %workflow_id, "advance_workflow re-running due to dirty flag");
+        }
+
+        // Release lock with a fresh, short-lived connection. Failure to release
+        // is non-fatal — the 30s TTL guarantees forward progress.
+        if let Ok(mut conn) = pool.get().await {
+            let _: Result<(), _> = redis::cmd("DEL")
+                .arg(&lock_key)
+                .query_async(&mut *conn)
+                .await;
+        } else {
+            tracing::debug!(workflow_id = %workflow_id, "Could not acquire Redis to DEL advance lock; will expire via TTL");
+        }
 
         result
     }
@@ -351,27 +426,67 @@ impl WorkflowEngine {
 
     /// When a child workflow completes, find and complete the parent's
     /// SUB_WORKFLOW task so the parent can advance.
+    ///
+    /// Each step is retried a few times on transient DB errors (e.g. PgBouncer
+    /// `query_wait_timeout` under burst load). If retries are exhausted we fall
+    /// through to the sweeper, which picks the parent up via the
+    /// "stale SUB_WORKFLOW" sweep after 30s — but at high throughput we want
+    /// the hot path to succeed nearly always so the sweeper stays idle.
     pub(crate) async fn try_complete_parent_sub_workflow(
         &self,
         child_workflow_id: &str,
         child_output: &Value,
     ) -> Result<(), EngineError> {
-        // Use the child workflow's parent_workflow_id to route directly
         let child_db = self.shards.shard_for(child_workflow_id);
-        let parent_info: Option<(Option<String>, Option<String>)> = sqlx::query_as(
-            "SELECT parent_workflow_id, parent_workflow_task_id FROM workflow WHERE workflow_id = $1",
-        )
-        .bind(child_workflow_id)
-        .fetch_optional(child_db)
-        .await
-        .map_err(|e| {
-            tracing::error!(child_workflow_id = %child_workflow_id, error = %e, "Failed to look up parent_workflow_id for child");
-            EngineError::Database(e.to_string())
-        })?;
+
+        let mut parent_info: Option<(Option<String>, Option<String>)> = None;
+        let mut last_err: Option<sqlx::Error> = None;
+        for attempt in 0..3u32 {
+            match sqlx::query_as(
+                "SELECT parent_workflow_id, parent_workflow_task_id FROM workflow WHERE workflow_id = $1",
+            )
+            .bind(child_workflow_id)
+            .fetch_optional(child_db)
+            .await
+            {
+                Ok(row) => {
+                    parent_info = row;
+                    last_err = None;
+                    break;
+                }
+                Err(e) => {
+                    last_err = Some(e);
+                    // Tiny back-off before retry (10ms, 30ms)
+                    tokio::time::sleep(std::time::Duration::from_millis(10 * (1 + attempt as u64) * (1 + attempt as u64))).await;
+                }
+            }
+        }
+        if let Some(e) = last_err {
+            tracing::error!(child_workflow_id = %child_workflow_id, error = %e, "Failed to look up parent_workflow_id for child after retries");
+            return Err(EngineError::Database(e.to_string()));
+        }
 
         if let Some((Some(parent_wf_id), Some(parent_task_id))) = parent_info {
-            self.complete_sub_workflow_task(&parent_wf_id, &parent_task_id, child_output)
-                .await?;
+            // Retry the parent task UPDATE — this is the most contention-prone step.
+            let mut last_err: Option<EngineError> = None;
+            for attempt in 0..3u32 {
+                match self
+                    .complete_sub_workflow_task(&parent_wf_id, &parent_task_id, child_output)
+                    .await
+                {
+                    Ok(()) => {
+                        last_err = None;
+                        break;
+                    }
+                    Err(e) => {
+                        last_err = Some(e);
+                        tokio::time::sleep(std::time::Duration::from_millis(10 * (1 + attempt as u64) * (1 + attempt as u64))).await;
+                    }
+                }
+            }
+            if let Some(e) = last_err {
+                return Err(e);
+            }
             Box::pin(self.advance_workflow(&parent_wf_id)).await?;
         }
         Ok(())
@@ -579,6 +694,8 @@ impl WorkflowEngine {
             idempotency_key: None,
             idempotency_strategy: None,
             tags: vec![],
+            parent_workflow_id: None,
+            parent_workflow_task_id: None,
         };
 
         match self.start_workflow(&req).await {

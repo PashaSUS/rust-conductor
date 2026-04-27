@@ -1,3 +1,59 @@
+use serde::Deserialize;
+
+/// Optional file-based configuration. All fields are optional; values not
+/// present here fall through to environment variables, then to defaults.
+/// Loaded from the path given by `CONFIG_FILE` (default
+/// `/etc/rust-conductor/config.json`). When the file is absent, behaviour is
+/// unchanged from the pure-env-var setup.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct FileConfig {
+    pub host: Option<String>,
+    pub port: Option<u16>,
+    pub grpc_port: Option<u16>,
+    pub redis_urls: Option<String>,
+    pub kafka_brokers: Option<String>,
+    pub cors_origin: Option<String>,
+    pub slow_query_threshold_ms: Option<u64>,
+    pub def_cache_max_entries: Option<usize>,
+    pub sweeper_min_interval_secs: Option<u64>,
+    pub sweeper_max_interval_secs: Option<u64>,
+    #[serde(rename = "rateLimit")]
+    pub rate_limit: Option<RateLimitConfig>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct RateLimitConfig {
+    pub enabled: Option<bool>,
+    pub max_requests: Option<u64>,
+    pub window_secs: Option<u64>,
+}
+
+impl FileConfig {
+    /// Load JSON config from `CONFIG_FILE` (default
+    /// `/etc/rust-conductor/config.json`). Returns `Default::default()` when
+    /// the file is missing or unreadable. Logs a warning on parse error so
+    /// the process still starts on a typo.
+    fn load() -> Self {
+        let path = std::env::var("CONFIG_FILE")
+            .unwrap_or_else(|_| "/etc/rust-conductor/config.json".to_string());
+        match std::fs::read_to_string(&path) {
+            Ok(s) => match serde_json::from_str::<FileConfig>(&s) {
+                Ok(c) => {
+                    eprintln!("config: loaded {path}");
+                    c
+                }
+                Err(e) => {
+                    eprintln!("config: failed to parse {path}: {e}; using env/defaults");
+                    Self::default()
+                }
+            },
+            Err(_) => Self::default(),
+        }
+    }
+}
+
 pub struct AppConfig {
     pub host: String,
     pub port: u16,
@@ -32,6 +88,8 @@ pub struct AppConfig {
 impl AppConfig {
     pub fn from_env() -> Self {
         dotenvy::dotenv().ok();
+        let file = FileConfig::load();
+        let rl = file.rate_limit.unwrap_or_default();
 
         // Resolution order:
         // 1. SHARD_DATABASE_URLS = "url1,url2,..."   (explicit comma-separated list)
@@ -60,21 +118,30 @@ impl AppConfig {
         };
 
         Self {
-            host: std::env::var("HOST").unwrap_or_else(|_| "localhost".into()),
+            host: std::env::var("HOST")
+                .ok()
+                .or(file.host)
+                .unwrap_or_else(|| "localhost".into()),
             port: std::env::var("PORT")
                 .ok()
                 .and_then(|p| p.parse().ok())
+                .or(file.port)
                 .unwrap_or(8090),
             grpc_port: std::env::var("GRPC_PORT")
                 .ok()
                 .and_then(|p| p.parse().ok())
+                .or(file.grpc_port)
                 .unwrap_or(50055),
             redis_urls: std::env::var("REDIS_URLS")
-                .unwrap_or_else(|_| "redis://localhost:6379".into()),
+                .ok()
+                .or(file.redis_urls)
+                .unwrap_or_else(|| "redis://localhost:6379".into()),
             #[cfg(feature = "kafka")]
             kafka_brokers: std::env::var("KAFKA_BROKERS")
-                .unwrap_or_else(|_| "localhost:9092".into()),
-            cors_origin: std::env::var("CORS_ORIGIN").ok(),
+                .ok()
+                .or(file.kafka_brokers)
+                .unwrap_or_else(|| "localhost:9092".into()),
+            cors_origin: std::env::var("CORS_ORIGIN").ok().or(file.cors_origin),
             shard_database_urls,
             replica_database_urls: std::env::var("SHARD_REPLICA_DB_URLS")
                 .map(|urls| {
@@ -89,29 +156,37 @@ impl AppConfig {
             slow_query_threshold_ms: std::env::var("SLOW_QUERY_THRESHOLD_MS")
                 .ok()
                 .and_then(|v| v.parse().ok())
+                .or(file.slow_query_threshold_ms)
                 .unwrap_or(500),
             def_cache_max_entries: std::env::var("DEF_CACHE_MAX_ENTRIES")
                 .ok()
                 .and_then(|v| v.parse().ok())
+                .or(file.def_cache_max_entries)
                 .unwrap_or(1000),
             sweeper_min_interval_secs: std::env::var("SWEEPER_MIN_INTERVAL_SECS")
                 .ok()
                 .and_then(|v| v.parse().ok())
+                .or(file.sweeper_min_interval_secs)
                 .unwrap_or(10),
             sweeper_max_interval_secs: std::env::var("SWEEPER_MAX_INTERVAL_SECS")
                 .ok()
                 .and_then(|v| v.parse().ok())
+                .or(file.sweeper_max_interval_secs)
                 .unwrap_or(60),
             rate_limit_enabled: std::env::var("RATE_LIMIT_ENABLED")
+                .ok()
                 .map(|v| v != "false" && v != "0")
+                .or(rl.enabled)
                 .unwrap_or(true),
             rate_limit_max_requests: std::env::var("RATE_LIMIT_MAX_REQUESTS")
                 .ok()
                 .and_then(|v| v.parse().ok())
+                .or(rl.max_requests)
                 .unwrap_or(1000),
             rate_limit_window_secs: std::env::var("RATE_LIMIT_WINDOW_SECS")
                 .ok()
                 .and_then(|v| v.parse().ok())
+                .or(rl.window_secs)
                 .unwrap_or(60),
         }
     }

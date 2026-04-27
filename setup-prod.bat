@@ -174,6 +174,104 @@ echo   CORS origin:  !PUBLIC_URL!
 echo.
 
 
+REM ================================================================
+REM  Performance Tuning
+REM ================================================================
+echo.
+echo ========================================
+echo  Performance Tuning
+echo ========================================
+echo.
+echo Choose a preset, or pick "C" to customize every value:
+echo   1. BALANCED      - safe defaults, fits a laptop / small VM
+echo   2. THROUGHPUT    - tuned for high workflow throughput (16+ GB RAM)
+echo   3. CUSTOM        - prompt for each value
+echo.
+
+REM Defaults (BALANCED preset)
+set "RUST_LOG_LEVEL=info"
+set "RATE_LIMIT_ENABLED=true"
+set "RATE_LIMIT_MAX_REQUESTS=1000"
+set "RATE_LIMIT_WINDOW_SECS=60"
+set "SWEEPER_MIN_INTERVAL_SECS=10"
+set "SWEEPER_MAX_INTERVAL_SECS=60"
+set "PG_MAX_CONNECTIONS=200"
+set "PG_SHARED_BUFFERS=256MB"
+set "PG_WORK_MEM=8MB"
+set "PG_EFFECTIVE_CACHE=512MB"
+set "PG_MAX_LOCKS=256"
+set "PGB_DEFAULT_POOL_SIZE=40"
+set "PGB_MAX_CLIENT_CONN=400"
+set "PGB_MIN_POOL_SIZE=10"
+set "PGB_RESERVE_POOL_SIZE=10"
+
+:ask_perf_preset
+set /p "PERF_PRESET=Performance preset (1/2/3): "
+if "!PERF_PRESET!"=="1" goto perf_balanced
+if "!PERF_PRESET!"=="2" goto perf_throughput
+if /i "!PERF_PRESET!"=="3" goto perf_custom
+if /i "!PERF_PRESET!"=="c" goto perf_custom
+echo Invalid input. Please enter 1, 2, or 3.
+goto ask_perf_preset
+
+:perf_throughput
+REM Tuned for high throughput stress testing (e.g. 100+ wf/s sustained).
+REM nginx-lb makes the engine look like one client IP -> rate limiter would
+REM throttle workflow start/status. Disable for benchmarking.
+set "RUST_LOG_LEVEL=warn"
+set "RATE_LIMIT_ENABLED=false"
+set "PG_MAX_CONNECTIONS=400"
+set "PG_SHARED_BUFFERS=512MB"
+set "PG_WORK_MEM=16MB"
+set "PG_EFFECTIVE_CACHE=1GB"
+set "PGB_DEFAULT_POOL_SIZE=80"
+set "PGB_MAX_CLIENT_CONN=800"
+set "PGB_RESERVE_POOL_SIZE=20"
+goto perf_done
+
+:perf_balanced
+goto perf_done
+
+:perf_custom
+echo.
+echo Press Enter to keep the default shown in [brackets].
+echo.
+set /p "RUST_LOG_LEVEL=Backend log level (error/warn/info/debug) [!RUST_LOG_LEVEL!]: " || set "RUST_LOG_LEVEL=!RUST_LOG_LEVEL!"
+echo.
+echo Rate limiter (per client IP). Disable for benchmarking through nginx-lb.
+set /p "RATE_LIMIT_ENABLED=Enable rate limiter? (true/false) [!RATE_LIMIT_ENABLED!]: " || set "RATE_LIMIT_ENABLED=!RATE_LIMIT_ENABLED!"
+if /i "!RATE_LIMIT_ENABLED!"=="true" (
+    set /p "RATE_LIMIT_MAX_REQUESTS=Max requests per window [!RATE_LIMIT_MAX_REQUESTS!]: " || set "RATE_LIMIT_MAX_REQUESTS=!RATE_LIMIT_MAX_REQUESTS!"
+    set /p "RATE_LIMIT_WINDOW_SECS=Window length in seconds [!RATE_LIMIT_WINDOW_SECS!]: " || set "RATE_LIMIT_WINDOW_SECS=!RATE_LIMIT_WINDOW_SECS!"
+)
+echo.
+echo Background sweeper - recovers orphaned tasks. Adaptive interval.
+set /p "SWEEPER_MIN_INTERVAL_SECS=Sweeper min interval (s) [!SWEEPER_MIN_INTERVAL_SECS!]: " || set "SWEEPER_MIN_INTERVAL_SECS=!SWEEPER_MIN_INTERVAL_SECS!"
+set /p "SWEEPER_MAX_INTERVAL_SECS=Sweeper max interval (s) [!SWEEPER_MAX_INTERVAL_SECS!]: " || set "SWEEPER_MAX_INTERVAL_SECS=!SWEEPER_MAX_INTERVAL_SECS!"
+echo.
+echo Postgres tuning (per shard).
+set /p "PG_MAX_CONNECTIONS=Postgres max_connections [!PG_MAX_CONNECTIONS!]: " || set "PG_MAX_CONNECTIONS=!PG_MAX_CONNECTIONS!"
+set /p "PG_SHARED_BUFFERS=Postgres shared_buffers [!PG_SHARED_BUFFERS!]: " || set "PG_SHARED_BUFFERS=!PG_SHARED_BUFFERS!"
+set /p "PG_WORK_MEM=Postgres work_mem [!PG_WORK_MEM!]: " || set "PG_WORK_MEM=!PG_WORK_MEM!"
+set /p "PG_EFFECTIVE_CACHE=Postgres effective_cache_size [!PG_EFFECTIVE_CACHE!]: " || set "PG_EFFECTIVE_CACHE=!PG_EFFECTIVE_CACHE!"
+echo.
+echo PgBouncer pooling (per shard). Increase for high concurrency.
+set /p "PGB_DEFAULT_POOL_SIZE=PgBouncer default_pool_size [!PGB_DEFAULT_POOL_SIZE!]: " || set "PGB_DEFAULT_POOL_SIZE=!PGB_DEFAULT_POOL_SIZE!"
+set /p "PGB_MAX_CLIENT_CONN=PgBouncer max_client_conn [!PGB_MAX_CLIENT_CONN!]: " || set "PGB_MAX_CLIENT_CONN=!PGB_MAX_CLIENT_CONN!"
+set /p "PGB_MIN_POOL_SIZE=PgBouncer min_pool_size [!PGB_MIN_POOL_SIZE!]: " || set "PGB_MIN_POOL_SIZE=!PGB_MIN_POOL_SIZE!"
+set /p "PGB_RESERVE_POOL_SIZE=PgBouncer reserve_pool_size [!PGB_RESERVE_POOL_SIZE!]: " || set "PGB_RESERVE_POOL_SIZE=!PGB_RESERVE_POOL_SIZE!"
+
+:perf_done
+echo.
+echo Performance settings:
+echo   Log level:     !RUST_LOG_LEVEL!
+echo   Rate limit:    !RATE_LIMIT_ENABLED! (max=!RATE_LIMIT_MAX_REQUESTS!/!RATE_LIMIT_WINDOW_SECS!s)
+echo   Sweeper:       !SWEEPER_MIN_INTERVAL_SECS!-!SWEEPER_MAX_INTERVAL_SECS!s
+echo   Postgres:      max_conn=!PG_MAX_CONNECTIONS! shared=!PG_SHARED_BUFFERS! work=!PG_WORK_MEM!
+echo   PgBouncer:     pool=!PGB_DEFAULT_POOL_SIZE! max_client=!PGB_MAX_CLIENT_CONN! reserve=!PGB_RESERVE_POOL_SIZE!
+echo.
+
+
 REM -- Generate nginx-lb.conf --
 echo Generating nginx-lb.conf...
 set "NLB=nginx-lb.conf"
@@ -239,11 +337,11 @@ for /l %%i in (0,1,%LAST_SHARD%) do (
     >> "%FILE%" echo     restart: unless-stopped
     >> "%FILE%" echo     command: ^>
     >> "%FILE%" echo       postgres
-    >> "%FILE%" echo       -c max_locks_per_transaction=256
-    >> "%FILE%" echo       -c max_connections=200
-    >> "%FILE%" echo       -c shared_buffers=256MB
-    >> "%FILE%" echo       -c work_mem=8MB
-    >> "%FILE%" echo       -c effective_cache_size=512MB
+    >> "%FILE%" echo       -c max_locks_per_transaction=!PG_MAX_LOCKS!
+    >> "%FILE%" echo       -c max_connections=!PG_MAX_CONNECTIONS!
+    >> "%FILE%" echo       -c shared_buffers=!PG_SHARED_BUFFERS!
+    >> "%FILE%" echo       -c work_mem=!PG_WORK_MEM!
+    >> "%FILE%" echo       -c effective_cache_size=!PG_EFFECTIVE_CACHE!
     >> "%FILE%" echo     environment:
     >> "%FILE%" echo       POSTGRES_USER: conductor
     >> "%FILE%" echo       POSTGRES_PASSWORD: conductor
@@ -274,10 +372,10 @@ for /l %%i in (0,1,%LAST_SHARD%) do (
     >> "%FILE%" echo       DB_PASSWORD: conductor
     >> "%FILE%" echo       DB_NAME: conductor
     >> "%FILE%" echo       POOL_MODE: transaction
-    >> "%FILE%" echo       MAX_CLIENT_CONN: "400"
-    >> "%FILE%" echo       DEFAULT_POOL_SIZE: "40"
-    >> "%FILE%" echo       MIN_POOL_SIZE: "10"
-    >> "%FILE%" echo       RESERVE_POOL_SIZE: "10"
+    >> "%FILE%" echo       MAX_CLIENT_CONN: "!PGB_MAX_CLIENT_CONN!"
+    >> "%FILE%" echo       DEFAULT_POOL_SIZE: "!PGB_DEFAULT_POOL_SIZE!"
+    >> "%FILE%" echo       MIN_POOL_SIZE: "!PGB_MIN_POOL_SIZE!"
+    >> "%FILE%" echo       RESERVE_POOL_SIZE: "!PGB_RESERVE_POOL_SIZE!"
     >> "%FILE%" echo       LISTEN_PORT: "6432"
     >> "%FILE%" echo       AUTH_TYPE: scram-sha-256
     >> "%FILE%" echo       IGNORE_STARTUP_PARAMETERS: extra_float_digits
@@ -464,6 +562,7 @@ if /i "!BUILD_MODE!"=="build" (
 >> "%FILE%" echo       KAFKA_BROKERS: "!KAFKA_BROKERS!"
 >> "%FILE%" echo       RUST_LOG: "info"
 >> "%FILE%" echo       MIGRATE_ONLY: "true"
+REM (migrator runs once at startup; uses info-level regardless of RUST_LOG_LEVEL)
 >> "%FILE%" echo       SEQ_URL: "http://seq:80"
 if /i "!USE_MINIO!"=="y" (
     >> "%FILE%" echo       S3_ENDPOINT: "http://rustfs:9000"
@@ -519,8 +618,13 @@ if /i "!BUILD_MODE!"=="build" (
 >> "%FILE%" echo       REDIS_URLS: "!REDIS_URLS!"
 >> "%FILE%" echo       KAFKA_BROKERS: "!KAFKA_BROKERS!"
 >> "%FILE%" echo       CORS_ORIGIN: "!PUBLIC_URL!"
->> "%FILE%" echo       RUST_LOG: "warn"
+>> "%FILE%" echo       RUST_LOG: "!RUST_LOG_LEVEL!"
 >> "%FILE%" echo       SKIP_MIGRATIONS: "true"
+>> "%FILE%" echo       RATE_LIMIT_ENABLED: "!RATE_LIMIT_ENABLED!"
+>> "%FILE%" echo       RATE_LIMIT_MAX_REQUESTS: "!RATE_LIMIT_MAX_REQUESTS!"
+>> "%FILE%" echo       RATE_LIMIT_WINDOW_SECS: "!RATE_LIMIT_WINDOW_SECS!"
+>> "%FILE%" echo       SWEEPER_MIN_INTERVAL_SECS: "!SWEEPER_MIN_INTERVAL_SECS!"
+>> "%FILE%" echo       SWEEPER_MAX_INTERVAL_SECS: "!SWEEPER_MAX_INTERVAL_SECS!"
 >> "%FILE%" echo       SEQ_URL: "http://seq:80"
 if /i "!USE_MINIO!"=="y" (
     >> "%FILE%" echo       S3_ENDPOINT: "http://rustfs:9000"

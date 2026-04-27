@@ -55,7 +55,7 @@ async fn main() -> std::io::Result<()> {
         let pool =
             store::postgres::create_pool_with_options(url, cfg.slow_query_threshold_ms).await;
         if !skip_migrations {
-            store::postgres::run_migrations(&pool).await;
+            store::postgres::run_migrations_for_shard(&pool, &i.to_string()).await;
             tracing::info!(shard = i, "Shard database connected and migrated");
         } else {
             tracing::info!(shard = i, "Shard database connected (migrations skipped)");

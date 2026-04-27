@@ -2,57 +2,21 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import type { TaskResult } from "@/api/conductor";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Play, Pause, SkipForward, SkipBack, RotateCcw, Clock, Zap, X } from "lucide-react";
-
-const STATUS_COLORS: Record<string, string> = {
-  COMPLETED: "#10b981",
-  IN_PROGRESS: "#3b82f6",
-  SCHEDULED: "#f59e0b",
-  FAILED: "#ef4444",
-  TIMED_OUT: "#f97316",
-  CANCELED: "#9ca3af",
-  SKIPPED: "#d1d5db",
-};
-
-const STATUS_BG: Record<string, string> = {
-  COMPLETED: "bg-muted border-emerald-500",
-  IN_PROGRESS: "bg-muted border-blue-500",
-  SCHEDULED: "bg-muted border-amber-500",
-  FAILED: "bg-muted border-red-500",
-  TIMED_OUT: "bg-muted border-orange-500",
-  CANCELED: "bg-muted border-muted-foreground",
-  SKIPPED: "bg-muted border-muted-foreground",
-};
-
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-  return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`;
-}
-
-function formatJson(data: unknown): string {
-  if (data === null || data === undefined) return "—";
-  if (typeof data === "string") return data;
-  try {
-    return JSON.stringify(data, null, 2);
-  } catch {
-    return String(data);
-  }
-}
+import { Card, CardContent } from "@/components/ui/card";
+import { Play, Pause, SkipForward, SkipBack, RotateCcw, Clock, Zap } from "lucide-react";
+import {
+  STATUS_COLORS,
+  STATUS_BG,
+  formatDuration,
+  TaskDetailPanel,
+  EventLogCard,
+  type TimeEvent,
+} from "./replay-player-helpers";
 
 interface Props {
   tasks: TaskResult[];
   workflowStartTime: number;
   workflowEndTime?: number;
-}
-
-interface TimeEvent {
-  time: number;
-  taskRef: string;
-  taskType: string;
-  event: "scheduled" | "started" | "completed" | "failed";
-  status: string;
 }
 
 /**
@@ -313,102 +277,17 @@ export function ReplayPlayer({ tasks, workflowStartTime, workflowEndTime }: Prop
       {expandedTask && (() => {
         const selectedTask = tasks.find((t) => t.referenceTaskName === expandedTask);
         if (!selectedTask) return null;
-        const state = taskStates.get(expandedTask);
-        const color = state ? (STATUS_COLORS[state.status] ?? "#e5e7eb") : "#e5e7eb";
-        const duration = selectedTask.startTime && selectedTask.endTime ? selectedTask.endTime - selectedTask.startTime : null;
         return (
-          <Card>
-            <CardHeader className="pb-2 pt-3 px-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <CardTitle className="text-sm font-semibold">{selectedTask.referenceTaskName}</CardTitle>
-                  <span className="text-xs text-muted-foreground">{selectedTask.taskType}</span>
-                  {state && (
-                    <Badge className="text-[10px] px-1.5 py-0.5" style={{ backgroundColor: color, color: "white" }}>
-                      {state.status}
-                    </Badge>
-                  )}
-                  {duration !== null && (
-                    <span className="text-xs text-muted-foreground font-mono">{formatDuration(duration)}</span>
-                  )}
-                </div>
-                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setExpandedTask(null)}>
-                  <X className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="px-4 pb-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <DataSection label="Input" data={selectedTask.inputData} />
-                <DataSection label="Output" data={selectedTask.outputData} />
-              </div>
-              {selectedTask.reasonForIncompletion && (
-                <div className="mt-3">
-                  <span className="text-[10px] font-medium uppercase text-destructive">Reason</span>
-                  <p className="text-xs text-destructive mt-0.5">{selectedTask.reasonForIncompletion}</p>
-                </div>
-              )}
-              <div className="flex gap-4 mt-3 text-[10px] text-muted-foreground">
-                {selectedTask.workerId && <span>Worker: {selectedTask.workerId}</span>}
-                {selectedTask.retryCount > 0 && <span>Retries: {selectedTask.retryCount}</span>}
-                <span>Poll count: {selectedTask.pollCount}</span>
-                <span>Seq: {selectedTask.seq}</span>
-              </div>
-            </CardContent>
-          </Card>
+          <TaskDetailPanel
+            task={selectedTask}
+            taskStates={taskStates}
+            onClose={() => setExpandedTask(null)}
+          />
         );
       })()}
 
       {/* Event log */}
-      <Card>
-        <CardHeader className="pb-2 pt-3 px-4">
-          <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Event Log</CardTitle>
-        </CardHeader>
-        <CardContent className="px-4 pb-3">
-          <div className="max-h-48 overflow-auto space-y-1">
-            {events
-              .filter((e) => e.time <= currentTime)
-              .reverse()
-              .slice(0, 30)
-              .map((ev, i) => (
-                <div key={i} className="flex items-center gap-2 py-0.5 text-xs">
-                  <span className="text-muted-foreground font-mono w-16 text-right shrink-0">
-                    {formatDuration(ev.time)}
-                  </span>
-                  <span
-                    className="w-2 h-2 rounded-full shrink-0"
-                    style={{ backgroundColor: STATUS_COLORS[ev.status] ?? "#9ca3af" }}
-                  />
-                  <span className="font-medium truncate">{ev.taskRef}</span>
-                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 shrink-0">
-                    {ev.event}
-                  </Badge>
-                </div>
-              ))}
-            {events.filter((e) => e.time <= currentTime).length === 0 && (
-              <p className="text-muted-foreground text-xs py-2 text-center">No events yet — press play or step forward</p>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-function DataSection({ label, data }: { label: string; data: unknown }) {
-  const formatted = formatJson(data);
-  const isEmpty = data === null || data === undefined || (typeof data === "object" && Object.keys(data as Record<string, unknown>).length === 0);
-
-  return (
-    <div>
-      <span className="text-[10px] font-medium uppercase text-muted-foreground">{label}</span>
-      {isEmpty ? (
-        <p className="text-xs text-muted-foreground mt-0.5">—</p>
-      ) : (
-        <pre className="text-[11px] mt-0.5 bg-muted rounded p-2 overflow-auto max-h-32 whitespace-pre-wrap break-all font-mono leading-relaxed">
-          {formatted}
-        </pre>
-      )}
+      <EventLogCard events={events} currentTime={currentTime} />
     </div>
   );
 }

@@ -168,6 +168,53 @@ echo   CORS origin:  !PUBLIC_URL!
 echo.
 
 
+REM ================================================================
+REM  Performance Tuning (DEV defaults are conservative)
+REM ================================================================
+echo.
+echo ========================================
+echo  Performance Tuning
+echo ========================================
+echo.
+
+set "RUST_LOG_LEVEL=info"
+set "RATE_LIMIT_ENABLED=true"
+set "RATE_LIMIT_MAX_REQUESTS=1000"
+set "RATE_LIMIT_WINDOW_SECS=60"
+set "SWEEPER_MIN_INTERVAL_SECS=10"
+set "SWEEPER_MAX_INTERVAL_SECS=60"
+set "PG_MAX_CONNECTIONS=50"
+set "PG_SHARED_BUFFERS=64MB"
+set "PG_WORK_MEM=4MB"
+set "PG_EFFECTIVE_CACHE=128MB"
+set "PG_MAX_LOCKS=64"
+
+set "TUNE_CHOICE=N"
+set /p TUNE_CHOICE="Customize tuning values? (y/N): "
+if /i "!TUNE_CHOICE!"=="y" (
+    set /p "RUST_LOG_LEVEL=Backend log level (error/warn/info/debug) [!RUST_LOG_LEVEL!]: " || set "RUST_LOG_LEVEL=!RUST_LOG_LEVEL!"
+    set /p "RATE_LIMIT_ENABLED=Enable rate limiter? (true/false) [!RATE_LIMIT_ENABLED!]: " || set "RATE_LIMIT_ENABLED=!RATE_LIMIT_ENABLED!"
+    if /i "!RATE_LIMIT_ENABLED!"=="true" (
+        set /p "RATE_LIMIT_MAX_REQUESTS=Max requests per window [!RATE_LIMIT_MAX_REQUESTS!]: " || set "RATE_LIMIT_MAX_REQUESTS=!RATE_LIMIT_MAX_REQUESTS!"
+        set /p "RATE_LIMIT_WINDOW_SECS=Window length in seconds [!RATE_LIMIT_WINDOW_SECS!]: " || set "RATE_LIMIT_WINDOW_SECS=!RATE_LIMIT_WINDOW_SECS!"
+    )
+    set /p "SWEEPER_MIN_INTERVAL_SECS=Sweeper min interval (s) [!SWEEPER_MIN_INTERVAL_SECS!]: " || set "SWEEPER_MIN_INTERVAL_SECS=!SWEEPER_MIN_INTERVAL_SECS!"
+    set /p "SWEEPER_MAX_INTERVAL_SECS=Sweeper max interval (s) [!SWEEPER_MAX_INTERVAL_SECS!]: " || set "SWEEPER_MAX_INTERVAL_SECS=!SWEEPER_MAX_INTERVAL_SECS!"
+    set /p "PG_MAX_CONNECTIONS=Postgres max_connections [!PG_MAX_CONNECTIONS!]: " || set "PG_MAX_CONNECTIONS=!PG_MAX_CONNECTIONS!"
+    set /p "PG_SHARED_BUFFERS=Postgres shared_buffers [!PG_SHARED_BUFFERS!]: " || set "PG_SHARED_BUFFERS=!PG_SHARED_BUFFERS!"
+    set /p "PG_WORK_MEM=Postgres work_mem [!PG_WORK_MEM!]: " || set "PG_WORK_MEM=!PG_WORK_MEM!"
+    set /p "PG_EFFECTIVE_CACHE=Postgres effective_cache_size [!PG_EFFECTIVE_CACHE!]: " || set "PG_EFFECTIVE_CACHE=!PG_EFFECTIVE_CACHE!"
+)
+
+echo.
+echo Performance settings:
+echo   Log level:  !RUST_LOG_LEVEL!
+echo   Rate limit: !RATE_LIMIT_ENABLED! (max=!RATE_LIMIT_MAX_REQUESTS!/!RATE_LIMIT_WINDOW_SECS!s)
+echo   Sweeper:    !SWEEPER_MIN_INTERVAL_SECS!-!SWEEPER_MAX_INTERVAL_SECS!s
+echo   Postgres:   max_conn=!PG_MAX_CONNECTIONS! shared=!PG_SHARED_BUFFERS!
+echo.
+
+
 REM -- Generate nginx-lb.conf (for consistency, even though DEV doesn't use it) --
 echo Generating nginx-lb.conf...
 set "NLB=nginx-lb.conf"
@@ -230,11 +277,11 @@ REM -- Postgres (single shard, low memory) --
 >> "%FILE%" echo     restart: unless-stopped
 >> "%FILE%" echo     command: ^>
 >> "%FILE%" echo       postgres
->> "%FILE%" echo       -c max_locks_per_transaction=64
->> "%FILE%" echo       -c max_connections=50
->> "%FILE%" echo       -c shared_buffers=64MB
->> "%FILE%" echo       -c work_mem=4MB
->> "%FILE%" echo       -c effective_cache_size=128MB
+>> "%FILE%" echo       -c max_locks_per_transaction=!PG_MAX_LOCKS!
+>> "%FILE%" echo       -c max_connections=!PG_MAX_CONNECTIONS!
+>> "%FILE%" echo       -c shared_buffers=!PG_SHARED_BUFFERS!
+>> "%FILE%" echo       -c work_mem=!PG_WORK_MEM!
+>> "%FILE%" echo       -c effective_cache_size=!PG_EFFECTIVE_CACHE!
 >> "%FILE%" echo     environment:
 >> "%FILE%" echo       POSTGRES_USER: conductor
 >> "%FILE%" echo       POSTGRES_PASSWORD: conductor
@@ -345,8 +392,13 @@ if /i "!BUILD_MODE!"=="build" (
 >> "%FILE%" echo       SHARD_DB_URL_TEMPLATE: "postgres://conductor:conductor@postgres-shard-{i}:5432/conductor"
 >> "%FILE%" echo       REDIS_URLS: "redis://redis-0:6379"
 >> "%FILE%" echo       CORS_ORIGIN: "!PUBLIC_URL!"
->> "%FILE%" echo       RUST_LOG: "info"
+>> "%FILE%" echo       RUST_LOG: "!RUST_LOG_LEVEL!"
 >> "%FILE%" echo       SKIP_MIGRATIONS: "true"
+>> "%FILE%" echo       RATE_LIMIT_ENABLED: "!RATE_LIMIT_ENABLED!"
+>> "%FILE%" echo       RATE_LIMIT_MAX_REQUESTS: "!RATE_LIMIT_MAX_REQUESTS!"
+>> "%FILE%" echo       RATE_LIMIT_WINDOW_SECS: "!RATE_LIMIT_WINDOW_SECS!"
+>> "%FILE%" echo       SWEEPER_MIN_INTERVAL_SECS: "!SWEEPER_MIN_INTERVAL_SECS!"
+>> "%FILE%" echo       SWEEPER_MAX_INTERVAL_SECS: "!SWEEPER_MAX_INTERVAL_SECS!"
 if /i "!USE_MINIO!"=="y" (
     >> "%FILE%" echo       S3_ENDPOINT: "http://rustfs:9000"
     >> "%FILE%" echo       S3_BUCKET: "conductor-payloads"

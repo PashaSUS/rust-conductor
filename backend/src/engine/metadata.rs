@@ -292,6 +292,8 @@ impl WorkflowEngine {
             idempotency_key: None,
             idempotency_strategy: None,
             tags: vec![format!("template:{}", req.template_name)],
+            parent_workflow_id: None,
+            parent_workflow_task_id: None,
         };
         self.start_workflow(&start_req).await
     }

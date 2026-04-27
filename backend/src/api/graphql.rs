@@ -333,6 +333,8 @@ impl MutationRoot {
             idempotency_key: None,
             idempotency_strategy: None,
             tags: tags.unwrap_or_default(),
+            parent_workflow_id: None,
+            parent_workflow_task_id: None,
         };
         let id = engine.start_workflow(&req).await?;
         Ok(id)

@@ -18,9 +18,22 @@ pub async fn create_pool_with_options(database_url: &str, slow_query_threshold_m
             Duration::from_millis(slow_query_threshold_ms),
         );
 
+    // sqlx pool size per shard. Override with `SQLX_MAX_CONNECTIONS`.
+    // At very high throughput each backend replica + shard combination can
+    // benefit from more in-flight connections — bump this to give pgbouncer
+    // a deeper pipeline before queries start queueing client-side.
+    let max_connections: u32 = std::env::var("SQLX_MAX_CONNECTIONS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(100);
+    let min_connections: u32 = std::env::var("SQLX_MIN_CONNECTIONS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(5);
+
     PgPoolOptions::new()
-        .max_connections(100)
-        .min_connections(5)
+        .max_connections(max_connections)
+        .min_connections(min_connections)
         .acquire_timeout(Duration::from_secs(5))
         .idle_timeout(Duration::from_secs(300))
         .max_lifetime(Duration::from_secs(1800))
@@ -67,29 +80,51 @@ pub fn pool_metrics(pool: &DbPool) -> PoolMetrics {
     }
 }
 
+/// Backwards-compatible wrapper. New code should call
+/// [`run_migrations_for_shard`] so per-shard Prometheus metrics are emitted.
+#[allow(dead_code)]
 pub async fn run_migrations(pool: &DbPool) {
+    run_migrations_for_shard(pool, "default").await;
+}
+
+pub async fn run_migrations_for_shard(pool: &DbPool, shard_label: &str) {
+    let started = std::time::Instant::now();
+    let lock_wait_started = std::time::Instant::now();
+    let mut lock_wait_secs: f64 = 0.0;
+
     // Use a transaction-level advisory lock so that even if multiple
     // processes connect to the same shard concurrently, only one runs
     // DDL at a time.  This prevents the pg_type_typname_nsp_index race
     // that occurs when two sessions both attempt CREATE TABLE IF NOT
     // EXISTS for the same table simultaneously.
-    let mut tx = pool
-        .begin()
-        .await
-        .expect("Failed to start migration transaction");
+    let mut tx = match pool.begin().await {
+        Ok(t) => t,
+        Err(e) => {
+            crate::metrics::record_migration_failure(shard_label);
+            panic!("Failed to start migration transaction: {e}");
+        }
+    };
 
     // Lock id 819_2023 is arbitrary but must be the same across all callers.
     // Use try-lock to avoid blocking forever if a previous migration was killed.
     let max_attempts = 30;
     for attempt in 1..=max_attempts {
-        let acquired: (bool,) = sqlx::query_as("SELECT pg_try_advisory_xact_lock(8192023)")
+        let acquired: (bool,) = match sqlx::query_as("SELECT pg_try_advisory_xact_lock(8192023)")
             .fetch_one(&mut *tx)
             .await
-            .expect("Failed to try migration advisory lock");
+        {
+            Ok(v) => v,
+            Err(e) => {
+                crate::metrics::record_migration_failure(shard_label);
+                panic!("Failed to try migration advisory lock: {e}");
+            }
+        };
         if acquired.0 {
+            lock_wait_secs = lock_wait_started.elapsed().as_secs_f64();
             break;
         }
         if attempt == max_attempts {
+            crate::metrics::record_migration_failure(shard_label);
             panic!(
                 "Could not acquire migration advisory lock after {max_attempts} attempts. \
                  Another migration may be running — check pg_stat_activity for \
@@ -260,16 +295,28 @@ pub async fn run_migrations(pool: &DbPool) {
          ON workflow_checkpoint (workflow_id, created_at DESC)",
     ];
 
+    let mut executed: u64 = 0;
     for stmt in statements {
-        sqlx::query(stmt)
-            .execute(&mut *tx)
-            .await
-            .expect("Failed to run database migration");
+        if let Err(e) = sqlx::query(stmt).execute(&mut *tx).await {
+            crate::metrics::record_migration_failure(shard_label);
+            panic!("Failed to run database migration: {e}");
+        }
+        executed += 1;
     }
 
-    tx.commit()
-        .await
-        .expect("Failed to commit migration transaction");
+    if let Err(e) = tx.commit().await {
+        crate::metrics::record_migration_failure(shard_label);
+        panic!("Failed to commit migration transaction: {e}");
+    }
 
-    tracing::info!("Database migrations completed");
+    let duration = started.elapsed().as_secs_f64();
+    crate::metrics::record_migration_success(shard_label, executed, duration, lock_wait_secs);
+
+    tracing::info!(
+        shard = shard_label,
+        statements = executed,
+        duration_secs = duration,
+        lock_wait_secs = lock_wait_secs,
+        "Database migrations completed"
+    );
 }

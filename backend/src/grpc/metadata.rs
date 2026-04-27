@@ -153,6 +153,7 @@ pub(crate) fn engine_err_to_status(e: crate::engine::EngineError) -> Status {
     match &e {
         EngineError::NotFound(_) => Status::not_found(e.to_string()),
         EngineError::InvalidState(_) => Status::failed_precondition(e.to_string()),
+        EngineError::InvalidInput(_) => Status::invalid_argument(e.to_string()),
         EngineError::Serde(_) => Status::invalid_argument(e.to_string()),
         EngineError::Database(_) | EngineError::Redis(_) => Status::internal(e.to_string()),
     }

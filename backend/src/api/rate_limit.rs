@@ -70,6 +70,20 @@ where
     forward_ready!(service);
 
     fn call(&self, req: ServiceRequest) -> Self::Future {
+        // Internal/operational endpoints and worker hot-paths are never
+        // rate-limited. Worker pollers can hit `/api/tasks/poll/...`,
+        // `/api/tasks` (update), and the workflow status / stats endpoints
+        // hundreds of times per second per IP under normal load — applying
+        // a per-IP token bucket here would throttle the whole task pipeline.
+        //
+        // Authenticated/external traffic (workflow start, metadata mgmt,
+        // GraphQL, etc.) still goes through the limiter.
+        let path = req.path();
+        if is_rate_limit_exempt(path) {
+            let fut = self.service.call(req);
+            return Box::pin(fut);
+        }
+
         let client_ip = req
             .connection_info()
             .realip_remote_addr()
@@ -223,5 +237,86 @@ async fn token_bucket_consume(
             TokenBucketResult::Allowed { remaining }
         }
         Err(_) => TokenBucketResult::Error,
+    }
+}
+
+/// Returns `true` for endpoints that must not be rate-limited.
+///
+/// These cover:
+/// * worker poll / batch-poll / ack / update endpoints (hit at very high
+///   frequency by every connected worker — throttling here causes the
+///   entire task pipeline to stall),
+/// * health / metrics / readiness probes (used by load balancers and
+///   Prometheus, which would otherwise mark the node unhealthy under load),
+/// * SSE / WebSocket streams (long-lived; rate limiting them rejects the
+///   initial upgrade and breaks the UI).
+fn is_rate_limit_exempt(path: &str) -> bool {
+    // Health & observability
+    if path == "/health" || path == "/ready" || path == "/metrics" {
+        return true;
+    }
+
+    // Real-time channels
+    if path.starts_with("/sse") || path.starts_with("/ws") {
+        return true;
+    }
+
+    // Worker hot path under both /api/tasks and /tasks
+    let task_prefixes = ["/api/tasks", "/tasks"];
+    for p in &task_prefixes {
+        if path.starts_with(p) {
+            // The most common worker calls all live under /tasks/*:
+            //   /tasks/poll/{taskType}
+            //   /tasks/poll/batch/{taskType}
+            //   /tasks            (POST update)
+            //   /tasks/{taskId}/...
+            //   /tasks/{taskId}/log
+            //   /tasks/queue/sizes
+            return true;
+        }
+    }
+
+    // Workflow status / stats polling — high volume from workers and UI.
+    let workflow_status_suffixes = ["/stats", "/status"];
+    if (path.starts_with("/api/workflow") || path.starts_with("/workflow"))
+        && workflow_status_suffixes.iter().any(|s| path.ends_with(s))
+    {
+        return true;
+    }
+
+    false
+}
+
+#[cfg(test)]
+mod exempt_tests {
+    use super::is_rate_limit_exempt;
+
+    #[test]
+    fn exempts_health_and_metrics() {
+        assert!(is_rate_limit_exempt("/health"));
+        assert!(is_rate_limit_exempt("/metrics"));
+        assert!(is_rate_limit_exempt("/ready"));
+    }
+
+    #[test]
+    fn exempts_task_endpoints() {
+        assert!(is_rate_limit_exempt("/api/tasks/poll/STRESS_step"));
+        assert!(is_rate_limit_exempt("/api/tasks/poll/batch/STRESS_step"));
+        assert!(is_rate_limit_exempt("/api/tasks"));
+        assert!(is_rate_limit_exempt("/api/tasks/abc-123/log"));
+        assert!(is_rate_limit_exempt("/tasks/poll/T"));
+    }
+
+    #[test]
+    fn exempts_workflow_stats() {
+        assert!(is_rate_limit_exempt("/api/workflow/stats"));
+        assert!(is_rate_limit_exempt("/workflow/wf-1/status"));
+    }
+
+    #[test]
+    fn does_not_exempt_workflow_start() {
+        assert!(!is_rate_limit_exempt("/api/workflow"));
+        assert!(!is_rate_limit_exempt("/api/metadata/workflow"));
+        assert!(!is_rate_limit_exempt("/graphql"));
     }
 }

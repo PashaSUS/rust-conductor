@@ -8,6 +8,8 @@ pub enum EngineError {
     NotFound(String),
     #[error("Invalid state: {0}")]
     InvalidState(String),
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
     #[error("Serialization error: {0}")]
     Serde(String),
 }
@@ -17,6 +19,7 @@ impl actix_web::ResponseError for EngineError {
         match self {
             EngineError::NotFound(_) => actix_web::http::StatusCode::NOT_FOUND,
             EngineError::InvalidState(_) => actix_web::http::StatusCode::CONFLICT,
+            EngineError::InvalidInput(_) => actix_web::http::StatusCode::BAD_REQUEST,
             _ => actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
         }
     }

@@ -15,6 +15,15 @@ impl WorkflowEngine {
             def = self.resolve_inheritance(&def).await?;
         }
 
+        // Apply per-definition input parameter descriptions:
+        //  - fill in default_value for missing inputs
+        //  - reject request if a required parameter is missing and has no default
+        // This is skipped entirely when `input_parameter_definitions` is empty, so
+        // definitions using only the legacy Netflix `inputParameters: [names]`
+        // behave exactly as before.
+        let effective_input =
+            apply_input_parameter_definitions(&def.input_parameter_definitions, &req.input)?;
+
         let workflow_id = Uuid::new_v4().to_string();
         let now = Utc::now();
         let db = self.shards.shard_for(&workflow_id);
@@ -25,19 +34,21 @@ impl WorkflowEngine {
             .map(|secs| now + chrono::Duration::seconds(secs));
 
         sqlx::query(
-            "INSERT INTO workflow (workflow_id, workflow_name, workflow_version, status, input, correlation_id, start_time, update_time, priority, workflow_def, tags, sla_deadline)
-             VALUES ($1, $2, $3, 'RUNNING', $4, $5, $6, $6, $7, $8, $9, $10)",
+            "INSERT INTO workflow (workflow_id, workflow_name, workflow_version, status, input, correlation_id, start_time, update_time, priority, workflow_def, tags, sla_deadline, parent_workflow_id, parent_workflow_task_id)
+             VALUES ($1, $2, $3, 'RUNNING', $4, $5, $6, $6, $7, $8, $9, $10, $11, $12)",
         )
         .bind(&workflow_id)
         .bind(&req.name)
         .bind(req.version)
-        .bind(&req.input)
+        .bind(&effective_input)
         .bind(&req.correlation_id)
         .bind(now)
         .bind(req.priority)
         .bind(serde_json::to_value(&def).ok())
         .bind(&tags_json)
         .bind(sla_deadline)
+        .bind(&req.parent_workflow_id)
+        .bind(&req.parent_workflow_task_id)
         .execute(db)
         .await
         .map_err(|e| {
@@ -47,7 +58,7 @@ impl WorkflowEngine {
 
         crate::metrics::record_workflow_started();
 
-        if let Err(e) = Box::pin(self.schedule_tasks(&workflow_id, &def.tasks, &req.input, 0)).await
+        if let Err(e) = Box::pin(self.schedule_tasks(&workflow_id, &def.tasks, &effective_input, 0)).await
         {
             tracing::error!(workflow_id = %workflow_id, error = %e, "Failed to schedule initial tasks, marking workflow FAILED");
             let _ = sqlx::query(
@@ -134,7 +145,9 @@ impl WorkflowEngine {
                 self.handle_dynamic_task(workflow_id, task_def, input, start_seq)
                     .await?;
             }
-            "DYNAMIC_FORK_JOIN" => {
+            // Both spellings are accepted: Netflix Conductor uses
+            // FORK_JOIN_DYNAMIC; some clients/UIs use DYNAMIC_FORK_JOIN.
+            "DYNAMIC_FORK_JOIN" | "FORK_JOIN_DYNAMIC" => {
                 self.handle_dynamic_fork_join_task(workflow_id, task_def, tasks, input, start_seq)
                     .await?;
             }
@@ -161,5 +174,126 @@ impl WorkflowEngine {
         }
 
         Ok(())
+    }
+}
+
+/// Apply `WorkflowInputParameterDef` rules to the request input.
+///
+/// * Returns the original `input` unchanged when `defs` is empty (legacy
+///   Netflix-Conductor behaviour preserved exactly).
+/// * Otherwise, fills in `default_value` for any parameter missing from the
+///   request, and returns `EngineError::InvalidInput` (HTTP 400) if a
+///   parameter marked `required = true` is absent and has no default.
+/// * Never mutates request fields the caller didn't declare — extra keys
+///   pass through untouched, matching Conductor's permissive input model.
+pub(crate) fn apply_input_parameter_definitions(
+    defs: &[crate::models::WorkflowInputParameterDef],
+    input: &Value,
+) -> Result<Value, EngineError> {
+    if defs.is_empty() {
+        return Ok(input.clone());
+    }
+
+    // Normalise: if caller passed null / non-object, treat as empty object so
+    // that we can apply defaults safely without rejecting the request.
+    let mut obj = match input {
+        Value::Object(map) => map.clone(),
+        Value::Null => serde_json::Map::new(),
+        other => {
+            return Err(EngineError::InvalidInput(format!(
+                "workflow input must be a JSON object, got {}",
+                match other {
+                    Value::Bool(_) => "boolean",
+                    Value::Number(_) => "number",
+                    Value::String(_) => "string",
+                    Value::Array(_) => "array",
+                    _ => "value",
+                }
+            )));
+        }
+    };
+
+    let mut missing: Vec<String> = Vec::new();
+    for def in defs {
+        if obj.contains_key(&def.name) {
+            continue;
+        }
+        if let Some(default) = &def.default_value {
+            obj.insert(def.name.clone(), default.clone());
+        } else if def.required {
+            missing.push(def.name.clone());
+        }
+    }
+
+    if !missing.is_empty() {
+        return Err(EngineError::InvalidInput(format!(
+            "missing required workflow input parameter(s): {}",
+            missing.join(", ")
+        )));
+    }
+
+    Ok(Value::Object(obj))
+}
+
+#[cfg(test)]
+mod input_param_tests {
+    use super::*;
+    use crate::models::WorkflowInputParameterDef;
+    use serde_json::json;
+
+    fn def(name: &str, required: bool, default: Option<Value>) -> WorkflowInputParameterDef {
+        WorkflowInputParameterDef {
+            name: name.to_string(),
+            description: None,
+            param_type: None,
+            required,
+            default_value: default,
+            example: None,
+        }
+    }
+
+    #[test]
+    fn empty_defs_returns_input_unchanged() {
+        let input = json!({"a": 1});
+        let out = apply_input_parameter_definitions(&[], &input).unwrap();
+        assert_eq!(out, input);
+    }
+
+    #[test]
+    fn applies_default_for_missing() {
+        let defs = vec![def("retries", false, Some(json!(3)))];
+        let out = apply_input_parameter_definitions(&defs, &json!({})).unwrap();
+        assert_eq!(out, json!({"retries": 3}));
+    }
+
+    #[test]
+    fn caller_value_overrides_default() {
+        let defs = vec![def("retries", false, Some(json!(3)))];
+        let out = apply_input_parameter_definitions(&defs, &json!({"retries": 7})).unwrap();
+        assert_eq!(out, json!({"retries": 7}));
+    }
+
+    #[test]
+    fn missing_required_returns_invalid_input() {
+        let defs = vec![def("user_id", true, None)];
+        let err = apply_input_parameter_definitions(&defs, &json!({})).unwrap_err();
+        match err {
+            EngineError::InvalidInput(msg) => assert!(msg.contains("user_id")),
+            other => panic!("expected InvalidInput, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn null_input_treated_as_empty_object() {
+        let defs = vec![def("x", false, Some(json!("y")))];
+        let out = apply_input_parameter_definitions(&defs, &Value::Null).unwrap();
+        assert_eq!(out, json!({"x": "y"}));
+    }
+
+    #[test]
+    fn non_object_input_rejected() {
+        let defs = vec![def("x", false, None)];
+        let err = apply_input_parameter_definitions(&defs, &json!([1, 2])).unwrap_err();
+        assert!(matches!(err, EngineError::InvalidInput(_)));
     }
 }

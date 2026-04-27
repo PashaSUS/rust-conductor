@@ -25,12 +25,25 @@ impl ShardedRedis {
         tracing::info!(urls = ?redis_urls, "Redis shard URLs");
 
         let mut pools: Vec<RedisPool> = Vec::with_capacity(redis_urls.len());
+
+        // Allow operators to scale the per-shard Redis pool with workload.
+        // Defaults are tuned for high-concurrency stress tests (1k+ workers)
+        // where multiple Redis ops happen per workflow advance.
+        let max_size: usize = std::env::var("REDIS_POOL_MAX_SIZE")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(512);
+        let wait_secs: u64 = std::env::var("REDIS_POOL_WAIT_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(15);
+
         for url in redis_urls {
             let mut cfg: Config = Config::from_url(url);
             cfg.pool = Some(deadpool_redis::PoolConfig {
-                max_size: 128,
+                max_size,
                 timeouts: deadpool_redis::Timeouts {
-                    wait: Some(Duration::from_secs(10)),
+                    wait: Some(Duration::from_secs(wait_secs)),
                     create: Some(Duration::from_secs(20)),
                     recycle: Some(Duration::from_secs(5)),
                 },

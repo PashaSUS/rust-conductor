@@ -28,8 +28,18 @@ pub struct WorkflowDef {
     #[serde(default = "default_version")]
     pub version: i32,
     pub tasks: Vec<WorkflowTask>,
+    /// Netflix-Conductor–compatible list of input parameter names.
+    /// Kept as a plain `Vec<String>` for backwards compatibility.
     #[serde(default)]
     pub input_parameters: Vec<String>,
+    /// Optional, richer parameter metadata (name + description + type + default + required).
+    /// This is an *additive* field that is ignored by standard Netflix Conductor clients,
+    /// so workflow definitions remain fully round-trip compatible.
+    /// When present, the engine uses these entries at `startWorkflow` time to:
+    ///   * apply `default_value` for missing inputs,
+    ///   * reject the request with 400 if a `required` parameter is absent and no default is set.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub input_parameter_definitions: Vec<WorkflowInputParameterDef>,
     #[serde(default)]
     pub output_parameters: HashMap<String, Value>,
     #[serde(default)]
@@ -193,6 +203,45 @@ fn default_task_type_str() -> String {
     "SIMPLE".to_string()
 }
 
+/// Rich metadata for a single workflow input parameter.
+///
+/// This is an **additive** structure carried alongside the legacy
+/// `inputParameters: [string]` array so that definitions remain 100 %
+/// backwards-compatible with Netflix Conductor clients (they simply
+/// ignore the extra `inputParameterDefinitions` field).
+///
+/// Example JSON:
+/// ```json
+/// {
+///   "name": "orderId",
+///   "description": "Unique order identifier assigned by the checkout service.",
+///   "type": "string",
+///   "required": true
+/// }
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowInputParameterDef {
+    /// Parameter name (must match the key expected in `StartWorkflowRequest.input`).
+    pub name: String,
+    /// Human-readable description shown in the UI / OpenAPI.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Optional type hint ("string" | "number" | "boolean" | "object" | "array").
+    #[serde(default, rename = "type", skip_serializing_if = "Option::is_none")]
+    pub param_type: Option<String>,
+    /// If true, startWorkflow will fail with 400 when this parameter is missing
+    /// and no `default_value` is provided.
+    #[serde(default)]
+    pub required: bool,
+    /// Default value applied to the workflow input when the parameter is missing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_value: Option<Value>,
+    /// Optional example used purely for UI/documentation purposes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub example: Option<Value>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StateChangeEvent {
@@ -346,6 +395,14 @@ pub struct StartWorkflowRequest {
     /// Tags for categorization.
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Internal: parent workflow id when started as a SUB_WORKFLOW child.
+    /// Set atomically with the workflow INSERT to avoid a race where the
+    /// child completes before parent linkage is recorded.
+    #[serde(skip)]
+    pub parent_workflow_id: Option<String>,
+    /// Internal: parent SUB_WORKFLOW task id (paired with parent_workflow_id).
+    #[serde(skip)]
+    pub parent_workflow_task_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

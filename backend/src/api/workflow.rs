@@ -274,6 +274,8 @@ async fn start_workflow_by_name(
         idempotency_key: None,
         idempotency_strategy: None,
         tags: vec![],
+        parent_workflow_id: None,
+        parent_workflow_task_id: None,
     };
     let id = engine.start_workflow(&req).await?;
     Ok(HttpResponse::Ok().json(id))

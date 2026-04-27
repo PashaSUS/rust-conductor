@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 interface SkeletonProps {
   className?: string;
@@ -32,36 +33,34 @@ export function StatCardSkeleton() {
 /** Skeleton table row with N columns */
 export function TableRowSkeleton({ cols = 5 }: { cols?: number }) {
   return (
-    <tr>
+    <TableRow>
       {Array.from({ length: cols }).map((_, i) => (
-        <td key={i} className="p-3">
+        <TableCell key={i}>
           <Skeleton className="h-4 w-full" />
-        </td>
+        </TableCell>
       ))}
-    </tr>
+    </TableRow>
   );
 }
 
 /** Full skeleton table (header + N rows) */
 export function TableSkeleton({ cols = 5, rows = 6 }: { cols?: number; rows?: number }) {
   return (
-    <div className="rounded-md border">
-      <table className="w-full">
-        <thead>
-          <tr>
-            {Array.from({ length: cols }).map((_, i) => (
-              <th key={i} className="p-3">
-                <Skeleton className="h-4 w-20" />
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {Array.from({ length: rows }).map((_, i) => (
-            <TableRowSkeleton key={i} cols={cols} />
+    <Table>
+      <TableHeader>
+        <TableRow>
+          {Array.from({ length: cols }).map((_, i) => (
+            <TableHead key={i}>
+              <Skeleton className="h-3 w-20" />
+            </TableHead>
           ))}
-        </tbody>
-      </table>
-    </div>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {Array.from({ length: rows }).map((_, i) => (
+          <TableRowSkeleton key={i} cols={cols} />
+        ))}
+      </TableBody>
+    </Table>
   );
 }

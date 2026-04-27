@@ -417,6 +417,13 @@ impl WorkflowEngine {
             return Ok(());
         }
 
+        // CRITICAL: parent linkage must be set ATOMICALLY with the child
+        // workflow INSERT. If we started the child first and UPDATEd
+        // parent_workflow_id afterwards, at high worker concurrency the child
+        // could complete before the UPDATE landed, and its completion handler
+        // would observe parent_workflow_id=NULL and silently skip notifying
+        // the parent — the parent's SUB_WORKFLOW task would then stay
+        // IN_PROGRESS until the sweep timed it out.
         let child_req = StartWorkflowRequest {
             name: params.name.clone(),
             version: params.version.unwrap_or(1),
@@ -430,25 +437,10 @@ impl WorkflowEngine {
             idempotency_key: None,
             idempotency_strategy: None,
             tags: vec![],
+            parent_workflow_id: Some(workflow_id.to_string()),
+            parent_workflow_task_id: Some(task_id.clone()),
         };
         let child_id = self.start_workflow(&child_req).await?;
-
-        // The child workflow lives on its own shard (determined by child_id).
-        // Link child → parent (on child's shard).
-        let child_db = self.shards.shard_for(&child_id);
-        if let Err(e) = sqlx::query(
-            "UPDATE workflow SET parent_workflow_id = $2, parent_workflow_task_id = $3 WHERE workflow_id = $1",
-        )
-        .bind(&child_id)
-        .bind(workflow_id)
-        .bind(&task_id)
-        .execute(child_db)
-        .await
-        {
-            tracing::error!(child_id = %child_id, error = %e, "Failed to link child→parent, failing sub-workflow task");
-            self.fail_task(workflow_id, &task_id, &format!("Failed to link child workflow: {e}")).await?;
-            return Err(EngineError::Database(e.to_string()));
-        }
 
         // Update the parent's task with the child's id (on parent's shard).
         let parent_db = self.shards.shard_for(workflow_id);
@@ -1245,8 +1237,10 @@ impl WorkflowEngine {
             .resolve_task_input(workflow_id, task_def, input)
             .await?;
 
-        // Collect the dynamic tasks and their inputs
-        let mut forked_tasks: Vec<(WorkflowTask, Value)> = Vec::new();
+        // Collect dynamic tasks with per-task input parameters attached.
+        // We later schedule them with the parent workflow input context so
+        // expressions like ${workflow.input.foo} resolve correctly.
+        let mut forked_tasks: Vec<WorkflowTask> = Vec::new();
 
         if let Some(param_name) = &task_def.dynamic_fork_join_tasks_param {
             // Format 1: single param with array of {taskRefName, taskType, name, input}
@@ -1291,12 +1285,19 @@ impl WorkflowEngine {
                     .cloned()
                     .unwrap_or(Value::Object(Default::default()));
 
+                let input_parameters = task_input
+                    .as_object()
+                    .cloned()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .collect();
+
                 let wt = WorkflowTask {
                     name: task_name.to_string(),
                     task_reference_name: ref_name.to_string(),
                     task_type: task_type.to_string(),
                     description: None,
-                    input_parameters: Default::default(),
+                    input_parameters,
                     optional: false,
                     start_delay: 0,
                     sub_workflow_param: None,
@@ -1327,7 +1328,7 @@ impl WorkflowEngine {
                     permissive: None,
                     ..Default::default()
                 };
-                forked_tasks.push((wt, task_input));
+                forked_tasks.push(wt);
             }
         } else if let Some(tasks_param) = &task_def.dynamic_fork_tasks_param {
             // Format 2: separate task defs + input map
@@ -1357,7 +1358,7 @@ impl WorkflowEngine {
             })?;
 
             for item in tasks_arr {
-                let wt: WorkflowTask = serde_json::from_value(item.clone()).map_err(|e| {
+                let mut wt: WorkflowTask = serde_json::from_value(item.clone()).map_err(|e| {
                     EngineError::InvalidState(format!(
                         "DYNAMIC_FORK_JOIN: invalid task definition: {e}"
                     ))
@@ -1366,7 +1367,16 @@ impl WorkflowEngine {
                     .get(&wt.task_reference_name)
                     .cloned()
                     .unwrap_or(Value::Object(Default::default()));
-                forked_tasks.push((wt, task_input));
+
+                // Merge per-task input map (format 2) into the task definition
+                // inputParameters so branch tasks resolve against parent input.
+                if let Some(obj) = task_input.as_object() {
+                    for (k, v) in obj {
+                        wt.input_parameters.insert(k.clone(), v.clone());
+                    }
+                }
+
+                forked_tasks.push(wt);
             }
         } else {
             return Err(EngineError::InvalidState(format!(
@@ -1385,7 +1395,7 @@ impl WorkflowEngine {
         // Complete the fork task itself
         let fork_output = serde_json::json!({
             "forkedBranches": forked_tasks.len(),
-            "forkedTaskRefs": forked_tasks.iter().map(|(t, _)| &t.task_reference_name).collect::<Vec<_>>(),
+            "forkedTaskRefs": forked_tasks.iter().map(|t| &t.task_reference_name).collect::<Vec<_>>(),
         });
         let (_task_id, is_new) = self
             .insert_task_record(
@@ -1406,21 +1416,21 @@ impl WorkflowEngine {
         // Schedule all forked tasks in parallel
         let join_on: Vec<String> = forked_tasks
             .iter()
-            .map(|(t, _)| t.task_reference_name.clone())
+            .map(|t| t.task_reference_name.clone())
             .collect();
         let fork_count = forked_tasks.len();
 
         // Prepare owned task arrays so they live long enough for async scheduling
-        let prepared: Vec<(Vec<WorkflowTask>, Value, i32)> = forked_tasks
+        let prepared: Vec<(Vec<WorkflowTask>, i32)> = forked_tasks
             .into_iter()
             .enumerate()
-            .map(|(idx, (wt, task_input))| (vec![wt], task_input, seq + 1 + idx as i32))
+            .map(|(idx, wt)| (vec![wt], seq + 1 + idx as i32))
             .collect();
 
         let branch_futs: Vec<_> = prepared
             .iter()
-            .map(|(tasks, task_input, branch_seq)| {
-                Box::pin(self.schedule_tasks(workflow_id, tasks, task_input, *branch_seq))
+            .map(|(tasks, branch_seq)| {
+                Box::pin(self.schedule_tasks(workflow_id, tasks, input, *branch_seq))
             })
             .collect();
 

@@ -80,6 +80,50 @@ lazy_static::lazy_static! {
         Opts::new("conductor_task_poll_total", "Total task poll requests"),
         &["task_type"],
     ).unwrap();
+
+    // ── Database migration metrics ──────────────────────────────────────
+
+    pub static ref DB_MIGRATION_RUNS_TOTAL: IntCounterVec = IntCounterVec::new(
+        Opts::new(
+            "conductor_db_migration_runs_total",
+            "Total times run_migrations was invoked, labelled by outcome",
+        ),
+        &["shard", "result"],
+    ).unwrap();
+
+    pub static ref DB_MIGRATION_STATEMENTS_EXECUTED: IntCounterVec = IntCounterVec::new(
+        Opts::new(
+            "conductor_db_migration_statements_executed_total",
+            "Total DDL statements executed across all migration runs",
+        ),
+        &["shard"],
+    ).unwrap();
+
+    pub static ref DB_MIGRATION_DURATION: HistogramVec = HistogramVec::new(
+        HistogramOpts::new(
+            "conductor_db_migration_duration_seconds",
+            "Duration of run_migrations per shard",
+        )
+        .buckets(vec![0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0]),
+        &["shard"],
+    ).unwrap();
+
+    pub static ref DB_MIGRATION_LOCK_WAIT_SECONDS: HistogramVec = HistogramVec::new(
+        HistogramOpts::new(
+            "conductor_db_migration_lock_wait_seconds",
+            "Time spent waiting for the migration advisory lock",
+        )
+        .buckets(vec![0.0, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0]),
+        &["shard"],
+    ).unwrap();
+
+    pub static ref DB_MIGRATION_LAST_SUCCESS_TIMESTAMP: IntGaugeVec = IntGaugeVec::new(
+        Opts::new(
+            "conductor_db_migration_last_success_timestamp_seconds",
+            "Unix timestamp of the most recent successful migration per shard",
+        ),
+        &["shard"],
+    ).unwrap();
 }
 
 /// Register all metrics with the custom registry. Call once at startup.
@@ -96,6 +140,11 @@ pub fn register_metrics() {
         Box::new(WORKFLOWS_FAILED.clone()),
         Box::new(TASK_QUEUE_DEPTH.clone()),
         Box::new(TASK_POLL_TOTAL.clone()),
+        Box::new(DB_MIGRATION_RUNS_TOTAL.clone()),
+        Box::new(DB_MIGRATION_STATEMENTS_EXECUTED.clone()),
+        Box::new(DB_MIGRATION_DURATION.clone()),
+        Box::new(DB_MIGRATION_LOCK_WAIT_SECONDS.clone()),
+        Box::new(DB_MIGRATION_LAST_SUCCESS_TIMESTAMP.clone()),
     ];
     for c in collectors {
         if let Err(e) = REGISTRY.register(c) {
@@ -173,6 +222,37 @@ pub fn record_task_poll(task_type: &str) {
 
 pub fn set_task_queue_depth(task_type: &str, depth: i64) {
     TASK_QUEUE_DEPTH.with_label_values(&[task_type]).set(depth);
+}
+
+// ── Migration recording helpers ─────────────────────────────────────────────
+
+pub fn record_migration_success(shard: &str, statements: u64, duration_secs: f64, lock_wait_secs: f64) {
+    DB_MIGRATION_RUNS_TOTAL
+        .with_label_values(&[shard, "success"])
+        .inc();
+    DB_MIGRATION_STATEMENTS_EXECUTED
+        .with_label_values(&[shard])
+        .inc_by(statements);
+    DB_MIGRATION_DURATION
+        .with_label_values(&[shard])
+        .observe(duration_secs);
+    DB_MIGRATION_LOCK_WAIT_SECONDS
+        .with_label_values(&[shard])
+        .observe(lock_wait_secs);
+    DB_MIGRATION_LAST_SUCCESS_TIMESTAMP
+        .with_label_values(&[shard])
+        .set(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0),
+        );
+}
+
+pub fn record_migration_failure(shard: &str) {
+    DB_MIGRATION_RUNS_TOTAL
+        .with_label_values(&[shard, "failure"])
+        .inc();
 }
 
 // ── Actix-web middleware for HTTP request metrics ───────────────────────────

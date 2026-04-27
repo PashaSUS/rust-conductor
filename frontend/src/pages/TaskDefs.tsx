@@ -2,8 +2,7 @@ import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
-import { metadataApi, workflowApi, type TaskDef } from "@/api/conductor";
-import { buildInputFromFields } from "@/lib/field-parser";
+import { metadataApi, type TaskDef } from "@/api/conductor";
 import { usePagination } from "@/hooks/usePagination";
 import { PaginationControls } from "@/components/PaginationControls";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,13 +12,13 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Trash2, Eye, Play, Search, Code, FormInput } from "lucide-react";
+import { Plus, Trash2, Eye, Play, Search } from "lucide-react";
 import { TaskDefForm } from "@/components/TaskDefForm";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { CopyButton } from "@/components/CopyButton";
 import { useThemeText } from "@/components/ThemeContext";
+import { TestRunDialog } from "./TestRunDialog";
 
 export default function TaskDefs() {
   const queryClient = useQueryClient();
@@ -28,9 +27,6 @@ export default function TaskDefs() {
   const [viewDef, setViewDef] = useState<TaskDef | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [testRunDef, setTestRunDef] = useState<TaskDef | null>(null);
-  const [testInput, setTestInput] = useState("{}");
-  const [testFieldValues, setTestFieldValues] = useState<Record<string, string>>({});
-  const [testInputMode, setTestInputMode] = useState<"fields" | "json">("fields");
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const jsonDraftRef = useRef<TaskDef[] | null>(null);
@@ -57,74 +53,6 @@ export default function TaskDefs() {
       queryClient.invalidateQueries({ queryKey: ["task-defs"] });
     },
   });
-
-  const testRunMut = useMutation({
-    mutationFn: async ({ taskName, input }: { taskName: string; input: Record<string, unknown> }) => {
-      const wfName = "__test_run_task";
-
-      // Register the single dynamic wrapper workflow once (reused for all task types).
-      let needsRegister = false;
-      try {
-        await metadataApi.getWorkflowDef(wfName, 1);
-      } catch {
-        needsRegister = true;
-      }
-
-      if (needsRegister) {
-        await metadataApi.registerWorkflowDef({
-          name: wfName,
-          version: 1,
-          description: "Dynamic test-run wrapper — runs any task type via DYNAMIC dispatch",
-          tasks: [
-            {
-              name: "__dynamic_test",
-              taskReferenceName: "dynamic_test",
-              type: "DYNAMIC",
-              dynamicTaskNameParam: "taskToExecute",
-              inputParameters: {
-                taskToExecute: "${workflow.input.taskToExecute}",
-              },
-            },
-          ],
-        });
-      }
-
-      const workflowId = await workflowApi.start({
-        name: wfName,
-        version: 1,
-        input: { taskToExecute: taskName, ...input },
-      });
-      return workflowId;
-    },
-    onSuccess: (workflowId) => {
-      toast.success(t.toastWorkflowStarted);
-      setTestRunDef(null);
-      setTestInput("{}");
-      navigate(`/executions/${workflowId}`);
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  const openTestRun = (def: TaskDef) => {
-    setTestRunDef(def);
-    setTestInput("{}");
-    const fields: Record<string, string> = {};
-    for (const k of def.inputKeys ?? []) fields[k] = "";
-    setTestFieldValues(fields);
-    setTestInputMode((def.inputKeys?.length ?? 0) > 0 ? "fields" : "json");
-  };
-
-  const submitTestRun = () => {
-    try {
-      const input =
-        testInputMode === "fields" && (testRunDef?.inputKeys?.length ?? 0) > 0
-          ? buildInputFromFields(testFieldValues)
-          : JSON.parse(testInput);
-      testRunMut.mutate({ taskName: testRunDef!.name, input });
-    } catch {
-      toast.error(t.toastInvalidJson);
-    }
-  };
 
   const filteredDefs = (defs ?? []).filter(
     (d) =>
@@ -163,7 +91,7 @@ export default function TaskDefs() {
       </div>
 
       <Card className="flex-1 min-h-0 flex flex-col">
-        <CardContent className="pt-6 flex-1 overflow-auto">
+        <CardContent className="pt-6 flex-1 min-h-0 flex flex-col">
           {isLoading ? (
             <p className="text-muted-foreground text-sm">{t.loading}</p>
           ) : filteredDefs.length === 0 ? (
@@ -202,7 +130,7 @@ export default function TaskDefs() {
                     <TableCell className="text-muted-foreground text-xs">{def.ownerEmail ?? "—"}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex gap-1 justify-end">
-                        <Button variant="ghost" size="icon" onClick={() => openTestRun(def)} title={t.testRun}>
+                        <Button variant="ghost" size="icon" onClick={() => setTestRunDef(def)} title={t.testRun}>
                           <Play className="h-3 w-3" />
                         </Button>
                         <Button variant="ghost" size="icon" onClick={() => setViewDef(def)} title={t.view}>
@@ -298,91 +226,7 @@ export default function TaskDefs() {
       </Dialog>
 
       {/* Test run dialog */}
-      <Dialog open={!!testRunDef} onOpenChange={() => setTestRunDef(null)}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>{t.testRun}: {testRunDef?.name}</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            {t.testRunDescription}
-          </p>
-
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label className="text-sm font-medium">{t.taskInput}</Label>
-              {(testRunDef?.inputKeys?.length ?? 0) > 0 && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs gap-1"
-                  onClick={() => {
-                    if (testInputMode === "fields") {
-                      setTestInput(JSON.stringify(buildInputFromFields(testFieldValues), null, 2));
-                      setTestInputMode("json");
-                    } else {
-                      try {
-                        const parsed = JSON.parse(testInput);
-                        if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
-                          const fields: Record<string, string> = {};
-                          for (const k of testRunDef?.inputKeys ?? []) {
-                            const val = parsed[k];
-                            fields[k] = val === undefined || val === null ? "" : typeof val === "object" ? JSON.stringify(val) : String(val);
-                          }
-                          setTestFieldValues(fields);
-                        }
-                      } catch { /* ignore */ }
-                      setTestInputMode("fields");
-                    }
-                  }}
-                >
-                  {testInputMode === "fields" ? (
-                    <><Code className="h-3 w-3" /> {t.json}</>
-                  ) : (
-                    <><FormInput className="h-3 w-3" /> {t.fields}</>
-                  )}
-                </Button>
-              )}
-            </div>
-
-            {testInputMode === "fields" && (testRunDef?.inputKeys?.length ?? 0) > 0 ? (
-              <div className="space-y-3 rounded-lg border p-3 max-h-[40vh] overflow-auto">
-                {(testRunDef?.inputKeys ?? []).map((k) => (
-                  <div key={k} className="space-y-1">
-                    <Label className="text-xs font-mono">{k}</Label>
-                    <Input
-                      value={testFieldValues[k] ?? ""}
-                      onChange={(e) =>
-                        setTestFieldValues((prev) => ({ ...prev, [k]: e.target.value }))
-                      }
-                      placeholder={`${t.valueFor} ${k}`}
-                      className="font-mono text-xs"
-                    />
-                  </div>
-                ))}
-                <p className="text-[10px] text-muted-foreground">
-                  {t.autoParseHint}
-                </p>
-              </div>
-            ) : (
-              <Textarea
-                rows={8}
-                placeholder="{}"
-                value={testInput}
-                onChange={(e) => setTestInput(e.target.value)}
-                className="font-mono text-xs"
-              />
-            )}
-          </div>
-
-          <Button
-            onClick={submitTestRun}
-            disabled={testRunMut.isPending}
-          >
-            {testRunMut.isPending ? t.startingWorkflow : t.runTest}
-          </Button>
-        </DialogContent>
-      </Dialog>
+      <TestRunDialog def={testRunDef} onClose={() => setTestRunDef(null)} />
 
       {/* Delete confirmation */}
       <ConfirmDialog

@@ -126,7 +126,7 @@ export default function WorkflowDefs() {
       </div>
 
       <Card className="flex-1 min-h-0 flex flex-col">
-        <CardContent className="pt-6 flex-1 overflow-auto">
+        <CardContent className="pt-6 flex-1 min-h-0 flex flex-col">
           {isLoading ? (
             <p className="text-muted-foreground text-sm">{t.loading}</p>
           ) : filteredDefs.length === 0 ? (

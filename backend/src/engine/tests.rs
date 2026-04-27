@@ -1195,6 +1195,10 @@ fn contract_workflow_def_json_field_names() {
         on_failure_webhook: None,
         tags: vec![],
         sla_deadline_seconds: None,
+        base_workflow: None,
+        base_workflow_version: None,
+        input_parameter_definitions: vec![],
+        saga_enabled: false,
     };
     let v = serde_json::to_value(&def).unwrap();
     // Verify camelCase field names match Conductor API
@@ -1257,6 +1261,12 @@ fn contract_workflow_task_json_field_names() {
         join_status: None,
         cache_config: None,
         permissive: None,
+        compensation_task: None,
+        condition_tree: None,
+        heartbeat_timeout_seconds: None,
+        map_items_param: None,
+        map_parallelism: None,
+        map_task: None,
     };
     let v = serde_json::to_value(&task).unwrap();
     // Conductor uses "taskReferenceName" and "type"
@@ -1350,6 +1360,8 @@ fn contract_start_workflow_request_field_names() {
         workflow_def: None,
         created_by: None,
         tags: vec![],
+        parent_workflow_id: None,
+        parent_workflow_task_id: None,
     };
     let v = serde_json::to_value(&req).unwrap();
     assert!(v.get("name").is_some());

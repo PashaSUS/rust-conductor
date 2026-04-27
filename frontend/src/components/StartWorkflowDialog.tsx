@@ -1,10 +1,9 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import { metadataApi, workflowApi, type WorkflowDef } from "@/api/conductor";
 import { buildInputFromFields } from "@/lib/field-parser";
-import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -14,7 +13,6 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -25,8 +23,8 @@ import {
 } from "@/components/ui/select";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { TagInput } from "@/components/TagInput";
-import { Code, FormInput } from "lucide-react";
 import { useThemeText } from "@/components/ThemeContext";
+import { WorkflowInputEditor } from "./WorkflowInputEditor";
 
 interface StartWorkflowDialogProps {
   open: boolean;
@@ -90,43 +88,7 @@ export function StartWorkflowDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedName, selectedVersion, params.join(",")]);
 
-  // Sync between modes
-  const syncFieldsToJson = useCallback(() => {
-    setInputJson(JSON.stringify(buildInputFromFields(fieldValues), null, 2));
-  }, [fieldValues]);
 
-  const syncJsonToFields = useCallback(() => {
-    try {
-      const parsed = JSON.parse(inputJson);
-      if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
-        const newFields: Record<string, string> = {};
-        for (const p of params) {
-          if (typeof p === "string") {
-            const val = parsed[p];
-            newFields[p] =
-              val === undefined || val === null
-                ? ""
-                : typeof val === "object"
-                  ? JSON.stringify(val)
-                  : String(val);
-          }
-        }
-        setFieldValues(newFields);
-      }
-    } catch {
-      // invalid JSON — don't sync
-    }
-  }, [inputJson, params]);
-
-  const toggleMode = () => {
-    if (inputMode === "fields") {
-      syncFieldsToJson();
-      setInputMode("json");
-    } else {
-      syncJsonToFields();
-      setInputMode("fields");
-    }
-  };
 
   // Reset when preselected changes
   const handleOpenChange = (open: boolean) => {
@@ -196,8 +158,6 @@ export function StartWorkflowDialog({
     startMut.mutate();
   };
 
-  const hasParams = params.length > 0;
-
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-2xl">
@@ -258,61 +218,16 @@ export function StartWorkflowDialog({
             </p>
           )}
 
-          {/* Input section with mode toggle */}
-          <div className={cn("space-y-2", !selectedName && "opacity-50")}>
-            <div className="flex items-center justify-between">
-              <Label>{t.inputLabel}</Label>
-              {hasParams && selectedName && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs gap-1"
-                  onClick={toggleMode}
-                >
-                  {inputMode === "fields" ? (
-                    <><Code className="h-3 w-3" /> {t.json}</>
-                  ) : (
-                    <><FormInput className="h-3 w-3" /> {t.fields}</>
-                  )}
-                </Button>
-              )}
-            </div>
-
-            {inputMode === "fields" && hasParams ? (
-              <div className="space-y-3 rounded-lg border p-3 max-h-[40vh] overflow-y-auto">
-                {params.map((p) => {
-                  if (typeof p !== "string") return null;
-                  return (
-                    <div key={p} className="space-y-1">
-                      <Label className="text-xs font-mono">{p}</Label>
-                      <Input
-                        value={fieldValues[p] ?? ""}
-                        onChange={(e) =>
-                          setFieldValues((prev) => ({ ...prev, [p]: e.target.value }))
-                        }
-                        placeholder={`${t.valueFor} ${p}`}
-                        className="font-mono text-xs"
-                        disabled={!selectedName}
-                      />
-                    </div>
-                  );
-                })}
-                <p className="text-[10px] text-muted-foreground">
-                  {t.autoParseHint}
-                </p>
-              </div>
-            ) : (
-              <Textarea
-                rows={8}
-                className="font-mono text-xs"
-                value={inputJson}
-                onChange={(e) => setInputJson(e.target.value)}
-                placeholder="{}"
-                disabled={!selectedName}
-              />
-            )}
-          </div>
+          <WorkflowInputEditor
+            params={params}
+            fieldValues={fieldValues}
+            setFieldValues={setFieldValues}
+            inputJson={inputJson}
+            setInputJson={setInputJson}
+            inputMode={inputMode}
+            setInputMode={setInputMode}
+            disabled={!selectedName}
+          />
 
           <div className="space-y-2">
             <Label>{t.correlationId}</Label>

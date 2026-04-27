@@ -167,6 +167,8 @@ impl WorkflowEngine {
                 idempotency_key: None,
                 idempotency_strategy: None,
                 tags: vec![],
+                parent_workflow_id: None,
+                parent_workflow_task_id: None,
             };
 
             match self.start_workflow(&req).await {

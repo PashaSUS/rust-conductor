@@ -251,6 +251,117 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "title": "DB Migrations — Run Outcome (rate)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 36 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": false,
+            "showPoints": "auto"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "rate(conductor_db_migration_runs_total[5m])",
+          "legendFormat": "shard-{{shard}} {{result}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "DB Migrations — Duration (p95)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 36 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": false,
+            "showPoints": "auto"
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, rate(conductor_db_migration_duration_seconds_bucket[5m]))",
+          "legendFormat": "p95 shard-{{shard}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(conductor_db_migration_lock_wait_seconds_bucket[5m]))",
+          "legendFormat": "lock-wait p95 shard-{{shard}}",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "title": "DB Migrations — Statements Executed (total)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 12, "x": 0, "y": 44 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum by (shard) (conductor_db_migration_statements_executed_total)",
+          "legendFormat": "shard-{{shard}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "DB Migrations — Time Since Last Success",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 12, "x": 12, "y": 44 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 86400 },
+              { "color": "red", "value": 604800 }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "time() - conductor_db_migration_last_success_timestamp_seconds",
+          "legendFormat": "shard-{{shard}}",
+          "refId": "A"
+        }
+      ]
     }
   ],
   "schemaVersion": 39,

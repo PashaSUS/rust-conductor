@@ -1,7 +1,7 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate, useSearchParams } from "react-router";
-import { workflowApi, metadataApi, type SearchParams } from "@/api/conductor";
+import { useNavigate } from "react-router";
+import { workflowApi, metadataApi } from "@/api/conductor";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,44 +18,7 @@ import { RelativeTime } from "@/components/RelativeTime";
 import { PaginationControls } from "@/components/PaginationControls";
 import { useThemeText } from "@/components/ThemeContext";
 import { useWorkflowMutations, useBulkWorkflowMutations } from "@/hooks/useWorkflowMutations";
-
-const PAGE_SIZE = 25;
-
-function useFilterParams() {
-  const [searchParams, setSearchParams] = useSearchParams();
-
-  const params: SearchParams = useMemo(() => ({
-    status: searchParams.get("status") || undefined,
-    workflowType: searchParams.get("workflowType") || undefined,
-    freeText: searchParams.get("freeText") || undefined,
-    start: searchParams.has("start") ? Number(searchParams.get("start")) : 0,
-    size: PAGE_SIZE,
-    tags: searchParams.get("tags") || undefined,
-  }), [searchParams]);
-
-  const setParams = useCallback((updater: (prev: SearchParams) => SearchParams) => {
-    setSearchParams((prev) => {
-      const current: SearchParams = {
-        status: prev.get("status") || undefined,
-        workflowType: prev.get("workflowType") || undefined,
-        freeText: prev.get("freeText") || undefined,
-        start: prev.has("start") ? Number(prev.get("start")) : 0,
-        size: PAGE_SIZE,
-        tags: prev.get("tags") || undefined,
-      };
-      const next = updater(current);
-      const qs = new URLSearchParams();
-      if (next.status) qs.set("status", next.status);
-      if (next.workflowType) qs.set("workflowType", next.workflowType);
-      if (next.freeText) qs.set("freeText", next.freeText);
-      if (next.start) qs.set("start", String(next.start));
-      if (next.tags) qs.set("tags", next.tags);
-      return qs;
-    });
-  }, [setSearchParams]);
-
-  return { params, setParams };
-}
+import { useFilterParams, PAGE_SIZE } from "@/hooks/useFilterParams";
 
 export default function Workflows() {
   const navigate = useNavigate();
@@ -190,7 +153,7 @@ export default function Workflows() {
       </Card>
 
       <Card className="flex-1 min-h-0 flex flex-col">
-        <CardContent className="pt-6 flex-1 overflow-auto">
+        <CardContent className="pt-6 flex-1 min-h-0 flex flex-col">
           {isLoading ? (
             <p className="text-muted-foreground text-sm">{t.loading}</p>
           ) : (

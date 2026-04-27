@@ -1,13 +1,32 @@
 use deadpool_redis::redis;
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::sync::OnceLock;
 use std::time::Duration;
 use tokio::sync::RwLock;
 
 use super::redis::ShardedRedis;
 
 const CONSUMER_GROUP: &str = "conductor-workers";
-const CONSUMER_NAME: &str = "worker-0";
+
+/// Per-process consumer name. Multi-replica deployments MUST use distinct
+/// consumer names within a Redis Streams consumer group — if every replica
+/// uses the same name they all share a single virtual consumer slot and
+/// XREADGROUP only delivers a message to one of them at a time, with
+/// pending-list contention dragging throughput to a fraction of single-node
+/// performance. We derive the name from `HOSTNAME` (set per-container by
+/// Docker / Kubernetes) plus the OS PID, so each backend replica has a
+/// unique consumer in the group.
+fn consumer_name() -> &'static str {
+    static NAME: OnceLock<String> = OnceLock::new();
+    NAME.get_or_init(|| {
+        let host = std::env::var("HOSTNAME")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "worker".to_string());
+        format!("{host}-{}", std::process::id())
+    })
+}
 
 /// Redis Streams-backed task queue.  Drop-in replacement for `KafkaTaskQueue`
 /// when the `kafka` feature is disabled.
@@ -147,7 +166,7 @@ impl RedisTaskQueue {
         let result: Result<redis::Value, _> = redis::cmd("XREADGROUP")
             .arg("GROUP")
             .arg(CONSUMER_GROUP)
-            .arg(CONSUMER_NAME)
+            .arg(consumer_name()())
             .arg("COUNT")
             .arg(1)
             .arg("BLOCK")
@@ -191,7 +210,7 @@ impl RedisTaskQueue {
         let result: Result<redis::Value, _> = redis::cmd("XREADGROUP")
             .arg("GROUP")
             .arg(CONSUMER_GROUP)
-            .arg(CONSUMER_NAME)
+            .arg(consumer_name()())
             .arg("COUNT")
             .arg(count)
             .arg("BLOCK")
