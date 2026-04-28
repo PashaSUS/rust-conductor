@@ -48,6 +48,16 @@ pub struct TaskDef {
     pub input_keys: Vec<String>,
     #[serde(default)]
     pub output_keys: Vec<String>,
+    /// Rich, optional metadata describing each entry referenced by
+    /// `input_keys`. Additive field — Netflix Conductor clients ignore it.
+    /// The frontend uses this to render per-input descriptions, type hints,
+    /// and default values when configuring task instances.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub input_parameter_definitions: Vec<super::workflow::TaskInputParameterDef>,
+    /// Rich, optional metadata describing each entry referenced by
+    /// `output_keys`. Additive — ignored by Netflix Conductor clients.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub output_parameter_definitions: Vec<super::workflow::TaskInputParameterDef>,
     #[serde(default)]
     pub input_template: HashMap<String, Value>,
     #[serde(default)]

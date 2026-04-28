@@ -1,11 +1,42 @@
 // ── Types ──
 
+/**
+ * Rich, optional metadata for a workflow input parameter.
+ * Carried alongside the legacy `inputParameters: string[]` for full
+ * Netflix-Conductor backwards compatibility — vanilla clients ignore it.
+ */
+export interface WorkflowInputParameterDef {
+  name: string;
+  description?: string;
+  type?: 'string' | 'number' | 'boolean' | 'object' | 'array';
+  required?: boolean;
+  defaultValue?: unknown;
+  example?: unknown;
+}
+
+/**
+ * Rich, optional metadata for a task input/output parameter.
+ * Used on both `WorkflowTask.inputParameterDefinitions` and
+ * `TaskDef.inputParameterDefinitions` / `outputParameterDefinitions`.
+ * Additive — Netflix Conductor clients ignore it.
+ */
+export interface TaskInputParameterDef {
+  name: string;
+  description?: string;
+  type?: 'string' | 'number' | 'boolean' | 'object' | 'array';
+  required?: boolean;
+  defaultValue?: unknown;
+  example?: unknown;
+}
+
 export interface WorkflowDef {
   name: string;
   description?: string;
   version: number;
   tasks: WorkflowTask[];
   inputParameters?: string[];
+  /** Optional rich metadata describing each entry of `inputParameters`. */
+  inputParameterDefinitions?: WorkflowInputParameterDef[];
   outputParameters?: Record<string, unknown>;
   failureWorkflow?: string;
   timeoutSeconds?: number;
@@ -30,6 +61,8 @@ export interface WorkflowTask {
   type?: string;
   description?: string;
   inputParameters?: Record<string, unknown>;
+  /** Optional rich metadata describing each entry of `inputParameters`. */
+  inputParameterDefinitions?: TaskInputParameterDef[];
   optional?: boolean;
   startDelay?: number;
   forkTasks?: WorkflowTask[][];
@@ -67,6 +100,10 @@ export interface TaskDef {
   concurrentExecLimit?: number;
   inputKeys?: string[];
   outputKeys?: string[];
+  /** Optional rich metadata describing each entry of `inputKeys`. */
+  inputParameterDefinitions?: TaskInputParameterDef[];
+  /** Optional rich metadata describing each entry of `outputKeys`. */
+  outputParameterDefinitions?: TaskInputParameterDef[];
   ownerEmail?: string;
   createdOn?: string;
   updatedOn?: string;

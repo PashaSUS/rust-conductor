@@ -203,6 +203,7 @@ export function useWorkflowActions(state: WorkflowState) {
         id, name: wt.name, taskReferenceName: wt.taskReferenceName,
         type: wt.type || "SIMPLE", description: wt.description || "",
         inputParameters: (wt.inputParameters as Record<string, unknown>) || {},
+        inputParameterDefinitions: wt.inputParameterDefinitions,
         outputKeys: td?.outputKeys ?? [], subWorkflowParam: wt.subWorkflowParam,
         optional: wt.optional, caseExpression: wt.caseExpression,
         caseValueParam: wt.caseValueParam,

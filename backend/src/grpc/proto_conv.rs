@@ -509,6 +509,8 @@ pub fn task_def_from_proto(p: &pb::TaskDefPb) -> models::TaskDef {
         },
         input_keys: p.input_keys.clone(),
         output_keys: p.output_keys.clone(),
+        input_parameter_definitions: vec![],
+        output_parameter_definitions: vec![],
         input_template: opt_struct_to_hashmap(&p.input_template),
         rate_limit_per_frequency: if p.rate_limit_per_frequency == 0 {
             None

@@ -270,6 +270,8 @@ async fn register_task_type(
             concurrent_exec_limit: None,
             input_keys: vec![],
             output_keys: vec![],
+            input_parameter_definitions: vec![],
+            output_parameter_definitions: vec![],
             input_template: Default::default(),
             rate_limit_per_frequency: None,
             rate_limit_frequency_in_seconds: None,

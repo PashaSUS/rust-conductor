@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { metadataApi, type TaskDef, type WorkflowDef } from "@/api/conductor";
+import { metadataApi, type TaskDef, type WorkflowDef, type TaskInputParameterDef } from "@/api/conductor";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -48,10 +48,21 @@ export function TaskEditorPanel({
     for (const [k, v] of Object.entries(editingTask.inputParameters)) {
       if (!(k in newInputParams)) newInputParams[k] = v;
     }
+    // Seed per-input descriptions from the registered TaskDef so the
+    // editor shows what each parameter means right away. User edits in
+    // the UI win — only fill keys that don't already have a definition.
+    const existingDefs = editingTask.inputParameterDefinitions ?? [];
+    const mergedDefs: TaskInputParameterDef[] = [...existingDefs];
+    for (const td_def of td?.inputParameterDefinitions ?? []) {
+      if (!mergedDefs.some((d) => d.name === td_def.name)) {
+        mergedDefs.push(td_def);
+      }
+    }
     setEditingTask({
       ...editingTask, name: taskDefName,
       taskReferenceName: editingTask.taskReferenceName === editingTask.name ? taskDefName : editingTask.taskReferenceName,
       inputParameters: newInputParams, outputKeys,
+      inputParameterDefinitions: mergedDefs.length > 0 ? mergedDefs : undefined,
     });
   };
 
@@ -64,9 +75,41 @@ export function TaskEditorPanel({
   };
   const removeInputFromTask = (key: string) => {
     const { [key]: _, ...rest } = editingTask.inputParameters;
-    const updated = { ...editingTask, inputParameters: rest };
+    const updated = {
+      ...editingTask,
+      inputParameters: rest,
+      inputParameterDefinitions: editingTask.inputParameterDefinitions?.filter((d) => d.name !== key),
+    };
     setEditingTask(updated);
     setRawJsonText(JSON.stringify(updated.inputParameters, null, 2));
+  };
+  /** Set/update the description for an input parameter. Stored in
+   *  `inputParameterDefinitions` so it round-trips with the workflow def
+   *  and is ignored by vanilla Netflix Conductor clients. */
+  const setInputDescription = (key: string, description: string) => {
+    const existing = editingTask.inputParameterDefinitions ?? [];
+    const idx = existing.findIndex((d) => d.name === key);
+    let next: TaskInputParameterDef[];
+    if (idx >= 0) {
+      next = existing.slice();
+      if (!description) {
+        // Drop the entry entirely when the description is cleared and no
+        // other metadata is set, to keep the saved def minimal.
+        const e = next[idx];
+        if (!e.type && !e.required && e.defaultValue === undefined && e.example === undefined) {
+          next.splice(idx, 1);
+        } else {
+          next[idx] = { ...e, description: undefined };
+        }
+      } else {
+        next[idx] = { ...next[idx], description };
+      }
+    } else if (description) {
+      next = [...existing, { name: key, description }];
+    } else {
+      return; // nothing to add
+    }
+    setEditingTask({ ...editingTask, inputParameterDefinitions: next });
   };
   const addOutputToTask = () => {
     if (!newOutputKey.trim() || editingTask.outputKeys.includes(newOutputKey.trim())) return;
@@ -126,14 +169,26 @@ export function TaskEditorPanel({
           <Badge variant="secondary" className="text-[10px]">{Object.keys(editingTask.inputParameters).length}</Badge>
         </div>
         <div className="space-y-1.5 mb-2">
-          {Object.entries(editingTask.inputParameters).map(([key, value]) => (
-            <div key={key} className="flex items-center gap-1 group">
-              <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
-              <span className="text-[10px] font-mono font-medium text-blue-600 dark:text-blue-400 shrink-0">{key}</span>
-              <span className="text-[9px] text-muted-foreground truncate flex-1">{typeof value === "string" ? value : JSON.stringify(value)}</span>
-              <button onClick={() => removeInputFromTask(key)} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive p-0.5"><Trash2 className="h-2.5 w-2.5" /></button>
-            </div>
-          ))}
+          {Object.entries(editingTask.inputParameters).map(([key, value]) => {
+            const def = editingTask.inputParameterDefinitions?.find((d) => d.name === key);
+            return (
+              <div key={key} className="space-y-1 group border border-transparent hover:border-blue-200 dark:hover:border-blue-900 rounded p-1 -m-1">
+                <div className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+                  <span className="text-[10px] font-mono font-medium text-blue-600 dark:text-blue-400 shrink-0">{key}</span>
+                  <span className="text-[9px] text-muted-foreground truncate flex-1">{typeof value === "string" ? value : JSON.stringify(value)}</span>
+                  <button onClick={() => removeInputFromTask(key)} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive p-0.5"><Trash2 className="h-2.5 w-2.5" /></button>
+                </div>
+                <Input
+                  value={def?.description ?? ""}
+                  onChange={(e) => setInputDescription(key, e.target.value)}
+                  placeholder="Describe this input… (optional)"
+                  className="h-6 text-[10px] ml-3"
+                  aria-label={`Description for input ${key}`}
+                />
+              </div>
+            );
+          })}
         </div>
         <div className="flex gap-1">
           <Input value={newInputKey} onChange={(e) => setNewInputKey(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addInputToTask()} placeholder="Add input key..." className="h-7 text-xs flex-1" />

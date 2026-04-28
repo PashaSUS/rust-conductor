@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { TaskInputParameterDef } from "@/api/conductor-types";
 
 export interface ContextMenuItem {
   label: string;
@@ -16,6 +17,8 @@ export interface DesignerTask {
   type: string;
   description: string;
   inputParameters: Record<string, unknown>;
+  /** Optional rich descriptions for each entry of `inputParameters`. */
+  inputParameterDefinitions?: TaskInputParameterDef[];
   outputKeys: string[];
   subWorkflowParam?: { name: string; version?: number };
   optional?: boolean;

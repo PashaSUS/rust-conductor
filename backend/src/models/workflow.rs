@@ -122,6 +122,12 @@ pub struct WorkflowTask {
     pub description: Option<String>,
     #[serde(default)]
     pub input_parameters: HashMap<String, Value>,
+    /// Rich, optional metadata describing each entry in `input_parameters`.
+    /// Additive field that is ignored by Netflix Conductor clients, so
+    /// definitions remain fully round-trip compatible. The frontend uses
+    /// this to render per-input descriptions, type hints, and examples.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub input_parameter_definitions: Vec<TaskInputParameterDef>,
     #[serde(default)]
     pub optional: bool,
     #[serde(default)]
@@ -238,6 +244,37 @@ pub struct WorkflowInputParameterDef {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_value: Option<Value>,
     /// Optional example used purely for UI/documentation purposes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub example: Option<Value>,
+}
+
+/// Rich metadata for a single task input parameter (used on both
+/// `WorkflowTask` and `TaskDef`). Purely additive — Netflix Conductor
+/// clients ignore the field.
+///
+/// Mirrors `WorkflowInputParameterDef` but is intentionally a separate
+/// struct so we can evolve the two independently (e.g. tasks may need
+/// `mappingExpression`, workflows may need `secret` masking, etc.).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskInputParameterDef {
+    /// Parameter name — must match a key in `WorkflowTask.inputParameters` /
+    /// `TaskDef.inputKeys` for the description to surface in the UI.
+    pub name: String,
+    /// Human-readable description rendered in the workflow editor / docs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Optional type hint ("string" | "number" | "boolean" | "object" | "array").
+    #[serde(default, rename = "type", skip_serializing_if = "Option::is_none")]
+    pub param_type: Option<String>,
+    /// If true, the input is required (purely informational at definition
+    /// time — runtime validation is the worker's responsibility).
+    #[serde(default)]
+    pub required: bool,
+    /// Default value rendered in the editor when the user adds the param.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_value: Option<Value>,
+    /// Optional example for the docs / OpenAPI.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub example: Option<Value>,
 }

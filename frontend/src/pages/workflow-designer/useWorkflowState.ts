@@ -153,6 +153,9 @@ export function useWorkflowState() {
     return deriveTaskOrder(tasks, edges).map((t) => {
       const wt: WorkflowTask = { name: t.name, taskReferenceName: t.taskReferenceName, type: t.type, inputParameters: t.inputParameters };
       if (t.description) wt.description = t.description;
+      if (t.inputParameterDefinitions && t.inputParameterDefinitions.length > 0) {
+        wt.inputParameterDefinitions = t.inputParameterDefinitions;
+      }
       if (t.optional) wt.optional = true;
       if (t.subWorkflowParam) wt.subWorkflowParam = t.subWorkflowParam;
       if (t.type === "DYNAMIC_FORK_JOIN") wt.dynamicForkJoinTasksParam = (t.inputParameters?.dynamicForkJoinTasksParam as string) || "dynamicTasks";

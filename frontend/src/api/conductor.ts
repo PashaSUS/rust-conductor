@@ -223,6 +223,8 @@ export type {
   ValidationResult,
   ConditionNode,
   CompareOp,
+  WorkflowInputParameterDef,
+  TaskInputParameterDef,
 } from "./conductor-types";
 
 export { formatTs } from "./conductor-types";
