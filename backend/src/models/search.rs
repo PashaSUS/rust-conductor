@@ -54,6 +54,8 @@ pub struct WorkflowSummary {
     pub output_size: Option<i64>,
     #[serde(default)]
     pub input_size: Option<i64>,
+    #[serde(default)]
+    pub parent_workflow_id: Option<String>,
 }
 
 // ── Task Summary (search results) ──

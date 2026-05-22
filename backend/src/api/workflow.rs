@@ -137,6 +137,7 @@ async fn search_workflows(
             query.size.unwrap_or(100),
             tags.as_deref(),
             query.cursor.as_deref(),
+            query.root_only.unwrap_or(false),
         )
         .await?;
     Ok(HttpResponse::Ok().json(result))
@@ -157,6 +158,7 @@ struct SearchQuery {
     size: Option<i64>,
     tags: Option<String>,
     cursor: Option<String>,
+    root_only: Option<bool>,
 }
 
 async fn rerun_workflow(

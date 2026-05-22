@@ -15,8 +15,10 @@ import WorkflowDependencyGraph from "./pages/WorkflowDependencyGraph";
 import Schedules from "./pages/Schedules";
 import WorkflowMetrics from "./pages/WorkflowMetrics";
 import About from "./pages/About";
+import Settings from "./pages/Settings";
 import CreateWorkflowDef from "./pages/CreateWorkflowDef";
 import CreateTaskDef from "./pages/CreateTaskDef";
+import { isLiteMode } from "./lib/config";
 
 // Code-split heavy pages
 const ExecutionComparison = lazy(() => import("./pages/ExecutionComparison"));
@@ -40,6 +42,7 @@ const queryClient = new QueryClient({
 });
 
 export default function App() {
+  const lite = isLiteMode();
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
@@ -47,7 +50,7 @@ export default function App() {
           <BrowserRouter>
             <Routes>
               <Route element={<Layout />}>
-              <Route path="/" element={<Dashboard />} />
+              <Route path="/" element={lite ? <Navigate to="/executions" replace /> : <Dashboard />} />
               <Route path="/executions" element={<Workflows />} />
               <Route path="/executions/:id" element={<WorkflowDetail />} />
               <Route path="/definitions" element={<WorkflowDefs />} />
@@ -55,18 +58,23 @@ export default function App() {
               <Route path="/taskdefs" element={<TaskDefs />} />
               <Route path="/taskdefs/create" element={<CreateTaskDef />} />
               <Route path="/queues" element={<TaskQueues />} />
-              <Route path="/dependencies" element={<WorkflowDependencyGraph />} />
-              <Route path="/compare" element={<Suspense fallback={<LazyFallback />}><ExecutionComparison /></Suspense>} />
-              <Route path="/diff" element={<Suspense fallback={<LazyFallback />}><WorkflowDiff /></Suspense>} />
-              <Route path="/templates" element={<Suspense fallback={<LazyFallback />}><TemplateMarketplace /></Suspense>} />
-              <Route path="/designer" element={<Suspense fallback={<LazyFallback />}><WorkflowDesigner /></Suspense>} />
-              <Route path="/stresser" element={<Suspense fallback={<LazyFallback />}><WorkflowStresser /></Suspense>} />
-              <Route path="/validate" element={<Suspense fallback={<LazyFallback />}><WorkflowValidation /></Suspense>} />
-              <Route path="/signals" element={<Suspense fallback={<LazyFallback />}><WorkflowSignals /></Suspense>} />
-              <Route path="/schedules" element={<Schedules />} />
-              <Route path="/metrics" element={<WorkflowMetrics />} />
+              <Route path="/settings" element={<Settings />} />
               <Route path="/about" element={<About />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
+              {!lite && (
+                <>
+                  <Route path="/dependencies" element={<WorkflowDependencyGraph />} />
+                  <Route path="/compare" element={<Suspense fallback={<LazyFallback />}><ExecutionComparison /></Suspense>} />
+                  <Route path="/diff" element={<Suspense fallback={<LazyFallback />}><WorkflowDiff /></Suspense>} />
+                  <Route path="/templates" element={<Suspense fallback={<LazyFallback />}><TemplateMarketplace /></Suspense>} />
+                  <Route path="/designer" element={<Suspense fallback={<LazyFallback />}><WorkflowDesigner /></Suspense>} />
+                  <Route path="/stresser" element={<Suspense fallback={<LazyFallback />}><WorkflowStresser /></Suspense>} />
+                  <Route path="/validate" element={<Suspense fallback={<LazyFallback />}><WorkflowValidation /></Suspense>} />
+                  <Route path="/signals" element={<Suspense fallback={<LazyFallback />}><WorkflowSignals /></Suspense>} />
+                  <Route path="/schedules" element={<Schedules />} />
+                  <Route path="/metrics" element={<WorkflowMetrics />} />
+                </>
+              )}
+              <Route path="*" element={<Navigate to={lite ? "/executions" : "/"} replace />} />
             </Route>
           </Routes>
         </BrowserRouter>

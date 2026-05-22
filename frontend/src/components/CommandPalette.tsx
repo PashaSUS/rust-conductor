@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { metadataApi, workflowApi } from "@/api/conductor";
+import { isLiteMode } from "@/lib/config";
 import {
   Dialog,
   DialogContent,
@@ -87,14 +88,22 @@ export function CommandPalette() {
   const items: PaletteItem[] = [];
 
   // Pages
-  const pages: PaletteItem[] = [
-    { id: "p-dash", label: t.dashboard, icon: LayoutDashboard, action: () => go("/"), category: t.pages },
-    { id: "p-exec", label: t.executions, icon: Play, action: () => go("/executions"), category: t.pages },
-    { id: "p-wfdef", label: t.workflowDefs, icon: FileCode2, action: () => go("/definitions"), category: t.pages },
-    { id: "p-tdef", label: t.taskDefs, icon: ListChecks, action: () => go("/taskdefs"), category: t.pages },
-    { id: "p-queues", label: t.taskQueues, icon: Layers, action: () => go("/queues"), category: t.pages },
-    { id: "p-schedules", label: t.schedules, icon: Calendar, action: () => go("/schedules"), category: t.pages },
-  ];
+  const lite = isLiteMode();
+  const pages: PaletteItem[] = lite
+    ? [
+        { id: "p-exec", label: t.executions, icon: Play, action: () => go("/executions"), category: t.pages },
+        { id: "p-wfdef", label: t.workflowDefs, icon: FileCode2, action: () => go("/definitions"), category: t.pages },
+        { id: "p-tdef", label: t.taskDefs, icon: ListChecks, action: () => go("/taskdefs"), category: t.pages },
+        { id: "p-queues", label: t.taskQueues, icon: Layers, action: () => go("/queues"), category: t.pages },
+      ]
+    : [
+        { id: "p-dash", label: t.dashboard, icon: LayoutDashboard, action: () => go("/"), category: t.pages },
+        { id: "p-exec", label: t.executions, icon: Play, action: () => go("/executions"), category: t.pages },
+        { id: "p-wfdef", label: t.workflowDefs, icon: FileCode2, action: () => go("/definitions"), category: t.pages },
+        { id: "p-tdef", label: t.taskDefs, icon: ListChecks, action: () => go("/taskdefs"), category: t.pages },
+        { id: "p-queues", label: t.taskQueues, icon: Layers, action: () => go("/queues"), category: t.pages },
+        { id: "p-schedules", label: t.schedules, icon: Calendar, action: () => go("/schedules"), category: t.pages },
+      ];
   items.push(...pages);
 
   // Workflow definitions

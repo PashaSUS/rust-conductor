@@ -153,6 +153,7 @@ pub(crate) struct WorkflowSummaryRow {
     pub output: Option<String>,
     pub correlation_id: Option<String>,
     pub priority: i32,
+    pub parent_workflow_id: Option<String>,
 }
 
 impl From<WorkflowSummaryRow> for WorkflowSummary {
@@ -169,6 +170,7 @@ impl From<WorkflowSummaryRow> for WorkflowSummary {
             output: r.output,
             correlation_id: r.correlation_id,
             priority: r.priority,
+            parent_workflow_id: r.parent_workflow_id,
             update_time: None,
             reason_for_incompletion: None,
             execution_time: None,

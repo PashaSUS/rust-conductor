@@ -92,6 +92,7 @@ async fn search_workflows_v2(
             query.size.unwrap_or(100),
             None,
             query.cursor.as_deref(),
+            false,
         )
         .await?;
     let mut env = ApiEnvelope::v2(&result);
@@ -282,7 +283,7 @@ async fn execute_batch_operation(
     let result: Result<Value, String> = match (method.as_str(), path) {
         ("GET", p) if p.starts_with("workflow/search") => {
             match engine
-                .search_workflows_with_cursor(None, None, None, 0, 100, None, None)
+                .search_workflows_with_cursor(None, None, None, 0, 100, None, None, false)
                 .await
             {
                 Ok(r) => Ok(serde_json::to_value(r).unwrap_or(Value::Null)),

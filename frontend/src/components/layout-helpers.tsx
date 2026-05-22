@@ -4,8 +4,9 @@ import type { ThemeText } from "@/components/ThemeContext";
 import {
   LayoutDashboard, Play, FileCode2, ListChecks, Layers, Info,
   GitBranch, Calendar, GitCompare, Diff, BookTemplate, PencilRuler,
-  BarChart3, Flame, ShieldCheck, Radio,
+  BarChart3, Flame, ShieldCheck, Radio, Settings as SettingsIcon,
 } from "lucide-react";
+import { isLiteMode } from "@/lib/config";
 
 export interface NavItem {
   to: string;
@@ -15,6 +16,17 @@ export interface NavItem {
 }
 
 export function getNavItems(t: ThemeText): NavItem[] {
+  if (isLiteMode()) {
+    return [
+      { to: "/executions", label: t.executions, icon: Play, shortcut: "2" },
+      { to: "/definitions", label: t.workflowDefs, icon: FileCode2, shortcut: "3" },
+      { to: "/taskdefs", label: t.taskDefs, icon: ListChecks, shortcut: "4" },
+      { to: "/queues", label: t.taskQueues, icon: Layers, shortcut: "5" },
+      { to: "---", label: "divider", icon: null as never, shortcut: "" },
+      { to: "/settings", label: "Settings", icon: SettingsIcon, shortcut: "," },
+      { to: "/about", label: t.about, icon: Info, shortcut: "a" },
+    ];
+  }
   return [
     { to: "/", label: t.dashboard, icon: LayoutDashboard, shortcut: "1" },
     { to: "/executions", label: t.executions, icon: Play, shortcut: "2" },
@@ -33,6 +45,8 @@ export function getNavItems(t: ThemeText): NavItem[] {
     { to: "/templates", label: "Templates", icon: BookTemplate, shortcut: "t" },
     { to: "/validate", label: "Validate", icon: ShieldCheck, shortcut: "v" },
     { to: "/signals", label: "Signals", icon: Radio, shortcut: "g" },
+    { to: "---3", label: "divider", icon: null as never, shortcut: "" },
+    { to: "/settings", label: "Settings", icon: SettingsIcon, shortcut: "," },
     { to: "/about", label: t.about, icon: Info, shortcut: "a" },
   ];
 }

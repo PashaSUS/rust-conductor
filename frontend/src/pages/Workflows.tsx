@@ -43,7 +43,17 @@ export default function Workflows() {
 
   const { data, isLoading } = useQuery({
     queryKey: ["workflow-search", params],
-    queryFn: () => workflowApi.search(params),
+    queryFn: async () => {
+      // Always ask the backend for root-only workflows (sub-workflows excluded).
+      // The flag is harmless on backends that ignore unknown query params (e.g. stock Conductor).
+      const res = await workflowApi.search({ ...params, rootOnly: true });
+      // Defensive client-side filter: drop anything that exposes a parent reference,
+      // so this also works against base Conductor implementations that don't honor rootOnly.
+      const results = (res.results ?? []).filter(
+        (w) => !w.parentWorkflowId,
+      );
+      return { ...res, results };
+    },
     refetchInterval: autoRefresh ? 5000 : false,
   });
 

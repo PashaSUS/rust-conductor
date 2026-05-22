@@ -14,7 +14,6 @@ import {
 } from "@/components/ui/tooltip";
 import { StartWorkflowDialog } from "@/components/StartWorkflowDialog";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { ThemeSwitcher } from "@/components/ThemeSwitcher";
 import { CommandPalette } from "@/components/CommandPalette";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { useThemeText } from "@/components/ThemeContext";
@@ -256,7 +255,6 @@ export default function Layout() {
                 collapsed ? "flex-col gap-1" : "gap-1",
               )}
             >
-              <ThemeSwitcher />
               <NotificationBell />
               <ThemeToggle />
               <Tooltip>

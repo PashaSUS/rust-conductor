@@ -222,6 +222,7 @@ impl QueryRoot {
                 size.unwrap_or(100),
                 None,
                 None,
+                false,
             )
             .await?;
 

@@ -314,7 +314,7 @@ impl WorkflowEngine {
         size: i64,
         tags: Option<&[String]>,
     ) -> Result<SearchResult<WorkflowSummary>, EngineError> {
-        self.search_workflows_with_cursor(status, name, free_text, start, size, tags, None)
+        self.search_workflows_with_cursor(status, name, free_text, start, size, tags, None, false)
             .await
     }
 
@@ -328,8 +328,12 @@ impl WorkflowEngine {
         size: i64,
         tags: Option<&[String]>,
         cursor: Option<&str>,
+        root_only: bool,
     ) -> Result<SearchResult<WorkflowSummary>, EngineError> {
         let mut where_clause = String::from(" WHERE 1=1");
+        if root_only {
+            where_clause.push_str(" AND parent_workflow_id IS NULL");
+        }
         if let Some(s) = status {
             where_clause.push_str(&format!(" AND status = '{}'", s.replace('\'', "")));
         }
@@ -370,7 +374,7 @@ impl WorkflowEngine {
             }
         }
 
-        let select_cols = "SELECT workflow_id, workflow_name, workflow_version, status, start_time, end_time, input::text, output::text, correlation_id, priority FROM workflow";
+        let select_cols = "SELECT workflow_id, workflow_name, workflow_version, status, start_time, end_time, input::text, output::text, correlation_id, priority, parent_workflow_id FROM workflow";
 
         // Use read replicas for search queries
         let read_shards = self.shards.read_shards();

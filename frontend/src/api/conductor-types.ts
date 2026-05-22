@@ -197,6 +197,7 @@ export interface WorkflowSummary {
   endTime?: string;
   correlationId?: string;
   priority: number;
+  parentWorkflowId?: string;
 }
 
 /** Parse a timestamp that may be epoch millis (number or numeric string) or an ISO string. */
@@ -214,6 +215,7 @@ export interface SearchParams {
   start?: number;
   size?: number;
   tags?: string;
+  rootOnly?: boolean;
 }
 
 export interface WorkflowMetrics {

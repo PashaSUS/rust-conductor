@@ -1,4 +1,4 @@
-export type UITheme = "default" | "warcraft" | "cyberpunk" | "forest" | "ocean" | "pokemon" | "chucknorris" | "lotr";
+export type UITheme = "default";
 
 export interface ThemeText {
   // Branding

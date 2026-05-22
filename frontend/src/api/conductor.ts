@@ -1,7 +1,11 @@
-const BASE = (import.meta.env.VITE_API_BASE || "") + "/api";
+import { getApiBase } from "@/lib/config";
+
+function apiBase(): string {
+  return `${getApiBase()}/api`;
+}
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(`${apiBase()}${path}`, {
     headers: { "Content-Type": "application/json" },
     ...options,
   });
@@ -81,6 +85,7 @@ export const workflowApi = {
     if (params?.start !== undefined) qs.set("start", String(params.start));
     if (params?.size !== undefined) qs.set("size", String(params.size));
     if (params?.tags) qs.set("tags", params.tags);
+    if (params?.rootOnly) qs.set("rootOnly", "true");
     return request<SearchResult<WorkflowSummary>>(`/workflow/search?${qs}`);
   },
 
@@ -142,7 +147,7 @@ export const taskApi = {
 // ── Health ──
 
 export const healthApi = {
-  check: () => fetch(`${import.meta.env.VITE_API_BASE || ""}/health`).then((r) => r.json()),
+  check: () => fetch(`${getApiBase()}/health`).then((r) => r.json()),
 };
 
 // ── Schedules ──
