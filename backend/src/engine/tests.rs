@@ -1267,6 +1267,7 @@ fn contract_workflow_task_json_field_names() {
         map_items_param: None,
         map_parallelism: None,
         map_task: None,
+        input_parameter_definitions: vec![],
     };
     let v = serde_json::to_value(&task).unwrap();
     // Conductor uses "taskReferenceName" and "type"
@@ -1473,6 +1474,8 @@ fn contract_task_def_field_names() {
         enforce_schema: false,
         env_vars: None,
         retry_on_errors: vec![],
+        input_parameter_definitions: vec![],
+        output_parameter_definitions: vec![],
     };
     let v = serde_json::to_value(&def).unwrap();
     assert!(v.get("retryCount").is_some());

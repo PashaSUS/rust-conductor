@@ -253,8 +253,12 @@ fn json_values_equal(a: &Value, b: &Value) -> bool {
 }
 
 fn json_numeric_cmp(a: &Value, b: &Value) -> Option<std::cmp::Ordering> {
-    let a_f = a.as_f64().or_else(|| value_to_string(a).parse::<f64>().ok())?;
-    let b_f = b.as_f64().or_else(|| value_to_string(b).parse::<f64>().ok())?;
+    let a_f = a
+        .as_f64()
+        .or_else(|| value_to_string(a).parse::<f64>().ok())?;
+    let b_f = b
+        .as_f64()
+        .or_else(|| value_to_string(b).parse::<f64>().ok())?;
     a_f.partial_cmp(&b_f)
 }
 

@@ -1,4 +1,4 @@
-﻿//! Official proto (package: conductor.grpc) ↔ Rust model conversions.
+//! Official proto (package: conductor.grpc) ↔ Rust model conversions.
 //!
 //! Mirrors the custom-proto converters but targets the `conductor.grpc.*`
 //! message types generated from `conductor_official.proto`.
@@ -7,9 +7,9 @@ use serde_json::Value as JsonValue;
 use tonic::Status;
 
 use super::proto_conv::{
-    hashmap_to_opt_struct, hashmap_to_opt_struct_owned, json_to_opt_struct_owned,
-    json_to_struct, opt_struct_to_hashmap, opt_struct_to_json_owned, opt_string,
-    opt_string_owned, parse_task_status, struct_to_json,
+    hashmap_to_opt_struct, hashmap_to_opt_struct_owned, json_to_opt_struct_owned, json_to_struct,
+    opt_string, opt_string_owned, opt_struct_to_hashmap, opt_struct_to_json_owned,
+    parse_task_status, struct_to_json,
 };
 use crate::grpc::official::pb as opb;
 use crate::models;

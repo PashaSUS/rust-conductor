@@ -32,10 +32,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
                 "/{workflowId}/checkpoint",
                 web::post().to(create_checkpoint),
             )
-            .route(
-                "/{workflowId}/checkpoints",
-                web::get().to(list_checkpoints),
-            )
+            .route("/{workflowId}/checkpoints", web::get().to(list_checkpoints))
             .route(
                 "/{workflowId}/restore/{checkpointId}",
                 web::post().to(restore_checkpoint),
@@ -318,9 +315,7 @@ async fn send_signal(
     engine: web::Data<WorkflowEngine>,
     body: web::Json<SendSignalRequest>,
 ) -> Result<HttpResponse, crate::engine::EngineError> {
-    let count = engine
-        .send_signal(&body.signal_name, &body.payload)
-        .await?;
+    let count = engine.send_signal(&body.signal_name, &body.payload).await?;
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "signalName": body.signal_name,
         "deliveredTo": count,
@@ -340,9 +335,7 @@ async fn create_checkpoint(
     body: Option<web::Json<CheckpointRequest>>,
 ) -> Result<HttpResponse, crate::engine::EngineError> {
     let label = body.as_ref().and_then(|b| b.label.as_deref());
-    let cp = engine
-        .create_checkpoint(&path.into_inner(), label)
-        .await?;
+    let cp = engine.create_checkpoint(&path.into_inner(), label).await?;
     Ok(HttpResponse::Ok().json(cp))
 }
 

@@ -480,7 +480,10 @@ impl WorkflowEngine {
                     }
                     Err(e) => {
                         last_err = Some(e);
-                        tokio::time::sleep(std::time::Duration::from_millis(10 * (1 + attempt as u64) * (1 + attempt as u64))).await;
+                        tokio::time::sleep(std::time::Duration::from_millis(
+                            10 * (1 + attempt as u64) * (1 + attempt as u64),
+                        ))
+                        .await;
                     }
                 }
             }

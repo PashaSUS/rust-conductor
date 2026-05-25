@@ -1,3 +1,11 @@
+#![allow(
+    clippy::collapsible_if,
+    clippy::type_complexity,
+    clippy::needless_range_loop,
+    clippy::extend_with_drain,
+    dead_code
+)]
+
 mod api;
 mod config;
 mod engine;

@@ -1556,8 +1556,7 @@ impl WorkflowEngine {
         let mut fork_refs = Vec::new();
         for (idx, item) in items.iter().enumerate() {
             let mut sub_task = map_template.as_ref().clone();
-            sub_task.task_reference_name =
-                format!("{}__map_{}", task_def.task_reference_name, idx);
+            sub_task.task_reference_name = format!("{}__map_{}", task_def.task_reference_name, idx);
             sub_task.name = format!("{}_map_{}", map_template.name, idx);
 
             // Inject the item and index into sub-task input
@@ -1597,8 +1596,13 @@ impl WorkflowEngine {
             join_on: fork_refs,
             ..Default::default()
         };
-        self.handle_join_task(workflow_id, &join_task, input, seq + items.len() as i32 + 100)
-            .await?;
+        self.handle_join_task(
+            workflow_id,
+            &join_task,
+            input,
+            seq + items.len() as i32 + 100,
+        )
+        .await?;
 
         tracing::info!(
             workflow_id = %workflow_id,

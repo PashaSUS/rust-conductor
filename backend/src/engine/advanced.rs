@@ -283,11 +283,12 @@ impl WorkflowEngine {
         let checkpoint_id = Uuid::new_v4().to_string();
         let now = Utc::now();
 
-        let wf_snapshot = serde_json::to_value(&wf).map_err(|e| EngineError::Serde(e.to_string()))?;
+        let wf_snapshot =
+            serde_json::to_value(&wf).map_err(|e| EngineError::Serde(e.to_string()))?;
         let tasks_snapshot =
             serde_json::to_value(&wf.tasks).map_err(|e| EngineError::Serde(e.to_string()))?;
-        let vars_snapshot = serde_json::to_value(&wf.variables)
-            .map_err(|e| EngineError::Serde(e.to_string()))?;
+        let vars_snapshot =
+            serde_json::to_value(&wf.variables).map_err(|e| EngineError::Serde(e.to_string()))?;
 
         sqlx::query(
             "INSERT INTO workflow_checkpoint (checkpoint_id, workflow_id, created_at, workflow_snapshot, tasks_snapshot, variables_snapshot, label) \
@@ -335,15 +336,17 @@ impl WorkflowEngine {
 
         Ok(rows
             .into_iter()
-            .map(|(id, wf_id, ts, wf_snap, tasks_snap, vars_snap, label)| WorkflowCheckpoint {
-                checkpoint_id: id,
-                workflow_id: wf_id,
-                created_at: ts.timestamp_millis(),
-                workflow_snapshot: wf_snap,
-                tasks_snapshot: tasks_snap,
-                variables_snapshot: vars_snap,
-                label,
-            })
+            .map(
+                |(id, wf_id, ts, wf_snap, tasks_snap, vars_snap, label)| WorkflowCheckpoint {
+                    checkpoint_id: id,
+                    workflow_id: wf_id,
+                    created_at: ts.timestamp_millis(),
+                    workflow_snapshot: wf_snap,
+                    tasks_snapshot: tasks_snap,
+                    variables_snapshot: vars_snap,
+                    label,
+                },
+            )
             .collect())
     }
 
@@ -377,7 +380,9 @@ impl WorkflowEngine {
             .map_err(|e| EngineError::Serde(format!("Invalid checkpoint snapshot: {e}")))?;
 
         // Terminate current workflow
-        let _ = self.terminate_workflow(workflow_id, Some("Restored from checkpoint")).await;
+        let _ = self
+            .terminate_workflow(workflow_id, Some("Restored from checkpoint"))
+            .await;
 
         // Start a new workflow with the original definition
         let def = orig_wf.workflow_definition.ok_or_else(|| {
@@ -422,10 +427,7 @@ impl WorkflowEngine {
 
     /// Resolve workflow inheritance by merging parent tasks into the child.
     /// The child's tasks override parent tasks with the same reference name.
-    pub async fn resolve_inheritance(
-        &self,
-        def: &WorkflowDef,
-    ) -> Result<WorkflowDef, EngineError> {
+    pub async fn resolve_inheritance(&self, def: &WorkflowDef) -> Result<WorkflowDef, EngineError> {
         let Some(ref base_name) = def.base_workflow else {
             return Ok(def.clone());
         };
@@ -667,9 +669,10 @@ impl WorkflowEngine {
 
     /// Record a heartbeat for a long-running task, extending its lease.
     pub async fn heartbeat_task(&self, task_id: &str) -> Result<(), EngineError> {
-        let (wf_id, shard) = self.resolve_task_shard(task_id).await?.ok_or_else(|| {
-            EngineError::NotFound(format!("Task not found: {task_id}"))
-        })?;
+        let (wf_id, shard) = self
+            .resolve_task_shard(task_id)
+            .await?
+            .ok_or_else(|| EngineError::NotFound(format!("Task not found: {task_id}")))?;
 
         let now = Utc::now();
         let result = sqlx::query(

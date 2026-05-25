@@ -58,7 +58,8 @@ impl WorkflowEngine {
 
         crate::metrics::record_workflow_started();
 
-        if let Err(e) = Box::pin(self.schedule_tasks(&workflow_id, &def.tasks, &effective_input, 0)).await
+        if let Err(e) =
+            Box::pin(self.schedule_tasks(&workflow_id, &def.tasks, &effective_input, 0)).await
         {
             tracing::error!(workflow_id = %workflow_id, error = %e, "Failed to schedule initial tasks, marking workflow FAILED");
             let _ = sqlx::query(

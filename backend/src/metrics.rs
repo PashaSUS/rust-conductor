@@ -168,9 +168,17 @@ pub fn collect_pool_metrics(engine: &crate::engine::WorkflowEngine) {
     let pool_json = engine.pool_metrics();
 
     // Postgres primary shards
-    if let Some(shards) = pool_json.get("postgres").and_then(|p| p.get("primary")).and_then(|v| v.as_array()) {
+    if let Some(shards) = pool_json
+        .get("postgres")
+        .and_then(|p| p.get("primary"))
+        .and_then(|v| v.as_array())
+    {
         for s in shards {
-            let shard = s.get("shard").and_then(|v| v.as_u64()).unwrap_or(0).to_string();
+            let shard = s
+                .get("shard")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0)
+                .to_string();
             let active = s.get("active").and_then(|v| v.as_i64()).unwrap_or(0);
             let idle = s.get("idle").and_then(|v| v.as_i64()).unwrap_or(0);
             PG_POOL_ACTIVE.with_label_values(&[&shard]).set(active);
@@ -181,7 +189,11 @@ pub fn collect_pool_metrics(engine: &crate::engine::WorkflowEngine) {
     // Redis shards
     if let Some(redis) = pool_json.get("redis").and_then(|v| v.as_array()) {
         for s in redis {
-            let shard = s.get("shard").and_then(|v| v.as_u64()).unwrap_or(0).to_string();
+            let shard = s
+                .get("shard")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0)
+                .to_string();
             let size = s.get("size").and_then(|v| v.as_i64()).unwrap_or(0);
             let available = s.get("available").and_then(|v| v.as_i64()).unwrap_or(0);
             let active = size - available;
@@ -226,7 +238,12 @@ pub fn set_task_queue_depth(task_type: &str, depth: i64) {
 
 // ── Migration recording helpers ─────────────────────────────────────────────
 
-pub fn record_migration_success(shard: &str, statements: u64, duration_secs: f64, lock_wait_secs: f64) {
+pub fn record_migration_success(
+    shard: &str,
+    statements: u64,
+    duration_secs: f64,
+    lock_wait_secs: f64,
+) {
     DB_MIGRATION_RUNS_TOTAL
         .with_label_values(&[shard, "success"])
         .inc();
