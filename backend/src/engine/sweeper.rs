@@ -16,7 +16,7 @@ impl WorkflowEngine {
             //    SELECT candidates first, then UPDATE + enqueue each one
             //    individually so a single Kafka failure doesn't block the rest.
             let orphans = sqlx::query_as::<_, OrphanedTaskRow>(
-                "SELECT task_id, task_def_name, workflow_instance_id FROM task \
+                "SELECT task_id, task_def_name, workflow_instance_id, domain FROM task \
                  WHERE status = 'SCHEDULED' \
                    AND task_type NOT IN ('FORK','FORK_JOIN','JOIN','DECISION','SWITCH','SUB_WORKFLOW','DO_WHILE','TERMINATE','SET_VARIABLE','WAIT','LAMBDA','INLINE','EVENT','MAP','WAIT_FOR_SIGNAL','DYNAMIC','DYNAMIC_FORK_JOIN','FORK_JOIN_DYNAMIC') \
                    AND scheduled_time < NOW() - INTERVAL '30 seconds'",
@@ -37,11 +37,9 @@ impl WorkflowEngine {
                     // Enqueue first — only bump scheduled_time on success
                     self.set_task_routing(&orphan.task_id, &orphan.workflow_instance_id)
                         .await?;
-                    match self
-                        .queue
-                        .enqueue(&orphan.task_def_name, &orphan.task_id)
-                        .await
-                    {
+                    let queue_name =
+                        super::queue_name_for(&orphan.task_def_name, orphan.domain.as_deref());
+                    match self.queue.enqueue(&queue_name, &orphan.task_id).await {
                         Ok(_) => {
                             // Bump scheduled_time so this orphan isn't re-queued next cycle
                             let _ = sqlx::query(

@@ -490,6 +490,25 @@ impl WorkflowEngine {
             )
             .await?;
 
+        // Resolve domain from workflow's task_to_domain map. Netflix Conductor
+        // keys this map by task type/name and supports "*"; keep reference-name
+        // fallback for older rust-conductor callers.
+        let domain = self
+            .lookup_task_domain(workflow_id, &task_def.name, &task_def.task_reference_name)
+            .await;
+        let queue_name = super::queue_name_for(&task_def.name, domain.as_deref());
+
+        // Persist resolved domain on the task row so subsequent re-enqueues
+        // (sweeper, resume, poll retry) route to the same queue.
+        if is_new && domain.is_some() {
+            let db = self.shards.shard_for(workflow_id);
+            let _ = sqlx::query("UPDATE task SET domain = $2 WHERE task_id = $1")
+                .bind(&task_id)
+                .bind(domain.as_deref())
+                .execute(db)
+                .await;
+        }
+
         // Inject env_vars from task definition into the task row
         if is_new
             && let Ok(td) = self.get_task_def(&task_def.name).await
@@ -506,7 +525,7 @@ impl WorkflowEngine {
         if is_new {
             self.set_task_routing(&task_id, workflow_id).await?;
             self.queue
-                .enqueue(&task_def.name, &task_id)
+                .enqueue(&queue_name, &task_id)
                 .await
                 .map_err(|e| {
                     tracing::error!(
@@ -536,7 +555,7 @@ impl WorkflowEngine {
                 );
                 self.set_task_routing(&task_id, workflow_id).await?;
                 self.queue
-                    .enqueue(&task_def.name, &task_id)
+                    .enqueue(&queue_name, &task_id)
                     .await
                     .map_err(|e| {
                         tracing::error!(
@@ -550,6 +569,31 @@ impl WorkflowEngine {
             }
         }
         Ok(())
+    }
+
+    /// Look up the domain mapped for a task in the workflow's `task_to_domain`
+    /// map. Netflix Conductor checks task type/name first, supports a global
+    /// `*`, and treats comma-separated values as ordered fallback domains.
+    pub(crate) async fn lookup_task_domain(
+        &self,
+        workflow_id: &str,
+        task_name: &str,
+        task_reference_name: &str,
+    ) -> Option<String> {
+        let db = self.shards.shard_for(workflow_id);
+        let row: Option<(Option<Value>,)> =
+            sqlx::query_as("SELECT task_to_domain FROM workflow WHERE workflow_id = $1")
+                .bind(workflow_id)
+                .fetch_optional(db)
+                .await
+                .ok()
+                .flatten();
+        let map = row.and_then(|(v,)| v)?;
+        let v = map
+            .get(task_name)
+            .or_else(|| map.get(task_reference_name))
+            .or_else(|| map.get("*"))?;
+        select_task_domain(v.as_str()?)
     }
 
     /// Mark an existing task as COMPLETED by its task_id.
@@ -1783,5 +1827,14 @@ impl WorkflowEngine {
             }
         }
         Ok(depth)
+    }
+}
+
+fn select_task_domain(domain: &str) -> Option<String> {
+    let selected = domain.split(',').map(str::trim).rfind(|d| !d.is_empty())?;
+    if selected.eq_ignore_ascii_case("NO_DOMAIN") {
+        None
+    } else {
+        Some(selected.to_string())
     }
 }

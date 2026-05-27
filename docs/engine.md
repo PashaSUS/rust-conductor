@@ -100,6 +100,10 @@ These require external workers to poll, execute, and report back:
 
 **Why enqueue instead of execute inline?** Worker tasks run arbitrary external code (API calls, database operations, ML inference). Running them inside the engine would block the orchestration loop and create a single point of failure.
 
+### Task Domains
+
+`taskToDomain` follows Netflix Conductor queue semantics. Keys are worker task names (task definition names), with `*` as a global fallback. When a task resolves to domain `prod`, it is queued and reported as `prod:taskName`; workers poll `/api/tasks/poll/{taskName}?domain=prod`. This shape is required for ConductorSharp workers, which inspect `/api/tasks/queue/all` for `domain:taskName` before polling.
+
 ### System Tasks (Inline)
 
 These are evaluated during advancement — no queue round-trip:

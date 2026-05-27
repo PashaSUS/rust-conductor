@@ -1,11 +1,7 @@
-import { getApiBase } from "@/lib/config";
-
-function apiBase(): string {
-  return `${getApiBase()}/api`;
-}
+import { conductorUrl } from "@/lib/config";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${apiBase()}${path}`, {
+  const res = await fetch(conductorUrl(`/api${path}`), {
     headers: { "Content-Type": "application/json" },
     ...options,
   });
@@ -147,7 +143,7 @@ export const taskApi = {
 // ── Health ──
 
 export const healthApi = {
-  check: () => fetch(`${getApiBase()}/health`).then((r) => r.json()),
+  check: () => fetch(conductorUrl("/health")).then((r) => r.json()),
 };
 
 // ── Schedules ──

@@ -216,8 +216,8 @@ impl WorkflowEngine {
         }
 
         // Re-enqueue any SCHEDULED worker tasks that may have been orphaned
-        let orphans: Vec<(String, String)> = sqlx::query_as(
-            "SELECT task_id, task_def_name FROM task \
+        let orphans: Vec<(String, String, Option<String>)> = sqlx::query_as(
+            "SELECT task_id, task_def_name, domain FROM task \
              WHERE workflow_instance_id = $1 AND status = 'SCHEDULED' \
              AND task_type NOT IN ('FORK','FORK_JOIN','JOIN','DECISION','SWITCH','SUB_WORKFLOW','DO_WHILE','TERMINATE','SET_VARIABLE','WAIT','LAMBDA','INLINE','EVENT','DYNAMIC','DYNAMIC_FORK_JOIN','FORK_JOIN_DYNAMIC')",
         )
@@ -226,9 +226,10 @@ impl WorkflowEngine {
         .await
         .map_err(|e| EngineError::Database(e.to_string()))?;
 
-        for (task_id, task_def_name) in &orphans {
+        for (task_id, task_def_name, domain) in &orphans {
             let _ = self.set_task_routing(task_id, workflow_id).await;
-            let _ = self.queue.enqueue(task_def_name, task_id).await;
+            let queue_name = super::queue_name_for(task_def_name, domain.as_deref());
+            let _ = self.queue.enqueue(&queue_name, task_id).await;
         }
 
         tracing::info!(workflow_id = %workflow_id, re_queued = orphans.len(), "Workflow resumed");

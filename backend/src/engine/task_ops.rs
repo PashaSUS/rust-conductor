@@ -29,9 +29,11 @@ impl WorkflowEngine {
         &self,
         task_type: &str,
         worker_id: Option<&str>,
+        domain: Option<&str>,
     ) -> Result<Option<PollTask>, EngineError> {
         crate::metrics::record_task_poll(task_type);
-        let task_id = match self.queue.dequeue(task_type).await {
+        let queue_name = super::queue_name_for(task_type, domain);
+        let task_id = match self.queue.dequeue(&queue_name).await {
             Some(id) => id,
             None => return Ok(None),
         };
@@ -89,7 +91,7 @@ impl WorkflowEngine {
             Err(e) => {
                 // DB lookup failed after dequeue — re-enqueue the task via Kafka so it is not lost
                 tracing::warn!(task_id = %task_id, error = %e, "Re-enqueuing task after poll DB failure");
-                let _ = self.queue.enqueue(task_type, &task_id).await;
+                let _ = self.queue.enqueue(&queue_name, &task_id).await;
                 Err(e)
             }
         }
@@ -251,14 +253,16 @@ impl WorkflowEngine {
         worker_id: Option<&str>,
         count: usize,
         _timeout: u64,
+        domain: Option<&str>,
     ) -> Result<Vec<PollTask>, EngineError> {
         if count == 0 {
             return Ok(vec![]);
         }
 
+        let queue_name = super::queue_name_for(task_type, domain);
         let task_ids = self
             .queue
-            .batch_dequeue(task_type, count, std::time::Duration::from_millis(500))
+            .batch_dequeue(&queue_name, count, std::time::Duration::from_millis(500))
             .await;
 
         if task_ids.is_empty() {
@@ -311,7 +315,7 @@ impl WorkflowEngine {
             if let Err(e) = result {
                 // Re-enqueue on failure so the task is not lost from Kafka
                 tracing::warn!(task_id = %task_id, error = %e, "Re-enqueuing task after batch poll DB failure");
-                let _ = self.queue.enqueue(task_type, task_id).await;
+                let _ = self.queue.enqueue(&queue_name, task_id).await;
             }
         }
         // Sort by priority descending so higher priority tasks are returned first
@@ -503,11 +507,13 @@ impl WorkflowEngine {
     pub async fn get_queue_sizes(
         &self,
     ) -> Result<std::collections::HashMap<String, i64>, EngineError> {
-        // Query all read shards for SCHEDULED task counts grouped by task type
+        // Query all read shards for SCHEDULED task counts grouped by actual
+        // worker queue name. Domain queues must be exposed as `domain:taskName`
+        // so ConductorSharp workers decide to poll them.
         let futs: Vec<_> = self.shards.read_shards().iter().map(|shard| {
             async move {
-                let rows: Vec<(String, i64)> = sqlx::query_as(
-                    "SELECT task_def_name, COUNT(*) FROM task WHERE status = 'SCHEDULED' GROUP BY task_def_name",
+                let rows: Vec<(String, Option<String>, i64)> = sqlx::query_as(
+                    "SELECT task_def_name, domain, COUNT(*) FROM task WHERE status = 'SCHEDULED' GROUP BY task_def_name, domain",
                 )
                 .fetch_all(shard)
                 .await
@@ -519,8 +525,9 @@ impl WorkflowEngine {
         let results = join_all(futs).await;
         let mut sizes = std::collections::HashMap::new();
         for result in results {
-            for (name, count) in result? {
-                *sizes.entry(name).or_insert(0i64) += count;
+            for (name, domain, count) in result? {
+                let queue_name = super::queue_name_for(&name, domain.as_deref());
+                *sizes.entry(queue_name).or_insert(0i64) += count;
             }
         }
         Ok(sizes)
@@ -651,8 +658,8 @@ impl WorkflowEngine {
     > {
         let futs: Vec<_> = self.shards.read_shards().iter().map(|shard| {
             async move {
-                let rows: Vec<(String, String, i64)> = sqlx::query_as(
-                    "SELECT task_def_name, status, COUNT(*) FROM task WHERE status IN ('SCHEDULED', 'IN_PROGRESS') GROUP BY task_def_name, status",
+                let rows: Vec<(String, Option<String>, String, i64)> = sqlx::query_as(
+                    "SELECT task_def_name, domain, status, COUNT(*) FROM task WHERE status IN ('SCHEDULED', 'IN_PROGRESS') GROUP BY task_def_name, domain, status",
                 )
                 .fetch_all(shard)
                 .await
@@ -665,8 +672,13 @@ impl WorkflowEngine {
         let mut details: std::collections::HashMap<String, std::collections::HashMap<String, i64>> =
             std::collections::HashMap::new();
         for result in results {
-            for (name, status, count) in result? {
-                *details.entry(name).or_default().entry(status).or_insert(0) += count;
+            for (name, domain, status, count) in result? {
+                let queue_name = super::queue_name_for(&name, domain.as_deref());
+                *details
+                    .entry(queue_name)
+                    .or_default()
+                    .entry(status)
+                    .or_insert(0) += count;
             }
         }
         Ok(details)
@@ -675,8 +687,8 @@ impl WorkflowEngine {
     pub async fn get_poll_data(&self, task_type: &str) -> Result<Vec<PollData>, EngineError> {
         let futs: Vec<_> = self.shards.read_shards().iter().map(|shard| {
             async move {
-                let rows: Vec<(Option<String>, Option<i64>)> = sqlx::query_as(
-                    "SELECT worker_id, MAX(EXTRACT(EPOCH FROM update_time)::bigint * 1000) FROM task WHERE task_def_name = $1 AND status = 'IN_PROGRESS' GROUP BY worker_id",
+                let rows: Vec<(Option<String>, Option<String>, Option<i64>)> = sqlx::query_as(
+                    "SELECT domain, worker_id, MAX(EXTRACT(EPOCH FROM update_time)::bigint * 1000) FROM task WHERE task_def_name = $1 AND status = 'IN_PROGRESS' GROUP BY domain, worker_id",
                 )
                 .bind(task_type)
                 .fetch_all(shard)
@@ -689,10 +701,10 @@ impl WorkflowEngine {
         let results = join_all(futs).await;
         let mut poll_data = Vec::new();
         for result in results {
-            for (worker_id, last_poll) in result? {
+            for (domain, worker_id, last_poll) in result? {
                 poll_data.push(PollData {
-                    queue_name: Some(task_type.to_string()),
-                    domain: None,
+                    queue_name: Some(super::queue_name_for(task_type, domain.as_deref())),
+                    domain,
                     worker_id,
                     last_poll_time: last_poll,
                 });
@@ -704,8 +716,8 @@ impl WorkflowEngine {
     pub async fn get_all_poll_data(&self) -> Result<Vec<PollData>, EngineError> {
         let futs: Vec<_> = self.shards.read_shards().iter().map(|shard| {
             async move {
-                let rows: Vec<(String, Option<String>, Option<i64>)> = sqlx::query_as(
-                    "SELECT task_def_name, worker_id, MAX(EXTRACT(EPOCH FROM update_time)::bigint * 1000) FROM task WHERE status = 'IN_PROGRESS' GROUP BY task_def_name, worker_id",
+                let rows: Vec<(String, Option<String>, Option<String>, Option<i64>)> = sqlx::query_as(
+                    "SELECT task_def_name, domain, worker_id, MAX(EXTRACT(EPOCH FROM update_time)::bigint * 1000) FROM task WHERE status = 'IN_PROGRESS' GROUP BY task_def_name, domain, worker_id",
                 )
                 .fetch_all(shard)
                 .await
@@ -717,10 +729,10 @@ impl WorkflowEngine {
         let results = join_all(futs).await;
         let mut poll_data = Vec::new();
         for result in results {
-            for (queue_name, worker_id, last_poll) in result? {
+            for (task_type, domain, worker_id, last_poll) in result? {
                 poll_data.push(PollData {
-                    queue_name: Some(queue_name),
-                    domain: None,
+                    queue_name: Some(super::queue_name_for(&task_type, domain.as_deref())),
+                    domain,
                     worker_id,
                     last_poll_time: last_poll,
                 });

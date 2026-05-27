@@ -10,21 +10,66 @@
 
 const API_URL_KEY = "conductor.api.url";
 const LITE_MODE_KEY = "conductor.lite.mode";
+const API_PROXY_KEY = "conductor.api.proxy";
 
 /** Returns the configured API base, e.g. "" (same origin) or "http://localhost:8080". */
 export function getApiBase(): string {
   const stored = (typeof localStorage !== "undefined") ? localStorage.getItem(API_URL_KEY) : null;
   if (stored && stored.trim().length > 0) {
-    return stored.replace(/\/+$/, "");
+    return normalizeApiBase(stored);
   }
-  return (import.meta.env.VITE_API_BASE as string | undefined) ?? "";
+  return normalizeApiBase((import.meta.env.VITE_API_BASE as string | undefined) ?? "");
+}
+
+export function conductorUrl(path: string): string {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const base = getApiBase().replace(/\/+$/, "");
+
+  if (!base) {
+    return normalizedPath;
+  }
+
+  if (shouldProxy(base)) {
+    return `/api/proxy?target=${encodeURIComponent(`${base}${normalizedPath}`)}`;
+  }
+
+  return `${base}${normalizedPath}`;
+}
+
+export function normalizeApiBase(url: string): string {
+  const trimmed = url.trim();
+  if (!trimmed) return "";
+
+  const withoutTrailingSlash = trimmed.replace(/\/+$/, "");
+  try {
+    const parsed = new URL(withoutTrailingSlash);
+    parsed.hash = "";
+    parsed.search = "";
+    if (parsed.pathname.toLowerCase().endsWith("/api")) {
+      parsed.pathname = parsed.pathname.slice(0, -4) || "/";
+    }
+    return parsed.toString().replace(/\/+$/, "");
+  } catch {
+    return withoutTrailingSlash.replace(/\/api$/i, "");
+  }
+}
+
+export function shouldProxy(base: string): boolean {
+  if (!getUseApiProxy()) return false;
+  if (typeof window === "undefined") return false;
+  try {
+    const url = new URL(base);
+    return ["http:", "https:"].includes(url.protocol) && url.origin !== window.location.origin;
+  } catch {
+    return false;
+  }
 }
 
 export function setApiBase(url: string | null): void {
   if (!url || url.trim().length === 0) {
     localStorage.removeItem(API_URL_KEY);
   } else {
-    localStorage.setItem(API_URL_KEY, url.trim());
+    localStorage.setItem(API_URL_KEY, normalizeApiBase(url));
   }
 }
 
@@ -62,4 +107,21 @@ export function isPathAllowed(path: string): boolean {
   return [...LITE_MODE_PATHS].some(
     (p) => p !== "/" && (path === p || path.startsWith(`${p}/`)),
   );
+}
+
+export function getUseApiProxy(): boolean {
+  const envDefault = (import.meta.env.VITE_USE_API_PROXY as string | undefined) !== "false";
+  if (typeof localStorage === "undefined") return envDefault;
+  const stored = localStorage.getItem(API_PROXY_KEY);
+  if (stored === "true") return true;
+  if (stored === "false") return false;
+  return envDefault;
+}
+
+export function setUseApiProxy(on: boolean): void {
+  localStorage.setItem(API_PROXY_KEY, String(on));
+}
+
+export function resetUseApiProxy(): void {
+  localStorage.removeItem(API_PROXY_KEY);
 }

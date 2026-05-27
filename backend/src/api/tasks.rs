@@ -41,7 +41,11 @@ async fn poll_task(
 ) -> Result<HttpResponse, crate::engine::EngineError> {
     let task_type = path.into_inner();
     let task = engine
-        .poll_task(&task_type, query.worker_id.as_deref())
+        .poll_task(
+            &task_type,
+            query.worker_id.as_deref(),
+            query.domain.as_deref(),
+        )
         .await?;
     match task {
         Some(t) => Ok(HttpResponse::Ok().json(t)),
@@ -61,6 +65,7 @@ async fn batch_poll(
             query.worker_id.as_deref(),
             query.count.unwrap_or(1) as usize,
             query.timeout.unwrap_or(100),
+            query.domain.as_deref(),
         )
         .await?;
     Ok(HttpResponse::Ok().json(tasks))
@@ -137,15 +142,21 @@ async fn queue_sizes(
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PollQuery {
+    #[serde(alias = "workerid")]
     worker_id: Option<String>,
+    #[serde(default)]
+    domain: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct BatchPollQuery {
+    #[serde(alias = "workerid")]
     worker_id: Option<String>,
     count: Option<i32>,
     timeout: Option<u64>,
+    #[serde(default)]
+    domain: Option<String>,
 }
 
 #[derive(serde::Deserialize)]

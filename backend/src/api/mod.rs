@@ -4,6 +4,7 @@ pub mod event;
 #[cfg(feature = "graphql")]
 pub mod graphql;
 pub mod metadata;
+pub mod proxy;
 pub mod rate_limit;
 pub mod schedule;
 #[cfg(feature = "sse")]
@@ -22,6 +23,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::scope("/api")
             .configure(metadata::configure)
+            .configure(proxy::configure)
             .configure(bulk::configure)
             .configure(workflow::configure)
             .configure(tasks::configure)

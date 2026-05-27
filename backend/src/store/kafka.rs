@@ -53,7 +53,7 @@ impl KafkaTaskQueue {
     }
 
     fn topic_name(task_type: &str) -> String {
-        format!("conductor.task.{task_type}")
+        format!("conductor.task.{}", encode_topic_suffix(task_type))
     }
 
     /// Get or create a consumer pool for the given task type.
@@ -223,4 +223,17 @@ impl KafkaTaskQueue {
             Err(_) => false,
         }
     }
+}
+
+fn encode_topic_suffix(queue_name: &str) -> String {
+    let mut encoded = String::with_capacity(queue_name.len());
+    for byte in queue_name.bytes() {
+        let ch = byte as char;
+        if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-') {
+            encoded.push(ch);
+        } else {
+            encoded.push_str(&format!("_x{byte:02X}_"));
+        }
+    }
+    encoded
 }

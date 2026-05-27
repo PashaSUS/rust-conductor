@@ -170,6 +170,13 @@ async fn task_feed_ws(
     let task_type = path.into_inner();
     let engine = engine.into_inner();
 
+    // Extract optional ?domain=... so workers can route to a Conductor task-domain
+    let domain: Option<String> =
+        web::Query::<std::collections::HashMap<String, String>>::from_query(req.query_string())
+            .ok()
+            .and_then(|q| q.get("domain").cloned())
+            .filter(|s| !s.is_empty());
+
     let (response, mut session, mut msg_stream) = actix_ws::handle(&req, stream)?;
 
     actix_web::rt::spawn(async move {
@@ -204,7 +211,7 @@ async fn task_feed_ws(
                 }
                 _ = ticker.tick() => {
                     // Poll for tasks and push to the worker
-                    match engine.poll_task(&task_type, Some(&worker_id)).await {
+                    match engine.poll_task(&task_type, Some(&worker_id), domain.as_deref()).await {
                         Ok(Some(task)) => {
                             let msg = serde_json::json!({
                                 "type": "taskAssigned",

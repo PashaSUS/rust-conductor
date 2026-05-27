@@ -126,6 +126,8 @@ async function request<T>(path: string, options?: RequestInit): Promise<T>
 
 **Dev proxy:** Vite proxies `/api` and `/health` to `http://localhost:8090`, avoiding CORS configuration during development.
 
+**External server proxy:** When the Settings page points the UI at an absolute cross-origin Conductor URL, `src/lib/config.ts` can route requests through the same-origin backend endpoint `/api/proxy?target=...`. This is enabled by default, can be disabled in Settings for servers that already allow browser CORS requests, and can default off at build time with `VITE_USE_API_PROXY=false`. API bases ending in `/api` are normalized so pasted Conductor URLs do not become `/api/api/...`. The backend performs the upstream request server-side, accepts `/api...` or context-path `/.../api...` and `/health` targets, and supports `CONDUCTOR_PROXY_ALLOWED_HOSTS` as a comma-separated host or host:port allow list for production deployments.
+
 ### State Management
 
 **Pattern:** Server state via React Query, local UI state via `useState` / `useRef`.

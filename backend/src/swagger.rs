@@ -779,6 +779,7 @@ pub fn build_openapi() -> utoipa::openapi::OpenApi {
                         .operation_id(Some("pollTask"))
                         .parameter(path_param("taskType", "Task type to poll for"))
                         .parameter(query_param("workerId", "Worker ID claiming the task"))
+                        .parameter(query_param("domain", "Task domain to poll, using Netflix Conductor domain routing"))
                         .response("200", ok_ref("PollTask", "PollTask object with task details and input"))
                         .response("204", no_content())
                         .build(),
@@ -797,6 +798,7 @@ pub fn build_openapi() -> utoipa::openapi::OpenApi {
                         .operation_id(Some("batchPollTasks"))
                         .parameter(path_param("taskType", "Task type to poll for"))
                         .parameter(query_param("workerId", "Worker ID claiming the tasks"))
+                        .parameter(query_param("domain", "Task domain to poll, using Netflix Conductor domain routing"))
                         .parameter(query_param("count", "Number of tasks to poll (default: 1)"))
                         .parameter(query_param("timeout", "Poll timeout in ms (default: 100)"))
                         .response("200", ok_arr_ref("PollTask", "Array of PollTask objects"))

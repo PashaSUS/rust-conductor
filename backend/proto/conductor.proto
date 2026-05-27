@@ -411,6 +411,7 @@ message TaskResultPb {
 message PollTaskRequest {
   string task_type  = 1;
   string worker_id  = 2;
+  string domain     = 3;
 }
 
 message PollTaskResponse {
@@ -438,6 +439,7 @@ message BatchPollTasksRequest {
   string worker_id  = 2;
   int32  count      = 3;
   uint64 timeout_ms = 4;
+  string domain     = 5;
 }
 
 message BatchPollTasksResponse {

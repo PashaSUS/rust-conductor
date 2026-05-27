@@ -34,8 +34,8 @@ impl WorkflowEngine {
             .map(|secs| now + chrono::Duration::seconds(secs));
 
         sqlx::query(
-            "INSERT INTO workflow (workflow_id, workflow_name, workflow_version, status, input, correlation_id, start_time, update_time, priority, workflow_def, tags, sla_deadline, parent_workflow_id, parent_workflow_task_id)
-             VALUES ($1, $2, $3, 'RUNNING', $4, $5, $6, $6, $7, $8, $9, $10, $11, $12)",
+            "INSERT INTO workflow (workflow_id, workflow_name, workflow_version, status, input, correlation_id, start_time, update_time, priority, workflow_def, tags, sla_deadline, parent_workflow_id, parent_workflow_task_id, task_to_domain)
+             VALUES ($1, $2, $3, 'RUNNING', $4, $5, $6, $6, $7, $8, $9, $10, $11, $12, $13)",
         )
         .bind(&workflow_id)
         .bind(&req.name)
@@ -49,6 +49,7 @@ impl WorkflowEngine {
         .bind(sla_deadline)
         .bind(&req.parent_workflow_id)
         .bind(&req.parent_workflow_task_id)
+        .bind(serde_json::to_value(&req.task_to_domain).unwrap_or_else(|_| Value::Object(Default::default())))
         .execute(db)
         .await
         .map_err(|e| {

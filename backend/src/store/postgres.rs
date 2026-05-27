@@ -274,6 +274,13 @@ pub async fn run_migrations_for_shard(pool: &DbPool, shard_label: &str) {
          ON task (task_type, status, priority DESC) WHERE status = 'SCHEDULED'",
         // Task env_vars for secrets injection
         "ALTER TABLE task ADD COLUMN IF NOT EXISTS env_vars JSONB",
+        // Task-to-domain routing (Netflix Conductor taskToDomain semantics)
+        "ALTER TABLE workflow ADD COLUMN IF NOT EXISTS task_to_domain JSONB NOT NULL DEFAULT '{}'::jsonb",
+        "ALTER TABLE task ADD COLUMN IF NOT EXISTS domain TEXT",
+        "CREATE INDEX IF NOT EXISTS idx_task_type_domain_status \
+         ON task (task_type, domain, status) WHERE status = 'SCHEDULED'",
+        "CREATE INDEX IF NOT EXISTS idx_task_def_domain_status \
+         ON task (task_def_name, domain, status) WHERE status = 'SCHEDULED'",
         // Workflow templates
         r#"CREATE TABLE IF NOT EXISTS workflow_template (
             name        TEXT PRIMARY KEY,

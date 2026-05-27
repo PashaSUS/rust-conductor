@@ -153,7 +153,11 @@ async fn poll_task_v2(
 ) -> Result<HttpResponse, crate::engine::EngineError> {
     let task_type = path.into_inner();
     let task = engine
-        .poll_task(&task_type, query.worker_id.as_deref())
+        .poll_task(
+            &task_type,
+            query.worker_id.as_deref(),
+            query.domain.as_deref(),
+        )
         .await?;
     match task {
         Some(t) => Ok(HttpResponse::Ok()
@@ -174,17 +178,23 @@ struct VersionQuery {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PollQuery {
+    #[serde(alias = "workerid")]
     worker_id: Option<String>,
+    #[serde(default)]
+    domain: Option<String>,
 }
 
-// ── Long Polling (#170) ────────────────────────────────────────────────────
+// ── Long Polling (#170) ───────────────────────────────────────────────
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LongPollQuery {
+    #[serde(alias = "workerid")]
     worker_id: Option<String>,
     /// Maximum wait time in milliseconds (default 10000, max 30000)
     timeout_ms: Option<u64>,
+    #[serde(default)]
+    domain: Option<String>,
 }
 
 /// Long-polling endpoint for workers — waits server-side for a task to become
@@ -212,7 +222,11 @@ async fn long_poll_task(
         }
 
         let task = engine
-            .poll_task(&task_type, query.worker_id.as_deref())
+            .poll_task(
+                &task_type,
+                query.worker_id.as_deref(),
+                query.domain.as_deref(),
+            )
             .await?;
 
         if let Some(t) = task {

@@ -3,22 +3,27 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Settings as SettingsIcon, Server, Power } from "lucide-react";
+import { Settings as SettingsIcon, Server, Power, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import {
   getApiBase,
   setApiBase,
   isLiteMode,
   setLiteMode,
+  getUseApiProxy,
+  setUseApiProxy,
+  resetUseApiProxy,
 } from "@/lib/config";
 
 export default function Settings() {
   const [url, setUrl] = useState(() => getApiBase());
   const [lite, setLite] = useState(() => isLiteMode());
+  const [useProxy, setUseProxy] = useState(() => getUseApiProxy());
 
   const save = () => {
     setApiBase(url || null);
     setLiteMode(lite);
+    setUseApiProxy(useProxy);
     toast.success("Settings saved. Reloading…");
     setTimeout(() => window.location.reload(), 500);
   };
@@ -26,6 +31,7 @@ export default function Settings() {
   const reset = () => {
     setApiBase(null);
     setLiteMode(false);
+    resetUseApiProxy();
     toast.success("Settings reset. Reloading…");
     setTimeout(() => window.location.reload(), 500);
   };
@@ -60,6 +66,25 @@ export default function Settings() {
               server. Leave blank to use the default (same origin /{" "}
               <code>VITE_API_BASE</code>).
             </p>
+          </div>
+
+          <div className="flex items-start gap-3 rounded-md border p-3">
+            <Checkbox
+              checked={useProxy}
+              onCheckedChange={(v) => setUseProxy(v === true)}
+              className="mt-0.5"
+            />
+            <div className="flex-1">
+              <div className="text-sm font-medium flex items-center gap-2">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                Use same-origin proxy for external APIs
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Keeps browser requests on this UI origin when the API base URL
+                points to another host. Turn this off when that server already
+                allows direct browser CORS requests.
+              </p>
+            </div>
           </div>
 
           <div className="flex items-start gap-3 rounded-md border p-3">

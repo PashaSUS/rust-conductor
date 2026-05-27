@@ -8,6 +8,7 @@ pub(crate) struct OrphanedTaskRow {
     pub task_id: String,
     pub task_def_name: String,
     pub workflow_instance_id: String,
+    pub domain: Option<String>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -32,6 +33,7 @@ pub(crate) struct WorkflowRow {
     pub parent_workflow_task_id: Option<String>,
     pub tags: Value,
     pub sla_deadline: Option<chrono::DateTime<Utc>>,
+    pub task_to_domain: Value,
 }
 
 #[derive(sqlx::FromRow)]
@@ -58,6 +60,7 @@ pub(crate) struct TaskRow {
     pub parent_task_id: Option<String>,
     pub priority: i32,
     pub env_vars: Option<Value>,
+    pub domain: Option<String>,
 }
 
 impl From<TaskRow> for TaskResult {
@@ -93,7 +96,7 @@ impl From<TaskRow> for TaskResult {
             callback_from_worker: true,
             response_timeout_seconds: None,
             workflow_type: None,
-            domain: None,
+            domain: r.domain,
             rate_limit_per_frequency: None,
             rate_limit_frequency_in_seconds: None,
             workflow_priority: None,

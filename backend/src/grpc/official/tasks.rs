@@ -29,7 +29,7 @@ impl pb::task_service_server::TaskService for OfficialTaskServiceImpl {
         let req = request.into_inner();
         let result = self
             .engine
-            .poll_task(&req.task_type, opt(&req.worker_id))
+            .poll_task(&req.task_type, opt(&req.worker_id), opt(&req.domain))
             .await
             .map_err(engine_err_to_status)?;
         match result {
@@ -56,6 +56,7 @@ impl pb::task_service_server::TaskService for OfficialTaskServiceImpl {
                 opt(&req.worker_id),
                 req.count as usize,
                 req.timeout as u64,
+                opt(&req.domain),
             )
             .await
             .map_err(engine_err_to_status)?;

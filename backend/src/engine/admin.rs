@@ -191,8 +191,8 @@ impl WorkflowEngine {
     pub async fn requeue_pending_tasks(&self, task_type: &str) -> Result<i64, EngineError> {
         let futs: Vec<_> = self.shards.all_shards().iter().map(|shard| {
             async move {
-                let rows: Vec<(String, String)> = sqlx::query_as(
-                    "SELECT task_id, workflow_instance_id FROM task WHERE task_def_name = $1 AND status = 'SCHEDULED'",
+                let rows: Vec<(String, String, Option<String>)> = sqlx::query_as(
+                    "SELECT task_id, workflow_instance_id, domain FROM task WHERE task_def_name = $1 AND status = 'SCHEDULED'",
                 )
                 .bind(task_type)
                 .fetch_all(shard)
@@ -205,10 +205,11 @@ impl WorkflowEngine {
         let results = join_all(futs).await;
         let mut count: i64 = 0;
         for result in results {
-            for (task_id, workflow_id) in result? {
+            for (task_id, workflow_id, domain) in result? {
                 self.set_task_routing(&task_id, &workflow_id).await?;
+                let queue_name = super::queue_name_for(task_type, domain.as_deref());
                 self.queue
-                    .enqueue(task_type, &task_id)
+                    .enqueue(&queue_name, &task_id)
                     .await
                     .map_err(EngineError::Redis)?;
                 count += 1;

@@ -58,6 +58,18 @@ pub(crate) fn is_task_failed(status: &TaskStatus) -> bool {
     )
 }
 
+/// Compute the routing queue name for a worker task, applying Netflix
+/// Conductor's `taskToDomain` convention: when a non-empty domain is set,
+/// tasks are routed to `<domain>:<taskType>`; otherwise the bare task type
+/// is used. This matches Netflix Conductor's `QueueUtils` and ConductorSharp's
+/// worker queue discovery.
+pub(crate) fn queue_name_for(task_type: &str, domain: Option<&str>) -> String {
+    match domain {
+        Some(d) if !d.is_empty() => format!("{d}:{task_type}"),
+        _ => task_type.to_string(),
+    }
+}
+
 /// Redis hash key that maps task_id → workflow_instance_id for O(1) shard
 /// routing.  Populated at task-queue time, deleted on terminal status.
 const TASK_ROUTING_KEY: &str = "conductor:task_routing";

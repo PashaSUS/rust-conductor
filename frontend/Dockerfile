@@ -6,15 +6,12 @@ RUN npm ci
 COPY . .
 ARG VITE_API_BASE=""
 ENV VITE_API_BASE=$VITE_API_BASE
+ARG VITE_USE_API_PROXY="true"
+ENV VITE_USE_API_PROXY=$VITE_USE_API_PROXY
 RUN npm run build
 
-# Production stage — serve static files
-FROM node:24-alpine
-RUN npm install -g serve@14.2.6
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
-WORKDIR /app
-COPY --from=builder /app/dist ./dist
-RUN chown -R appuser:appgroup /app
-USER appuser
+# Production stage — serve static files and proxy API calls
+FROM nginx:alpine
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=builder /app/dist /usr/share/nginx/html
 EXPOSE 3170
-CMD ["serve", "dist", "-l", "3170", "-s"]
