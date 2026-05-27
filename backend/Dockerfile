@@ -22,6 +22,8 @@ RUN cargo build --release --no-default-features --features "${CARGO_FEATURES}"
 # Runtime stage
 FROM debian:trixie-slim
 RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN groupadd -r appuser && useradd -r -g appuser appuser
 COPY --from=builder /app/target/release/rust-conductor /usr/local/bin/rust-conductor
+USER appuser
 EXPOSE 8090 50055
 CMD ["rust-conductor"]
