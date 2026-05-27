@@ -28,17 +28,17 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .configure(event::configure)
             .configure(admin::configure)
             .configure(schedule::configure)
-            .configure(|c| {
+            .configure(|_c| {
                 #[cfg(feature = "graphql")]
-                graphql::configure(c);
+                graphql::configure(_c);
                 #[cfg(feature = "sse")]
-                sse::configure(c);
+                sse::configure(_c);
                 #[cfg(feature = "websocket")]
-                websocket::configure(c);
+                websocket::configure(_c);
                 #[cfg(feature = "api-v2")]
                 {
-                    v2::configure_v2(c);
-                    v2::configure_batch(c);
+                    v2::configure_v2(_c);
+                    v2::configure_batch(_c);
                 }
             }),
     )

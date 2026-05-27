@@ -134,17 +134,20 @@ services:
   rustfs:
     image: rustfs/rustfs:latest
     restart: unless-stopped
+    environment:
+      RUSTFS_ACCESS_KEY: "rustfsadmin"
+      RUSTFS_SECRET_KEY: "rustfsadmin"
+      RUSTFS_VOLUMES: "/data"
+      RUSTFS_ADDRESS: "0.0.0.0:9000"
+      RUSTFS_CONSOLE_ADDRESS: "0.0.0.0:9001"
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_OBS_LOG_DIRECTORY: "/logs"
     ports:
       - "9000:9000"
       - "9001:9001"
     volumes:
       - rustfsdata:/data
       - rustfslogs:/logs
-    healthcheck:
-      test: ["CMD-SHELL", "nc -z localhost 9000"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   # ── Backend (migrations) ────────────────────────────────────────────
   backend-migrate:
@@ -174,7 +177,7 @@ services:
       seq:
         condition: service_healthy
       rustfs:
-        condition: service_healthy
+        condition: service_started
 
   # ── Backend ─────────────────────────────────────────────────────────
   backend:
@@ -212,7 +215,7 @@ services:
       seq:
         condition: service_healthy
       rustfs:
-        condition: service_healthy
+        condition: service_started
 
   # ── Frontend ────────────────────────────────────────────────────────
   frontend:

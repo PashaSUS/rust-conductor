@@ -318,17 +318,20 @@ if /i "!USE_MINIO!"=="y" (
     >> "%FILE%" echo   rustfs:
     >> "%FILE%" echo     image: rustfs/rustfs:latest
     >> "%FILE%" echo     restart: unless-stopped
+    >> "%FILE%" echo     environment:
+    >> "%FILE%" echo       RUSTFS_ACCESS_KEY: "rustfsadmin"
+    >> "%FILE%" echo       RUSTFS_SECRET_KEY: "rustfsadmin"
+    >> "%FILE%" echo       RUSTFS_VOLUMES: "/data"
+    >> "%FILE%" echo       RUSTFS_ADDRESS: "0.0.0.0:9000"
+    >> "%FILE%" echo       RUSTFS_CONSOLE_ADDRESS: "0.0.0.0:9001"
+    >> "%FILE%" echo       RUSTFS_CONSOLE_ENABLE: "true"
+    >> "%FILE%" echo       RUSTFS_OBS_LOG_DIRECTORY: "/logs"
     >> "%FILE%" echo     ports:
     >> "%FILE%" echo       - "!MINIO_PORT!:9000"
     >> "%FILE%" echo       - "!MINIO_CONSOLE_PORT!:9001"
     >> "%FILE%" echo     volumes:
     >> "%FILE%" echo       - rustfsdata:/data
     >> "%FILE%" echo       - rustfslogs:/logs
-    >> "%FILE%" echo     healthcheck:
-    >> "%FILE%" echo       test: ["CMD-SHELL", "nc -z localhost 9000"]
-    >> "%FILE%" echo       interval: 10s
-    >> "%FILE%" echo       timeout: 5s
-    >> "%FILE%" echo       retries: 5
     >> "%FILE%" echo.
 )
 
@@ -365,7 +368,7 @@ if /i "!USE_MINIO!"=="y" (
 >> "%FILE%" echo         condition: service_healthy
 if /i "!USE_MINIO!"=="y" (
     >> "%FILE%" echo       rustfs:
-    >> "%FILE%" echo         condition: service_healthy
+    >> "%FILE%" echo         condition: service_started
 )
 >> "%FILE%" echo.
 
@@ -417,7 +420,7 @@ if /i "!USE_MINIO!"=="y" (
 >> "%FILE%" echo         condition: service_healthy
 if /i "!USE_MINIO!"=="y" (
     >> "%FILE%" echo       rustfs:
-    >> "%FILE%" echo         condition: service_healthy
+    >> "%FILE%" echo         condition: service_started
 )
 >> "%FILE%" echo.
 

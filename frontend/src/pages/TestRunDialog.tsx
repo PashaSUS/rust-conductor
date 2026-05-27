@@ -43,38 +43,39 @@ export function TestRunDialog({ def, onClose }: TestRunDialogProps) {
 
   const testRunMut = useMutation({
     mutationFn: async ({ taskName, input }: { taskName: string; input: Record<string, unknown> }) => {
-      const wfName = "__test_run_task";
+      // One wrapper workflow per task type. We always (re-)register it so the
+      // inputParameters wiring reflects whatever keys the user supplied — the
+      // engine upserts on (name, version) so this is cheap and idempotent.
+      const safe = taskName.replace(/[^A-Za-z0-9_.-]/g, "_");
+      const wfName = `__test_run_${safe}`;
 
-      let needsRegister = false;
-      try {
-        await metadataApi.getWorkflowDef(wfName, 1);
-      } catch {
-        needsRegister = true;
+      // Forward every input key (declared on the task def OR entered ad-hoc)
+      // from workflow.input into the task's inputParameters. Without this,
+      // user-entered values never reach the task.
+      const keys = new Set<string>([...(def?.inputKeys ?? []), ...Object.keys(input)]);
+      const inputParameters: Record<string, string> = {};
+      for (const k of keys) {
+        inputParameters[k] = `\${workflow.input.${k}}`;
       }
 
-      if (needsRegister) {
-        await metadataApi.registerWorkflowDef({
-          name: wfName,
-          version: 1,
-          description: "Dynamic test-run wrapper — runs any task type via DYNAMIC dispatch",
-          tasks: [
-            {
-              name: "__dynamic_test",
-              taskReferenceName: "dynamic_test",
-              type: "DYNAMIC",
-              dynamicTaskNameParam: "taskToExecute",
-              inputParameters: {
-                taskToExecute: "${workflow.input.taskToExecute}",
-              },
-            },
-          ],
-        });
-      }
+      await metadataApi.registerWorkflowDef({
+        name: wfName,
+        version: 1,
+        description: `Test-run wrapper for task "${taskName}"`,
+        tasks: [
+          {
+            name: taskName,
+            taskReferenceName: `${safe}_ref`,
+            type: "SIMPLE",
+            inputParameters,
+          },
+        ],
+      });
 
       return workflowApi.start({
         name: wfName,
         version: 1,
-        input: { taskToExecute: taskName, ...input },
+        input,
       });
     },
     onSuccess: (workflowId) => {
