@@ -143,6 +143,7 @@ fn is_allowed_host(target: &reqwest::Url) -> bool {
 fn should_skip_response_header(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
+        // Hop-by-hop headers that must not be forwarded
         "connection"
             | "content-length"
             | "proxy-authenticate"
@@ -151,5 +152,16 @@ fn should_skip_response_header(name: &str) -> bool {
             | "trailer"
             | "transfer-encoding"
             | "upgrade"
+            // Strip all upstream CORS headers so the backend's own actix-cors
+            // middleware is the sole source of Access-Control-* values on every
+            // proxy response. Forwarding upstream CORS headers alongside our own
+            // creates duplicate Access-Control-Allow-Origin values, which browsers
+            // reject with a CORS error even though the request succeeded.
+            | "access-control-allow-origin"
+            | "access-control-allow-methods"
+            | "access-control-allow-headers"
+            | "access-control-allow-credentials"
+            | "access-control-expose-headers"
+            | "access-control-max-age"
     )
 }
