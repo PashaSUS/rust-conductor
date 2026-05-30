@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 use super::expression::{
     evaluate_loop_condition, navigate_json, resolve_expression, resolve_string_value, resolve_value,
 };
-use super::{is_task_failed, is_task_successful, is_task_terminal};
+use super::{is_task_failed, is_task_successful, is_task_terminal, queue_name_for};
 use crate::models::*;
 
 // ─── Task status helpers ────────────────────────────────────────────────
@@ -49,6 +49,15 @@ fn failed_statuses() {
     assert!(!is_task_failed(&TaskStatus::Completed));
     assert!(!is_task_failed(&TaskStatus::InProgress));
     assert!(!is_task_failed(&TaskStatus::Canceled));
+}
+
+#[test]
+fn queue_name_normalizes_domain() {
+    assert_eq!(queue_name_for("notify", None), "notify");
+    assert_eq!(queue_name_for("notify", Some("")), "notify");
+    assert_eq!(queue_name_for("notify", Some(" NO_DOMAIN ")), "notify");
+    assert_eq!(queue_name_for("notify", Some("prod")), "prod:notify");
+    assert_eq!(queue_name_for("notify", Some(" prod ")), "prod:notify");
 }
 
 // ─── TaskStatus Display ─────────────────────────────────────────────────

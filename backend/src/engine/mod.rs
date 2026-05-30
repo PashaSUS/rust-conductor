@@ -65,7 +65,9 @@ pub(crate) fn is_task_failed(status: &TaskStatus) -> bool {
 /// worker queue discovery.
 pub(crate) fn queue_name_for(task_type: &str, domain: Option<&str>) -> String {
     match domain {
-        Some(d) if !d.is_empty() => format!("{d}:{task_type}"),
+        Some(d) if !d.trim().is_empty() && !d.trim().eq_ignore_ascii_case("NO_DOMAIN") => {
+            format!("{}:{task_type}", d.trim())
+        }
         _ => task_type.to_string(),
     }
 }

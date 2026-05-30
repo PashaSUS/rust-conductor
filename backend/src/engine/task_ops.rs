@@ -52,7 +52,7 @@ impl WorkflowEngine {
                 {
                     let db = self.shards.shard_for(&wf_id);
                     let now = Utc::now();
-                    sqlx::query(
+                    let updated = sqlx::query(
                         "UPDATE task SET status = 'IN_PROGRESS', start_time = $2, update_time = $2, poll_count = poll_count + 1, worker_id = $3 WHERE task_id = $1 AND status = 'SCHEDULED'",
                     )
                     .bind(&task_id)
@@ -65,6 +65,17 @@ impl WorkflowEngine {
                         EngineError::Database(e.to_string())
                     })?;
 
+                    // Another worker already claimed this task (race/duplicate queue entry).
+                    // Return nothing — do NOT re-enqueue; the task is already dispatched.
+                    if updated.rows_affected() == 0 {
+                        tracing::warn!(
+                            task_id = %task_id,
+                            current_status = %r.status,
+                            "Polled task is no longer SCHEDULED (already claimed or terminated); discarding stale queue message"
+                        );
+                        return Ok(None);
+                    }
+
                     return Ok(Some(PollTask {
                         task_id: r.task_id,
                         workflow_instance_id: r.workflow_instance_id,
@@ -76,7 +87,7 @@ impl WorkflowEngine {
                         scheduled_time: Some(r.scheduled_time.timestamp_millis()),
                         start_time: Some(now.timestamp_millis()),
                         callback_after_seconds: r.callback_after_seconds,
-                        poll_count: r.poll_count,
+                        poll_count: r.poll_count + 1,
                         retry_count: r.retry_count,
                         priority: r.priority,
                         env_vars: r.env_vars,
@@ -87,7 +98,18 @@ impl WorkflowEngine {
         .await;
 
         match result {
-            Ok(poll_task) => Ok(poll_task),
+            Ok(Some(task)) => Ok(Some(task)),
+            Ok(None) => {
+                // Task not found in DB (routing miss, replication lag, or genuine orphan).
+                // The dequeued task_id is discarded; the sweeper will re-enqueue it from
+                // the primary DB within its next cycle if the task is still SCHEDULED.
+                tracing::warn!(
+                    task_id = %task_id,
+                    queue = %queue_name,
+                    "Dequeued task not found in DB or no longer claimable; queue message discarded"
+                );
+                Ok(None)
+            }
             Err(e) => {
                 // DB lookup failed after dequeue — re-enqueue the task via Kafka so it is not lost
                 tracing::warn!(task_id = %task_id, error = %e, "Re-enqueuing task after poll DB failure");
@@ -281,7 +303,7 @@ impl WorkflowEngine {
                     {
                         let db = self.shards.shard_for(&r.workflow_instance_id);
                         let now = Utc::now();
-                        sqlx::query(
+                        let updated = sqlx::query(
                             "UPDATE task SET status = 'IN_PROGRESS', start_time = $2, update_time = $2, poll_count = poll_count + 1, worker_id = $3 WHERE task_id = $1 AND status = 'SCHEDULED'",
                         )
                         .bind(task_id)
@@ -290,6 +312,16 @@ impl WorkflowEngine {
                         .execute(db)
                         .await
                         .map_err(|e| EngineError::Database(e.to_string()))?;
+
+                        // Task already claimed or terminated — discard this duplicate queue entry.
+                        if updated.rows_affected() == 0 {
+                            tracing::warn!(
+                                task_id = %task_id,
+                                current_status = %r.status,
+                                "Batch poll: task is no longer SCHEDULED; discarding stale queue message"
+                            );
+                            return Ok::<(), EngineError>(());
+                        }
 
                     tasks.push(PollTask {
                         task_id: r.task_id,
@@ -302,11 +334,17 @@ impl WorkflowEngine {
                         scheduled_time: Some(r.scheduled_time.timestamp_millis()),
                         start_time: Some(now.timestamp_millis()),
                         callback_after_seconds: r.callback_after_seconds,
-                        poll_count: r.poll_count,
+                        poll_count: r.poll_count + 1,
                         retry_count: r.retry_count,
                         priority: r.priority,
                         env_vars: r.env_vars,
                     });
+                } else {
+                    tracing::warn!(
+                        task_id = %task_id,
+                        queue = %queue_name,
+                        "Batch poll: dequeued task not found in DB; queue message discarded"
+                    );
                 }
                 Ok::<(), EngineError>(())
             }

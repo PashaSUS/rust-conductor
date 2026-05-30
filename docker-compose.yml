@@ -6,10 +6,10 @@ services:
     command: >
       postgres
       -c max_locks_per_transaction=256
-      -c max_connections=400
-      -c shared_buffers=512MB
-      -c work_mem=16MB
-      -c effective_cache_size=1GB
+      -c max_connections=200
+      -c shared_buffers=256MB
+      -c work_mem=8MB
+      -c effective_cache_size=512MB
     environment:
       POSTGRES_USER: conductor
       POSTGRES_PASSWORD: conductor
@@ -35,10 +35,10 @@ services:
       DB_PASSWORD: conductor
       DB_NAME: conductor
       POOL_MODE: transaction
-      MAX_CLIENT_CONN: "800"
-      DEFAULT_POOL_SIZE: "80"
+      MAX_CLIENT_CONN: "400"
+      DEFAULT_POOL_SIZE: "40"
       MIN_POOL_SIZE: "10"
-      RESERVE_POOL_SIZE: "20"
+      RESERVE_POOL_SIZE: "10"
       LISTEN_PORT: "6432"
       AUTH_TYPE: scram-sha-256
       IGNORE_STARTUP_PARAMETERS: extra_float_digits
@@ -115,12 +115,31 @@ services:
       retries: 10
       start_period: 30s
 
+  # RustFS - S3-compatible object storage
+  rustfs:
+    image: rustfs/rustfs:latest
+    restart: unless-stopped
+    environment:
+      RUSTFS_ACCESS_KEY: "rustfsadmin"
+      RUSTFS_SECRET_KEY: "rustfsadmin"
+      RUSTFS_VOLUMES: "/data"
+      RUSTFS_ADDRESS: "0.0.0.0:9000"
+      RUSTFS_CONSOLE_ADDRESS: "0.0.0.0:9001"
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_OBS_LOG_DIRECTORY: "/logs"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - rustfsdata:/data
+      - rustfslogs:/logs
+
   backend-migrate:
     build:
       context: ./backend
       dockerfile: Dockerfile
       args:
-        CARGO_FEATURES: "kafka,graphql,sse,websocket,grpc-reflection,api-v2,seq"
+        CARGO_FEATURES: "feature-rich"
     environment:
       HOST: "0.0.0.0"
       PORT: "8090"
@@ -131,6 +150,11 @@ services:
       RUST_LOG: "info"
       MIGRATE_ONLY: "true"
       SEQ_URL: "http://seq:80"
+      S3_ENDPOINT: "http://rustfs:9000"
+      S3_BUCKET: "conductor-payloads"
+      S3_REGION: "us-east-1"
+      S3_ACCESS_KEY: "rustfsadmin"
+      S3_SECRET_KEY: "rustfsadmin"
     depends_on:
       postgres-shard-0:
         condition: service_healthy
@@ -140,13 +164,15 @@ services:
         condition: service_healthy
       seq:
         condition: service_healthy
+      rustfs:
+        condition: service_started
 
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
       args:
-        CARGO_FEATURES: "kafka,graphql,sse,websocket,grpc-reflection,api-v2,seq"
+        CARGO_FEATURES: "feature-rich"
     restart: unless-stopped
     expose:
       - "8090"
@@ -160,14 +186,19 @@ services:
       REDIS_URLS: "redis://redis-0:6379"
       KAFKA_BROKERS: "kafka-0:9092"
       CORS_ORIGIN: "http://localhost:3170"
-      RUST_LOG: "warn"
+      RUST_LOG: "info"
       SKIP_MIGRATIONS: "true"
-      RATE_LIMIT_ENABLED: "false"
+      RATE_LIMIT_ENABLED: "true"
       RATE_LIMIT_MAX_REQUESTS: "1000"
       RATE_LIMIT_WINDOW_SECS: "60"
       SWEEPER_MIN_INTERVAL_SECS: "10"
       SWEEPER_MAX_INTERVAL_SECS: "60"
       SEQ_URL: "http://seq:80"
+      S3_ENDPOINT: "http://rustfs:9000"
+      S3_BUCKET: "conductor-payloads"
+      S3_REGION: "us-east-1"
+      S3_ACCESS_KEY: "rustfsadmin"
+      S3_SECRET_KEY: "rustfsadmin"
     deploy:
       replicas: 1
     depends_on:
@@ -181,6 +212,8 @@ services:
         condition: service_healthy
       seq:
         condition: service_healthy
+      rustfs:
+        condition: service_started
 
   nginx-lb:
     image: nginx:alpine
@@ -251,3 +284,5 @@ volumes:
   seqdata:
   prometheusdata:
   grafanadata:
+  rustfsdata:
+  rustfslogs:

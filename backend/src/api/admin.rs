@@ -7,6 +7,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         web::scope("/admin")
             .route("/config", web::get().to(get_all_config))
             .route("/sweep/{workflowId}", web::post().to(sweep_workflow))
+            .route("/requeue", web::post().to(requeue_all_scheduled))
             .route("/task/{taskType}", web::get().to(get_tasks_for_type))
             .route(
                 "/task/{taskType}/requeuetasks",
@@ -75,6 +76,16 @@ async fn requeue_pending_tasks(
 ) -> Result<HttpResponse, crate::engine::EngineError> {
     let count = engine.requeue_pending_tasks(&path.into_inner()).await?;
     Ok(HttpResponse::Ok().json(count))
+}
+
+/// Re-enqueue ALL SCHEDULED worker tasks across every task type.
+/// Use this to immediately recover from a split-brain state where
+/// `GET /api/tasks/queue/all` shows queued tasks but poll returns empty.
+async fn requeue_all_scheduled(
+    engine: web::Data<WorkflowEngine>,
+) -> Result<HttpResponse, crate::engine::EngineError> {
+    let recovered = engine.sweep_orphaned_tasks().await?;
+    Ok(HttpResponse::Ok().json(serde_json::json!({ "requeued": recovered })))
 }
 
 async fn pool_metrics(engine: web::Data<WorkflowEngine>) -> HttpResponse {
