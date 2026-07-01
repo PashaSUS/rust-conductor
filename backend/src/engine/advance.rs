@@ -289,7 +289,11 @@ impl WorkflowEngine {
                 Some(task) => {
                     match task_def.task_type.as_str() {
                         "JOIN" => {
-                            if self.check_join_prerequisites(workflow_id, task_def).await? {
+                            let effective_task_def = effective_join_task_def(task_def, task);
+                            if self
+                                .check_join_prerequisites(workflow_id, &effective_task_def)
+                                .await?
+                            {
                                 self.complete_task_by_id(workflow_id, &task.task_id).await?;
                                 continue;
                             }
@@ -774,5 +778,94 @@ impl WorkflowEngine {
             }
             _ => {}
         }
+    }
+}
+
+fn effective_join_task_def(def: &WorkflowTask, task: &TaskResult) -> WorkflowTask {
+    let mut effective = def.clone();
+    if effective.join_on.is_empty()
+        && let Some(runtime_join_on) = runtime_join_on_refs(&task.input_data)
+    {
+        effective.join_on = runtime_join_on;
+    }
+    effective
+}
+
+fn runtime_join_on_refs(input: &Value) -> Option<Vec<String>> {
+    let refs: Vec<String> = input
+        .get("joinOn")
+        .or_else(|| input.get("__dynamicJoinOn"))
+        .and_then(Value::as_array)?
+        .iter()
+        .filter_map(|v| v.as_str().map(str::trim))
+        .filter(|v| !v.is_empty())
+        .map(ToOwned::to_owned)
+        .collect();
+
+    (!refs.is_empty()).then_some(refs)
+}
+
+#[cfg(test)]
+mod dynamic_join_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn runtime_join_on_overrides_empty_static_join() {
+        let def = WorkflowTask {
+            task_type: "JOIN".to_string(),
+            ..Default::default()
+        };
+        let task = TaskResult {
+            task_id: "join-id".to_string(),
+            workflow_instance_id: "wf-id".to_string(),
+            task_type: "JOIN".to_string(),
+            task_def_name: "join".to_string(),
+            reference_task_name: "join".to_string(),
+            status: TaskStatus::InProgress,
+            input_data: json!({ "joinOn": ["a", "b"] }),
+            output_data: json!({}),
+            reason_for_incompletion: None,
+            scheduled_time: None,
+            start_time: None,
+            end_time: None,
+            update_time: None,
+            poll_count: 0,
+            worker_id: None,
+            seq: 0,
+            retry_count: 0,
+            callback_after_seconds: 0,
+            logs: vec![],
+            external_input_payload_storage_path: None,
+            external_output_payload_storage_path: None,
+            correlation_id: None,
+            start_delay_in_seconds: None,
+            retried_task_id: None,
+            retried: false,
+            executed: false,
+            callback_from_worker: false,
+            response_timeout_seconds: None,
+            workflow_type: None,
+            domain: None,
+            rate_limit_per_frequency: None,
+            rate_limit_frequency_in_seconds: None,
+            workflow_priority: None,
+            execution_name_space: None,
+            isolation_group_id: None,
+            iteration: None,
+            sub_workflow_id: None,
+            subworkflow_changed: false,
+            first_start_time: None,
+            parent_task_id: None,
+            loop_over_task: false,
+            queue_wait_time: None,
+            workflow_task: None,
+            task_definition: None,
+            last_heartbeat_time: None,
+        };
+
+        let effective = effective_join_task_def(&def, &task);
+
+        assert_eq!(effective.join_on, vec!["a".to_string(), "b".to_string()]);
     }
 }

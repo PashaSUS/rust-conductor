@@ -1,9 +1,16 @@
 import { conductorUrl } from "@/lib/config";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const headers = new Headers(options?.headers);
+  if (!headers.has("Accept")) headers.set("Accept", "application/json");
+  if (options?.body !== undefined && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
   const res = await fetch(conductorUrl(`/api${path}`), {
-    headers: { "Content-Type": "application/json" },
     ...options,
+    credentials: options?.credentials ?? "omit",
+    headers,
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ message: res.statusText }));
@@ -143,7 +150,11 @@ export const taskApi = {
 // ── Health ──
 
 export const healthApi = {
-  check: () => fetch(conductorUrl("/health")).then((r) => r.json()),
+  check: () =>
+    fetch(conductorUrl("/health"), {
+      credentials: "omit",
+      headers: { Accept: "application/json" },
+    }).then((r) => r.json()),
 };
 
 // ── Schedules ──

@@ -43,6 +43,11 @@ fn base64_decode(data: &[u8]) -> Option<Vec<u8>> {
             _ => None,
         }
     }
+    let unpadded_len = data.iter().filter(|&&b| b != b'=').count();
+    if unpadded_len % 4 == 1 {
+        return None;
+    }
+
     let mut out = Vec::new();
     let mut buf: u32 = 0;
     let mut bits: u32 = 0;
@@ -59,6 +64,38 @@ fn base64_decode(data: &[u8]) -> Option<Vec<u8>> {
         }
     }
     Some(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{base64_decode, base64_encode};
+
+    #[test]
+    fn base64_url_roundtrip_without_padding() {
+        for data in [
+            b"".as_slice(),
+            b"hello".as_slice(),
+            &[0, 1, 2, 253, 254, 255],
+            br#"{"t":123,"id":"wf-1"}"#,
+        ] {
+            let encoded = base64_encode(data);
+            assert!(!encoded.contains('='));
+            assert!(!encoded.contains('+'));
+            assert!(!encoded.contains('/'));
+            assert_eq!(base64_decode(encoded.as_bytes()), Some(data.to_vec()));
+        }
+    }
+
+    #[test]
+    fn base64_decode_accepts_legacy_standard_url_chars() {
+        assert_eq!(base64_decode(b"+/8="), Some(vec![251, 255]));
+    }
+
+    #[test]
+    fn base64_decode_rejects_invalid_chars_and_lengths() {
+        assert_eq!(base64_decode(b"abc!"), None);
+        assert_eq!(base64_decode(b"A"), None);
+    }
 }
 
 impl WorkflowEngine {

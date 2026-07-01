@@ -523,144 +523,7 @@ impl WorkflowEngine {
     }
 
     pub(crate) fn validate_workflow_def_internal(&self, def: &WorkflowDef) -> ValidationResult {
-        let mut errors = Vec::new();
-        let mut warnings = Vec::new();
-
-        if def.name.is_empty() {
-            errors.push("Workflow name is empty".into());
-        }
-        if def.tasks.is_empty() {
-            errors.push("Workflow has no tasks".into());
-            return ValidationResult {
-                valid: false,
-                errors,
-                warnings,
-            };
-        }
-
-        // Collect all task reference names and check for duplicates
-        let mut ref_names: HashSet<String> = HashSet::new();
-        let all_tasks = collect_all_tasks(&def.tasks);
-
-        for task in &all_tasks {
-            if task.task_reference_name.is_empty() {
-                errors.push(format!("Task '{}' has empty reference name", task.name));
-            }
-            if !ref_names.insert(task.task_reference_name.clone()) {
-                errors.push(format!(
-                    "Duplicate task reference name: {}",
-                    task.task_reference_name
-                ));
-            }
-        }
-
-        // Validate JOIN tasks reference valid tasks
-        for task in &all_tasks {
-            if task.task_type == "JOIN" {
-                for join_ref in &task.join_on {
-                    if !ref_names.contains(join_ref) {
-                        errors.push(format!(
-                            "JOIN task '{}' references non-existent task: {}",
-                            task.task_reference_name, join_ref
-                        ));
-                    }
-                }
-            }
-        }
-
-        // Validate FORK tasks have matching JOIN
-        for (idx, task) in def.tasks.iter().enumerate() {
-            if task.task_type == "FORK_JOIN" || task.task_type == "FORK" {
-                if task.fork_tasks.is_empty() {
-                    errors.push(format!(
-                        "FORK task '{}' has no branches",
-                        task.task_reference_name
-                    ));
-                }
-                // Check if next task is a JOIN
-                if idx + 1 < def.tasks.len() {
-                    let next = &def.tasks[idx + 1];
-                    if next.task_type != "JOIN" {
-                        warnings.push(format!(
-                            "FORK task '{}' is not immediately followed by a JOIN",
-                            task.task_reference_name
-                        ));
-                    }
-                }
-            }
-        }
-
-        // Validate DECISION cases
-        for task in &all_tasks {
-            if task.task_type == "DECISION" || task.task_type == "SWITCH" {
-                if task.decision_cases.is_empty() && task.default_case.is_empty() {
-                    errors.push(format!(
-                        "DECISION task '{}' has no cases defined",
-                        task.task_reference_name
-                    ));
-                }
-                if task.case_value_param.is_none()
-                    && task.case_expression.is_none()
-                    && task.condition_tree.is_none()
-                {
-                    warnings.push(format!(
-                        "DECISION task '{}' has no case_value_param, case_expression, or condition_tree",
-                        task.task_reference_name
-                    ));
-                }
-            }
-        }
-
-        // Validate SUB_WORKFLOW params
-        for task in &all_tasks {
-            if task.task_type == "SUB_WORKFLOW" && task.sub_workflow_param.is_none() {
-                errors.push(format!(
-                    "SUB_WORKFLOW task '{}' has no sub_workflow_param",
-                    task.task_reference_name
-                ));
-            }
-        }
-
-        // Validate MAP tasks
-        for task in &all_tasks {
-            if task.task_type == "MAP" {
-                if task.map_items_param.is_none() {
-                    errors.push(format!(
-                        "MAP task '{}' must specify map_items_param",
-                        task.task_reference_name
-                    ));
-                }
-                if task.map_task.is_none() {
-                    errors.push(format!(
-                        "MAP task '{}' must specify map_task template",
-                        task.task_reference_name
-                    ));
-                }
-            }
-        }
-
-        // Detect cycles using topological sort
-        let has_cycle = detect_cycles(&def.tasks);
-        if has_cycle {
-            errors.push("Task dependency graph contains a cycle".into());
-        }
-
-        // Check for unreachable tasks
-        let reachable = find_reachable_tasks(&def.tasks);
-        for task in &all_tasks {
-            if !reachable.contains(&task.task_reference_name) {
-                warnings.push(format!(
-                    "Task '{}' may be unreachable from the workflow start",
-                    task.task_reference_name
-                ));
-            }
-        }
-
-        ValidationResult {
-            valid: errors.is_empty(),
-            errors,
-            warnings,
-        }
+        validate_workflow_def_graph(def)
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -709,6 +572,166 @@ impl WorkflowEngine {
 }
 
 // ── Helper functions ──────────────────────────────────────────────
+
+fn validate_workflow_def_graph(def: &WorkflowDef) -> ValidationResult {
+    let mut errors = Vec::new();
+    let mut warnings = Vec::new();
+
+    if def.name.is_empty() {
+        errors.push("Workflow name is empty".into());
+    }
+    if def.tasks.is_empty() {
+        errors.push("Workflow has no tasks".into());
+        return ValidationResult {
+            valid: false,
+            errors,
+            warnings,
+        };
+    }
+
+    let mut ref_names: HashSet<String> = HashSet::new();
+    let all_tasks = collect_all_tasks(&def.tasks);
+
+    for task in &all_tasks {
+        if task.task_reference_name.is_empty() {
+            errors.push(format!("Task '{}' has empty reference name", task.name));
+        }
+        if !ref_names.insert(task.task_reference_name.clone()) {
+            errors.push(format!(
+                "Duplicate task reference name: {}",
+                task.task_reference_name
+            ));
+        }
+    }
+
+    for task in &all_tasks {
+        if task.task_type == "JOIN" {
+            for join_ref in &task.join_on {
+                if !ref_names.contains(join_ref) {
+                    errors.push(format!(
+                        "JOIN task '{}' references non-existent task: {}",
+                        task.task_reference_name, join_ref
+                    ));
+                }
+            }
+        }
+    }
+
+    for (idx, task) in def.tasks.iter().enumerate() {
+        if task.task_type == "FORK_JOIN" || task.task_type == "FORK" {
+            if task.fork_tasks.is_empty() {
+                errors.push(format!(
+                    "FORK task '{}' has no branches",
+                    task.task_reference_name
+                ));
+            }
+            if idx + 1 < def.tasks.len() {
+                let next = &def.tasks[idx + 1];
+                if next.task_type != "JOIN" {
+                    warnings.push(format!(
+                        "FORK task '{}' is not immediately followed by a JOIN",
+                        task.task_reference_name
+                    ));
+                }
+            }
+        }
+    }
+
+    for task in &all_tasks {
+        if task.task_type == "DECISION" || task.task_type == "SWITCH" {
+            if task.decision_cases.is_empty() && task.default_case.is_empty() {
+                errors.push(format!(
+                    "DECISION task '{}' has no cases defined",
+                    task.task_reference_name
+                ));
+            }
+            if task.case_value_param.is_none()
+                && task.case_expression.is_none()
+                && task.condition_tree.is_none()
+            {
+                warnings.push(format!(
+                    "DECISION task '{}' has no case_value_param, case_expression, or condition_tree",
+                    task.task_reference_name
+                ));
+            }
+        }
+    }
+
+    for task in &all_tasks {
+        if task.task_type == "SUB_WORKFLOW" && task.sub_workflow_param.is_none() {
+            errors.push(format!(
+                "SUB_WORKFLOW task '{}' has no sub_workflow_param",
+                task.task_reference_name
+            ));
+        }
+    }
+
+    for task in &all_tasks {
+        if task.task_type == "DO_WHILE" && task.loop_over.is_empty() {
+            errors.push(format!(
+                "DO_WHILE task '{}' must specify loop_over tasks",
+                task.task_reference_name
+            ));
+        }
+    }
+
+    for task in &all_tasks {
+        if task.task_type == "DYNAMIC_FORK_JOIN" || task.task_type == "FORK_JOIN_DYNAMIC" {
+            let has_join_tasks_param = task
+                .dynamic_fork_join_tasks_param
+                .as_deref()
+                .is_some_and(|p| !p.trim().is_empty());
+            let has_tasks_param = task
+                .dynamic_fork_tasks_param
+                .as_deref()
+                .is_some_and(|p| !p.trim().is_empty());
+
+            if !has_join_tasks_param && !has_tasks_param {
+                errors.push(format!(
+                    "DYNAMIC_FORK_JOIN task '{}' requires dynamicForkJoinTasksParam or dynamicForkTasksParam",
+                    task.task_reference_name
+                ));
+            }
+        }
+    }
+
+    for task in &all_tasks {
+        if task.task_type == "MAP" {
+            if task.map_items_param.is_none() {
+                errors.push(format!(
+                    "MAP task '{}' must specify map_items_param",
+                    task.task_reference_name
+                ));
+            }
+            if task.map_task.is_none() {
+                errors.push(format!(
+                    "MAP task '{}' must specify map_task template",
+                    task.task_reference_name
+                ));
+            }
+        }
+    }
+
+    if detect_cycles(&def.tasks) {
+        errors.push("Task dependency graph contains a cycle".into());
+    }
+
+    let reachable = find_reachable_tasks(&def.tasks);
+    for task in &all_tasks {
+        if !reachable.contains(&task.task_reference_name) {
+            warnings.push(format!(
+                "Task '{}' may be unreachable from the workflow start",
+                task.task_reference_name
+            ));
+        }
+    }
+
+    ValidationResult {
+        valid: errors.is_empty(),
+        errors,
+        warnings,
+    }
+}
 
 /// Recursively collect all tasks from a workflow definition (including
 /// nested tasks inside FORK branches, DECISION cases, DO_WHILE loops, etc.)
@@ -812,5 +835,134 @@ fn mark_reachable(tasks: &[WorkflowTask], reachable: &mut HashSet<String>) {
         if let Some(ref map_task) = task.map_task {
             reachable.insert(map_task.task_reference_name.clone());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_workflow_def_graph;
+    use crate::models::WorkflowDef;
+    use serde_json::{Value, json};
+
+    fn workflow(tasks: Value) -> WorkflowDef {
+        serde_json::from_value(json!({
+            "name": "test_workflow",
+            "tasks": tasks
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn validation_accepts_dynamic_fork_join_with_runtime_tasks_param() {
+        let def = workflow(json!([
+            {
+                "name": "fork",
+                "taskReferenceName": "fork_ref",
+                "type": "DYNAMIC_FORK_JOIN",
+                "dynamicForkTasksParam": "tasks"
+            }
+        ]));
+
+        let result = validate_workflow_def_graph(&def);
+        assert!(result.valid, "{:?}", result.errors);
+    }
+
+    #[test]
+    fn validation_rejects_dynamic_fork_join_without_task_param() {
+        let def = workflow(json!([
+            {
+                "name": "fork",
+                "taskReferenceName": "fork_ref",
+                "type": "DYNAMIC_FORK_JOIN"
+            }
+        ]));
+
+        let result = validate_workflow_def_graph(&def);
+        assert!(!result.valid);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| { e.contains("fork_ref") && e.contains("dynamicForkJoinTasksParam") })
+        );
+    }
+
+    #[test]
+    fn validation_rejects_missing_join_references() {
+        let def = workflow(json!([
+            {"name": "join", "taskReferenceName": "join_ref", "type": "JOIN", "joinOn": ["missing_ref"]}
+        ]));
+
+        let result = validate_workflow_def_graph(&def);
+        assert!(!result.valid);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("non-existent task: missing_ref"))
+        );
+    }
+
+    #[test]
+    fn validation_rejects_duplicate_refs_inside_nested_branches() {
+        let def = workflow(json!([
+            {
+                "name": "decision",
+                "taskReferenceName": "decision_ref",
+                "type": "DECISION",
+                "caseValueParam": "route",
+                "decisionCases": {
+                    "a": [{"name": "same", "taskReferenceName": "dup_ref"}]
+                },
+                "defaultCase": [{"name": "same_again", "taskReferenceName": "dup_ref"}]
+            }
+        ]));
+
+        let result = validate_workflow_def_graph(&def);
+        assert!(!result.valid);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("Duplicate task reference name: dup_ref"))
+        );
+    }
+
+    #[test]
+    fn validation_rejects_incomplete_map_task_definitions() {
+        let def = workflow(json!([
+            {"name": "map", "taskReferenceName": "map_ref", "type": "MAP"}
+        ]));
+
+        let result = validate_workflow_def_graph(&def);
+        assert!(!result.valid);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("must specify map_items_param"))
+        );
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("must specify map_task template"))
+        );
+    }
+
+    #[test]
+    fn validation_rejects_empty_do_while_body() {
+        let def = workflow(json!([
+            {"name": "loop", "taskReferenceName": "loop_ref", "type": "DO_WHILE", "loopCondition": "iteration < 3"}
+        ]));
+
+        let result = validate_workflow_def_graph(&def);
+        assert!(!result.valid);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("DO_WHILE task 'loop_ref' must specify loop_over tasks"))
+        );
     }
 }

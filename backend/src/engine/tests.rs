@@ -3,7 +3,8 @@ use std::collections::HashMap;
 use serde_json::{Value, json};
 
 use super::expression::{
-    evaluate_loop_condition, navigate_json, resolve_expression, resolve_string_value, resolve_value,
+    evaluate_condition_tree, evaluate_loop_condition, navigate_json, resolve_expression,
+    resolve_string_value, resolve_value,
 };
 use super::{is_task_failed, is_task_successful, is_task_terminal, queue_name_for};
 use crate::models::*;
@@ -123,6 +124,15 @@ fn navigate_json_through_null() {
     assert_eq!(navigate_json(&val, &["a", "b"]), None);
 }
 
+#[test]
+fn navigate_json_array_index() {
+    let val = json!({"items": [{"name": "first"}, {"name": "second"}]});
+    assert_eq!(
+        navigate_json(&val, &["items", "1", "name"]),
+        Some(json!("second"))
+    );
+}
+
 // ─── Template resolution (resolve_expression) ──────────────────────────
 
 #[test]
@@ -164,6 +174,16 @@ fn resolve_workflow_input_nested() {
     assert_eq!(
         resolve_expression("workflow.input.config.timeout", &input, &outputs, "wf-1"),
         Some(json!(30))
+    );
+}
+
+#[test]
+fn resolve_workflow_input_array_index() {
+    let input = json!({"items": [{"sku": "a-1"}, {"sku": "b-2"}]});
+    let outputs = HashMap::new();
+    assert_eq!(
+        resolve_expression("workflow.input.items.1.sku", &input, &outputs, "wf-1"),
+        Some(json!("b-2"))
     );
 }
 
@@ -473,6 +493,43 @@ fn loop_should_continue_takes_precedence_over_result() {
         &json!({"shouldContinue": true, "result": false}),
         0,
     ));
+}
+
+#[test]
+fn condition_tree_supports_array_paths_and_combinators() {
+    let input = json!({
+        "items": [
+            {"sku": "a-1", "qty": 1},
+            {"sku": "b-2", "qty": 3}
+        ],
+        "status": "ready"
+    });
+    let tree = ConditionNode::And(vec![
+        ConditionNode::Compare {
+            field: "items.1.qty".to_string(),
+            op: CompareOp::Gte,
+            value: json!(3),
+        },
+        ConditionNode::Or(vec![
+            ConditionNode::Compare {
+                field: "items.0.sku".to_string(),
+                op: CompareOp::StartsWith,
+                value: json!("a"),
+            },
+            ConditionNode::Compare {
+                field: "status".to_string(),
+                op: CompareOp::Eq,
+                value: json!("blocked"),
+            },
+        ]),
+        ConditionNode::Not(Box::new(ConditionNode::Compare {
+            field: "status".to_string(),
+            op: CompareOp::Eq,
+            value: json!("blocked"),
+        })),
+    ]);
+
+    assert!(evaluate_condition_tree(&tree, &input));
 }
 
 // ─── Model serialization / deserialization ──────────────────────────────

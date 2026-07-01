@@ -1485,7 +1485,7 @@ impl WorkflowEngine {
 
         // Auto-create and schedule a JOIN task — check if the next task in the
         // definition is already a JOIN, otherwise synthesize one.
-        let join_task = if parent_tasks.len() > 1 && parent_tasks[1].task_type == "JOIN" {
+        let mut join_task = if parent_tasks.len() > 1 && parent_tasks[1].task_type == "JOIN" {
             let mut jt = parent_tasks[1].clone();
             jt.join_on = join_on.clone();
             jt
@@ -1527,6 +1527,9 @@ impl WorkflowEngine {
                 ..Default::default()
             }
         };
+        join_task
+            .input_parameters
+            .insert("joinOn".to_string(), serde_json::json!(join_on));
 
         self.handle_join_task(workflow_id, &join_task, input, seq + 1000)
             .await?;
@@ -1836,5 +1839,26 @@ fn select_task_domain(domain: &str) -> Option<String> {
         None
     } else {
         Some(selected.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::select_task_domain;
+
+    #[test]
+    fn select_task_domain_uses_last_non_empty_entry() {
+        assert_eq!(select_task_domain("blue, green"), Some("green".to_string()));
+        assert_eq!(
+            select_task_domain("blue,, green "),
+            Some("green".to_string())
+        );
+    }
+
+    #[test]
+    fn select_task_domain_treats_no_domain_as_none() {
+        assert_eq!(select_task_domain("NO_DOMAIN"), None);
+        assert_eq!(select_task_domain("blue, NO_DOMAIN"), None);
+        assert_eq!(select_task_domain(" , "), None);
     }
 }

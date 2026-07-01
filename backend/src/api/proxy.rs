@@ -54,7 +54,7 @@ async fn proxy_request(
         .request(method, target)
         .header("accept-encoding", "identity");
     for (name, value) in req.headers() {
-        if should_skip_request_header(name.as_str()) {
+        if !should_forward_request_header(name.as_str()) {
             continue;
         }
         outbound = outbound.header(name.as_str(), value.as_bytes());
@@ -91,22 +91,17 @@ async fn proxy_request(
     Ok(response.body(bytes))
 }
 
-fn should_skip_request_header(name: &str) -> bool {
+fn should_forward_request_header(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
-        "host"
-            | "connection"
-            | "accept-encoding"
-            | "content-length"
-            | "proxy-authenticate"
-            | "proxy-authorization"
-            | "te"
-            | "trailer"
-            | "transfer-encoding"
-            | "upgrade"
-            | "origin"
-            | "referer"
-            | "cookie"
+        "accept"
+            | "authorization"
+            | "content-type"
+            | "x-api-key"
+            | "x-auth-token"
+            | "x-authorization-token"
+            | "x-conductor-auth"
+            | "x-request-id"
     )
 }
 

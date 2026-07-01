@@ -224,7 +224,7 @@ impl WorkflowEngine {
     /// For simplicity, computes next aligned minute boundary.
     fn compute_next_run(cron_expr: &str) -> Result<Option<chrono::DateTime<Utc>>, EngineError> {
         let parts: Vec<&str> = cron_expr.split_whitespace().collect();
-        if parts.len() < 5 {
+        if parts.len() != 5 {
             return Err(EngineError::InvalidState(format!(
                 "Invalid cron expression (need 5 fields): {cron_expr}"
             )));
@@ -266,6 +266,7 @@ impl WorkflowEngine {
 
     /// Check if a cron field matches a given value. Supports *, specific numbers, and */N.
     fn cron_field_matches(field: &str, value: u32) -> bool {
+        let field = field.trim();
         if field == "*" {
             return true;
         }
@@ -276,11 +277,13 @@ impl WorkflowEngine {
             return step > 0 && value.is_multiple_of(step);
         }
         // Comma-separated values
-        for part in field.split(',') {
+        for part in field.split(',').map(str::trim) {
             // Range: N-M
             if let Some((start_str, end_str)) = part.split_once('-') {
-                if let (Ok(start), Ok(end)) = (start_str.parse::<u32>(), end_str.parse::<u32>())
-                    && value >= start
+                if let (Ok(start), Ok(end)) = (
+                    start_str.trim().parse::<u32>(),
+                    end_str.trim().parse::<u32>(),
+                ) && value >= start
                     && value <= end
                 {
                     return true;
@@ -295,5 +298,47 @@ impl WorkflowEngine {
             }
         }
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::WorkflowEngine;
+    use crate::engine::EngineError;
+    use chrono::Timelike;
+
+    #[test]
+    fn cron_field_matches_wildcard_steps_lists_and_ranges() {
+        assert!(WorkflowEngine::cron_field_matches("*", 42));
+        assert!(WorkflowEngine::cron_field_matches("*/15", 45));
+        assert!(!WorkflowEngine::cron_field_matches("*/15", 46));
+        assert!(WorkflowEngine::cron_field_matches("1, 5,9", 5));
+        assert!(WorkflowEngine::cron_field_matches("10 - 12", 11));
+        assert!(!WorkflowEngine::cron_field_matches("10-12", 13));
+    }
+
+    #[test]
+    fn cron_field_rejects_zero_step_and_invalid_values() {
+        assert!(!WorkflowEngine::cron_field_matches("*/0", 0));
+        assert!(!WorkflowEngine::cron_field_matches("abc", 0));
+        assert!(!WorkflowEngine::cron_field_matches("5-abc", 5));
+    }
+
+    #[test]
+    fn compute_next_run_rejects_non_five_field_cron() {
+        let err = WorkflowEngine::compute_next_run("* * * * * *").unwrap_err();
+        assert!(matches!(err, EngineError::InvalidState(_)));
+
+        let err = WorkflowEngine::compute_next_run("* * * *").unwrap_err();
+        assert!(matches!(err, EngineError::InvalidState(_)));
+    }
+
+    #[test]
+    fn compute_next_run_aligns_to_minute_boundary() {
+        let next = WorkflowEngine::compute_next_run("* * * * *")
+            .unwrap()
+            .expect("every-minute cron should schedule");
+        assert_eq!(next.second(), 0);
+        assert!(next > chrono::Utc::now());
     }
 }

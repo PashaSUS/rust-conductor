@@ -94,3 +94,33 @@ fn collect_bulk_results(results: Vec<(String, Result<(), EngineError>)>) -> Bulk
         bulk_error_results: errors,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::collect_bulk_results;
+    use crate::engine::EngineError;
+
+    #[test]
+    fn collect_bulk_results_splits_successes_and_errors() {
+        let response = collect_bulk_results(vec![
+            ("wf-ok".to_string(), Ok(())),
+            (
+                "wf-missing".to_string(),
+                Err(EngineError::NotFound("missing".to_string())),
+            ),
+        ]);
+
+        assert_eq!(response.bulk_successful_results, vec!["wf-ok"]);
+        assert_eq!(
+            response.bulk_error_results.get("wf-missing"),
+            Some(&"Not found: missing".to_string())
+        );
+    }
+
+    #[test]
+    fn collect_bulk_results_handles_empty_batches() {
+        let response = collect_bulk_results(vec![]);
+        assert!(response.bulk_successful_results.is_empty());
+        assert!(response.bulk_error_results.is_empty());
+    }
+}

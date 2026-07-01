@@ -257,9 +257,8 @@ cargo mutants --in-place --output mutants.out   # save report
 | Crate           | Purpose                                          |
 |-----------------|--------------------------------------------------|
 | `proptest`      | Property-based testing for model invariants       |
-| `serde_test`    | Assert exact serialization format for API compat  |
-| `tokio-test`    | Utilities for testing async code                  |
-| `arbitrary`     | Structured fuzzing input generation               |
+| `criterion`     | Benchmark harness for hot-path workflow helpers   |
+| `testcontainers` | Integration-test containers for Postgres/Redis/Kafka |
 
 ---
 

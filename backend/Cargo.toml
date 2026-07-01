@@ -25,7 +25,6 @@ futures = "0.3"
 num_cpus = "1"
 utoipa = { version = "5", features = ["actix_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { version = "9", features = ["actix-web", "vendored"] }
-rust-embed = "8"
 rand = { version = "0.9", features = ["std", "small_rng"] }
 anyhow = "1.0.102"
 lru = "0.16"
@@ -49,7 +48,6 @@ tonic = { version = "0.13", features = ["gzip"] }
 tonic-reflection = { version = "0.13", optional = true }
 prost = "0.13"
 prost-types = "0.13"
-tokio-stream = { version = "0.1", features = ["sync"] }
 tower = { version = "0.5", features = ["limit"] }
 
 # Kafka (optional — only needed for PROD; DEV uses Redis Streams)
@@ -59,13 +57,10 @@ rdkafka = { version = "0.37", features = ["tokio", "cmake-build"], optional = tr
 rust-s3 = { version = "0.37", optional = true, default-features = false, features = ["tokio-rustls-tls"] }
 
 [dev-dependencies]
-tokio-test = "0.4"
 proptest = "1"
-serde_test = "1"
 criterion = { version = "0.5", features = ["html_reports", "async_tokio"] }
 testcontainers = "0.27"
 testcontainers-modules = { version = "0.15", features = ["postgres", "redis", "kafka"] }
-arbitrary = { version = "1", features = ["derive"] }
 
 [build-dependencies]
 tonic-build = "0.13"

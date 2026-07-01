@@ -126,7 +126,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T>
 
 **Dev proxy:** Vite proxies `/api` and `/health` to `http://localhost:8090`, avoiding CORS configuration during development.
 
-**External server proxy:** When the Settings page points the UI at an absolute cross-origin Conductor URL, `src/lib/config.ts` can route requests through the same-origin backend endpoint `/api/proxy?target=...`. This is enabled by default, can be disabled in Settings for servers that already allow browser CORS requests, and can default off at build time with `VITE_USE_API_PROXY=false`. API bases ending in `/api` are normalized so pasted Conductor URLs do not become `/api/api/...`. The backend performs the upstream request server-side, accepts `/api...` or context-path `/.../api...` and `/health` targets, and supports `CONDUCTOR_PROXY_ALLOWED_HOSTS` as a comma-separated host or host:port allow list for production deployments.
+**External server proxy:** When the Settings page points the UI at an absolute cross-origin Conductor URL, `src/lib/config.ts` can route requests through the same-origin backend endpoint `/api/proxy?target=...`. This is enabled by default, can be disabled in Settings for servers that already allow direct browser CORS requests, and can default off at build time with `VITE_USE_API_PROXY=false`. API bases ending in `/api` are normalized so pasted Conductor URLs do not become `/api/api/...`. The frontend omits browser credentials on API calls so unrelated application cookies are not attached to Conductor requests. The backend proxy forwards only API-relevant request headers (`Accept`, `Content-Type`, `Authorization`, and selected Conductor/request-id headers), accepts `/api...` or context-path `/.../api...` and `/health` targets, and supports `CONDUCTOR_PROXY_ALLOWED_HOSTS` as a comma-separated host or host:port allow list for production deployments.
 
 ### State Management
 
@@ -207,14 +207,13 @@ location / { try_files $uri /index.html; }   # SPA fallback
 | `react` | 19 | UI framework — component model, hooks, concurrent features |
 | `react-router` | 7 | Client-side routing — nested routes, data loading |
 | `@tanstack/react-query` | 5 | Server state — caching, refetch, mutations, devtools |
-| `@tanstack/react-table` | 8 | Headless table — sorting, filtering, pagination without UI lock-in |
 | `@xyflow/react` | — | Workflow DAG diagram rendering |
 | `recharts` | — | Dashboard charts (status distribution, execution counts) |
-| `@radix-ui/*` | — | Accessible UI primitives (dialog, dropdown, select, tabs, tooltip) |
+| `@radix-ui/*` | — | Accessible UI primitives (dialog, select, tabs, tooltip) |
 | `tailwindcss` | 4 | Utility-first CSS — consistent design system, zero runtime |
 | `lucide-react` | — | Icon library — consistent, tree-shakeable SVG icons |
 | `sonner` | — | Toast notifications — minimal, animated, accessible |
-| `vite` | 7 | Build tool — fast dev server, optimized production builds |
+| `vite` | 8 | Build tool — fast dev server, optimized production builds |
 | `typescript` | ~5.9 | Type safety — catch API mismatches at compile time |
 
 ---

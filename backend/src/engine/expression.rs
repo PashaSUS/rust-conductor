@@ -136,9 +136,17 @@ pub(crate) fn resolve_expression(
 pub(crate) fn navigate_json(val: &Value, path: &[&str]) -> Option<Value> {
     let mut current = val;
     for &segment in path {
-        current = current.get(segment)?;
+        current = navigate_json_segment(current, segment)?;
     }
     Some(current.clone())
+}
+
+fn navigate_json_segment<'a>(val: &'a Value, segment: &str) -> Option<&'a Value> {
+    match val {
+        Value::Object(map) => map.get(segment),
+        Value::Array(items) => segment.parse::<usize>().ok().and_then(|idx| items.get(idx)),
+        _ => None,
+    }
 }
 
 // ── Loop condition evaluation ───────────────────────────────────────────────
@@ -208,7 +216,7 @@ pub(crate) fn evaluate_condition_tree(node: &ConditionNode, input: &Value) -> bo
 fn navigate_json_path(val: &Value, path: &str) -> Value {
     let mut current = val;
     for segment in path.split('.') {
-        match current.get(segment) {
+        match navigate_json_segment(current, segment) {
             Some(v) => current = v,
             None => return Value::Null,
         }

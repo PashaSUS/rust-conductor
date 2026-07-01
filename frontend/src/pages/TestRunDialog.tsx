@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
-import { metadataApi, workflowApi, type TaskDef } from "@/api/conductor";
+import { metadataApi, workflowApi, type TaskDef, type WorkflowDef } from "@/api/conductor";
 import { buildInputFromFields } from "@/lib/field-parser";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,36 @@ interface TestRunDialogProps {
   def: TaskDef | null;
   onClose: () => void;
 }
+
+const TEST_RUN_WORKFLOW_NAME = "__dynamic_task_test_run";
+const TEST_RUN_WORKFLOW_VERSION = 1;
+const TEST_RUN_FORK_REF = "dynamic_task_fork";
+const TEST_RUN_JOIN_REF = "dynamic_task_join";
+
+const testRunWorkflowDef: WorkflowDef = {
+  name: TEST_RUN_WORKFLOW_NAME,
+  version: TEST_RUN_WORKFLOW_VERSION,
+  description: "Reusable dynamic fork/join workflow for ad-hoc task test runs.",
+  inputParameters: ["tasks", "taskInputs"],
+  tasks: [
+    {
+      name: TEST_RUN_FORK_REF,
+      taskReferenceName: TEST_RUN_FORK_REF,
+      type: "DYNAMIC_FORK_JOIN",
+      inputParameters: {
+        tasks: "${workflow.input.tasks}",
+        taskInputs: "${workflow.input.taskInputs}",
+      },
+      dynamicForkTasksParam: "tasks",
+      dynamicForkTasksInputParamName: "taskInputs",
+    },
+    {
+      name: TEST_RUN_JOIN_REF,
+      taskReferenceName: TEST_RUN_JOIN_REF,
+      type: "JOIN",
+    },
+  ],
+};
 
 export function TestRunDialog({ def, onClose }: TestRunDialogProps) {
   const navigate = useNavigate();
@@ -43,39 +73,30 @@ export function TestRunDialog({ def, onClose }: TestRunDialogProps) {
 
   const testRunMut = useMutation({
     mutationFn: async ({ taskName, input }: { taskName: string; input: Record<string, unknown> }) => {
-      // One wrapper workflow per task type. We always (re-)register it so the
-      // inputParameters wiring reflects whatever keys the user supplied — the
-      // engine upserts on (name, version) so this is cheap and idempotent.
       const safe = taskName.replace(/[^A-Za-z0-9_.-]/g, "_");
-      const wfName = `__test_run_${safe}`;
+      const taskReferenceName = `${safe}_ref`;
 
-      // Forward every input key (declared on the task def OR entered ad-hoc)
-      // from workflow.input into the task's inputParameters. Without this,
-      // user-entered values never reach the task.
-      const keys = new Set<string>([...(def?.inputKeys ?? []), ...Object.keys(input)]);
-      const inputParameters: Record<string, string> = {};
-      for (const k of keys) {
-        inputParameters[k] = `\${workflow.input.${k}}`;
-      }
-
-      await metadataApi.registerWorkflowDef({
-        name: wfName,
-        version: 1,
-        description: `Test-run wrapper for task "${taskName}"`,
-        tasks: [
-          {
-            name: taskName,
-            taskReferenceName: `${safe}_ref`,
-            type: "SIMPLE",
-            inputParameters,
-          },
-        ],
-      });
+      // A single reusable wrapper keeps ad-hoc test runs on the normal
+      // DYNAMIC_FORK_JOIN path while the task list and inputs stay runtime data.
+      await metadataApi.registerWorkflowDef(testRunWorkflowDef);
 
       return workflowApi.start({
-        name: wfName,
-        version: 1,
-        input,
+        name: TEST_RUN_WORKFLOW_NAME,
+        version: TEST_RUN_WORKFLOW_VERSION,
+        input: {
+          tasks: [
+            {
+              name: taskName,
+              taskReferenceName,
+              type: "SIMPLE",
+            },
+          ],
+          taskInputs: {
+            [taskReferenceName]: input,
+          },
+        },
+        correlationId: `test-run:${taskName}:${Date.now()}`,
+        tags: ["test-run", `task:${taskName}`],
       });
     },
     onSuccess: (workflowId) => {

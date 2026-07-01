@@ -86,12 +86,12 @@ The core Conductor-compatible REST API.
 ### Schedules
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/schedules` | Create a schedule |
-| `GET` | `/api/schedules` | List schedules |
-| `GET` | `/api/schedules/{name}` | Get a schedule |
-| `DELETE` | `/api/schedules/{name}` | Delete a schedule |
-| `POST` | `/api/schedules/{name}/pause` | Pause a schedule |
-| `POST` | `/api/schedules/{name}/resume` | Resume a schedule |
+| `POST` | `/api/schedule` | Create a schedule |
+| `GET` | `/api/schedule` | List schedules |
+| `GET` | `/api/schedule/{scheduleId}` | Get a schedule |
+| `DELETE` | `/api/schedule/{scheduleId}` | Delete a schedule |
+| `PUT` | `/api/schedule/{scheduleId}/enable` | Enable a schedule |
+| `PUT` | `/api/schedule/{scheduleId}/disable` | Disable a schedule |
 
 ## REST API V2 (feature: `api-v2`)
 
